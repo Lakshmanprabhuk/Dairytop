@@ -14,6 +14,7 @@
   --text: #0F172A;
   --muted: #4B7A8C;
   --muted2: #334E5A;
+  --sidebar-w: 224px;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -37,11 +38,13 @@ body {
     radial-gradient(ellipse 70% 50% at 50% 0%, rgba(255,255,255,0.35) 0%, transparent 70%),
     radial-gradient(ellipse 60% 60% at 80% 80%, rgba(8,145,178,0.25) 0%, transparent 70%);
   display: flex; align-items: center; justify-content: center; z-index: 1000;
+  padding: 16px;
 }
 .login-box {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 20px; padding: 48px 40px; width: 400px;
+  border-radius: 20px; padding: 48px 40px;
+  width: 400px; max-width: 100%;
   box-shadow: 0 24px 64px rgba(8,145,178,0.25), 0 4px 16px rgba(0,0,0,0.08);
 }
 .login-logo {
@@ -60,7 +63,7 @@ body {
   width: 100%; padding: 11px 14px;
   background: var(--surface2);
   border: 1px solid var(--border); border-radius: 8px;
-  color: var(--text); font-size: 14px; outline: none;
+  color: var(--text); font-size: 16px; outline: none;
   transition: border-color .2s, box-shadow .2s;
 }
 .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(8,145,178,0.12); }
@@ -75,12 +78,14 @@ body {
 .login-btn:active { transform: scale(0.98); }
 .login-err { color: var(--red); font-size: 13px; margin-top: 10px; font-weight: 500; }
 
+/* ===== Sidebar ===== */
 .sidebar {
-  position: fixed; left: 0; top: 0; bottom: 0; width: 224px;
+  position: fixed; left: 0; top: 0; bottom: 0; width: var(--sidebar-w);
   background: var(--surface);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column; z-index: 100;
   box-shadow: 2px 0 16px rgba(8,145,178,0.1);
+  transition: transform .25s ease;
 }
 .sidebar-logo {
   padding: 26px 22px 20px;
@@ -92,7 +97,7 @@ body {
   color: #0F172A; text-transform: uppercase;
 }
 .sidebar-logo .tagline { font-size: 10px; color: rgba(15,23,42,0.6); margin-top: 3px; font-weight: 500; }
-.nav { flex: 1; padding: 10px 0; overflow-y: auto; }
+.nav { flex: 1; padding: 10px 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .nav-section {
   font-size: 9px; letter-spacing: 0.12em; color: var(--muted);
   text-transform: uppercase; padding: 14px 22px 5px; font-weight: 700;
@@ -119,13 +124,35 @@ body {
 }
 .logout-btn:hover { color: var(--red); }
 
-.main { margin-left: 224px; flex: 1; display: flex; flex-direction: column; background: var(--bg); }
+/* Hamburger toggle button - hidden on desktop, shown on small screens */
+.sidebar-toggle {
+  display: none;
+  align-items: center; justify-content: center;
+  width: 36px; height: 36px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--accent);
+}
+
+/* Overlay behind mobile sidebar when open */
+.sidebar-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(15,23,42,0.45);
+  z-index: 90;
+}
+
+.main { margin-left: var(--sidebar-w); flex: 1; display: flex; flex-direction: column; background: var(--bg); min-width: 0; transition: margin-left .25s ease; }
 .topbar {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   padding: 16px 28px; display: flex; align-items: center; justify-content: space-between;
   position: sticky; top: 0; z-index: 50;
   box-shadow: 0 2px 10px rgba(8,145,178,0.1);
+  gap: 12px;
 }
 .page-title { font-size: 18px; font-weight: 700; color: var(--text); }
 .page-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
@@ -133,9 +160,10 @@ body {
   background: linear-gradient(135deg,#73D4F2,#4EC8EE);
   color: #0F172A; padding: 5px 12px; border-radius: 20px;
   font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-.page { padding: 24px 28px 40px; }
+.page { padding: 24px 28px 40px; max-width: 100%; }
 
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 24px; }
 .kpi-card {
@@ -145,6 +173,7 @@ body {
   position: relative; overflow: hidden;
   box-shadow: 0 2px 12px rgba(8,145,178,0.08);
   transition: box-shadow .2s, transform .2s;
+  min-width: 0;
 }
 .kpi-card:hover { box-shadow: 0 6px 24px rgba(8,145,178,0.18); transform: translateY(-1px); }
 .kpi-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
@@ -158,6 +187,7 @@ body {
 .kpi-value {
   font-size: 28px; font-weight: 800; margin: 8px 0 4px;
   font-family: 'JetBrains Mono', monospace; line-height: 1; color: var(--text);
+  word-break: break-word;
 }
 .kpi-value.sm { font-size: 20px; }
 .kpi-change { font-size: 11px; color: var(--muted); font-weight: 500; }
@@ -171,13 +201,15 @@ body {
   border-radius: 14px; padding: 22px;
   box-shadow: 0 2px 12px rgba(8,145,178,0.07);
   margin-bottom: 18px;
+  min-width: 0;
 }
-.chart-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; }
+.chart-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; gap: 10px; flex-wrap: wrap; }
 .chart-title { font-size: 13px; font-weight: 700; color: var(--text); }
 .chart-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .chart-tag {
   font-size: 10px; background: var(--surface2); color: var(--accent);
   padding: 3px 9px; border-radius: 5px; font-weight: 600;
+  white-space: nowrap;
 }
 .chart-wrap { position: relative; height: 240px; }
 .chart-wrap.tall { height: 300px; }
@@ -187,15 +219,16 @@ body {
   margin: 24px 0 12px; display: flex; align-items: center; gap: 8px;
   text-transform: uppercase; letter-spacing: 0.07em;
 }
-.section-dot { width: 8px; height: 8px; border-radius: 50%; background: #73D4F2; border: 2px solid var(--accent); }
+.section-dot { width: 8px; height: 8px; border-radius: 50%; background: #73D4F2; border: 2px solid var(--accent); flex-shrink: 0; }
 
-.table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 480px; }
 thead th {
   text-align: left; padding: 10px 14px;
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--muted); border-bottom: 2px solid var(--border); font-weight: 700;
   background: var(--surface2);
+  white-space: nowrap;
 }
 tbody tr { border-bottom: 1px solid var(--border); transition: .1s; }
 tbody tr:hover { background: var(--surface2); }
@@ -210,10 +243,6 @@ tbody td { padding: 11px 14px; color: var(--muted2); }
 .rank-3 { background: rgba(180,100,60,0.12); color: #b46432; }
 .rank-n { background: var(--surface2); color: var(--muted); }
 
-@media(max-width:960px) {
-  .chart-grid-2 { grid-template-columns: 1fr; }
-  .kpi-grid { grid-template-columns: 1fr 1fr; }
-}
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -233,4 +262,112 @@ tbody td { padding: 11px 14px; color: var(--muted2); }
   0%   { opacity: 1; }
   50%  { opacity: 0.15; }
   100% { opacity: 1; }
+}
+
+/* =====================================================
+   RESPONSIVE BREAKPOINTS
+   Desktop: > 1200px (default styles above)
+   Small desktop / laptop: 1024px - 1200px
+   Tablet: 768px - 1024px
+   Large phone: 480px - 768px
+   Small phone: < 480px
+===================================================== */
+
+/* ---- Small desktop / laptop ---- */
+@media (max-width: 1200px) {
+  .chart-grid-2 { grid-template-columns: 1fr; }
+  .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+}
+
+/* ---- Tablet ---- */
+@media (max-width: 1024px) {
+  :root { --sidebar-w: 200px; }
+  .page { padding: 20px 20px 32px; }
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .chart-wrap.tall { height: 260px; }
+}
+
+/* ---- Tablet / mobile: sidebar collapses to a slide-in drawer ---- */
+@media (max-width: 860px) {
+  .sidebar-toggle { display: inline-flex; }
+
+  .sidebar {
+    transform: translateX(-100%);
+    width: 240px;
+    z-index: 200;
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  .sidebar-overlay.open { display: block; }
+
+  .main { margin-left: 0; }
+
+  .topbar { padding: 14px 16px; flex-wrap: wrap; }
+  .page-title { font-size: 16px; }
+  .page-sub { font-size: 11px; }
+
+  .page { padding: 16px 16px 28px; }
+
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .kpi-card { padding: 16px 16px; }
+  .kpi-value { font-size: 22px; }
+
+  .chart-grid-2 { grid-template-columns: 1fr; }
+  .chart-card { padding: 16px; }
+  .chart-wrap { height: 220px; }
+  .chart-wrap.tall { height: 240px; }
+}
+
+/* ---- Large phones ---- */
+@media (max-width: 640px) {
+  .login-box { padding: 36px 24px; }
+  .login-title { font-size: 22px; }
+
+  .kpi-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .kpi-card { padding: 14px; border-radius: 12px; }
+  .kpi-value { font-size: 20px; }
+  .kpi-icon { font-size: 18px; }
+
+  .chart-card { border-radius: 12px; }
+  .chart-header { flex-direction: column; align-items: flex-start; gap: 6px; }
+
+  .section-title { font-size: 12px; margin: 18px 0 10px; }
+
+  table { font-size: 12px; min-width: 420px; }
+  thead th, tbody td { padding: 9px 10px; }
+}
+
+/* ---- Small phones ---- */
+@media (max-width: 480px) {
+  .login-screen { padding: 10px; }
+  .login-box { padding: 28px 18px; border-radius: 16px; }
+  .login-title { font-size: 20px; }
+  .login-sub { margin-bottom: 24px; }
+
+  .topbar { padding: 12px; }
+  .page-title { font-size: 15px; }
+  .badge { font-size: 10px; padding: 4px 9px; }
+
+  .page { padding: 12px 12px 24px; }
+
+  .kpi-grid { grid-template-columns: 1fr; gap: 8px; }
+  .kpi-card { padding: 14px 16px; }
+  .kpi-value { font-size: 24px; }
+
+  .chart-card { padding: 14px; margin-bottom: 14px; }
+  .chart-wrap { height: 200px; }
+  .chart-wrap.tall { height: 220px; }
+  .chart-tag { font-size: 9px; }
+
+  table { min-width: 380px; }
+  thead th { font-size: 9px; padding: 8px; }
+  tbody td { padding: 8px; font-size: 11.5px; }
+
+  .rank { width: 24px; height: 24px; font-size: 10px; }
+}
+
+/* ---- Landscape phones (short height) ---- */
+@media (max-height: 480px) and (orientation: landscape) {
+  .sidebar-logo { padding: 16px 22px 12px; }
+  .nav-item { padding: 8px 22px; }
 }

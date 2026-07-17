@@ -287,20 +287,21 @@ tbody td { padding: 11px 14px; color: var(--muted2); }
   .chart-wrap.tall { height: 260px; }
 }
 
-/* ---- Tablet / mobile: sidebar collapses to a slide-in drawer ---- */
+/* ---- Tablet / mobile: sidebar stays visible, just narrower ---- */
 @media (max-width: 860px) {
-  .sidebar-toggle { display: inline-flex; }
+  :root { --sidebar-w: 72px; }
 
-  .sidebar {
-    transform: translateX(-100%);
-    width: 240px;
-    z-index: 200;
-  }
-  .sidebar.open { transform: translateX(0); }
+  /* Collapse to icon rail: hide text labels, center icons */
+  .sidebar-logo .tagline,
+  .nav-section,
+  .nav-item span:not(.nav-icon),
+  .sidebar-footer { display: none; }
 
-  .sidebar-overlay.open { display: block; }
+  .nav-item { justify-content: center; padding: 12px 6px; }
+  .nav-icon { width: auto; }
 
-  .main { margin-left: 0; }
+  .sidebar-logo { padding: 18px 8px; text-align: center; }
+  .sidebar-logo .brand { font-size: 10px; }
 
   .topbar { padding: 14px 16px; flex-wrap: wrap; }
   .page-title { font-size: 16px; }

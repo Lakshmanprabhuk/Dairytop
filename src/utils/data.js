@@ -17,22 +17,22 @@ export const monthly = [
   {m:'Apr 26',rev:1465121,orders:756},
   {m:'May 26',rev:1300362,orders:751},
   {m:'Jun 26',rev:1683083,orders:892},
-  {m:'Jul 26',rev:652451,orders:341}
+  {m:'Jul 26',rev:713107,orders:386}
 ];
 
 export const salesreps = [
-  {n:'Johan Hoogendoorn',rev:10436968,qty:39696,orders:2581},
-  {n:'Edo Steenbergen',rev:6006964,qty:15616,orders:2254},
+  {n:'Johan Hoogendoorn',rev:10454737,qty:39696,orders:2602},
+  {n:'Edo Steenbergen',rev:6008946,qty:15616,orders:2259},
   {n:'Bärbel Achelpöhler',rev:3785466,qty:27777,orders:2246},
-  {n:'Karen Hoogendoorn',rev:3203571,qty:3472,orders:1574},
-  {n:'Brugt Pilat',rev:2526233,qty:6555,orders:1851},
-  {n:'Orsi Hongarije',rev:2524607,qty:1480,orders:317},
-  {n:'Sharon Harberink',rev:1531830,qty:3385,orders:1043},
-  {n:'Beeke Gerdes',rev:1140522,qty:3371,orders:936},
+  {n:'Karen Hoogendoorn',rev:3204417,qty:3472,orders:1579},
+  {n:'Orsi Hongarije',rev:2542007,qty:1480,orders:319},
+  {n:'Brugt Pilat',rev:2526708,qty:6555,orders:1858},
+  {n:'Sharon Harberink',rev:1533088,qty:3385,orders:1045},
+  {n:'Beeke Gerdes',rev:1149070,qty:3371,orders:940},
   {n:'Webshop',rev:254548,qty:5322,orders:1525},
-  {n:'Leon',rev:142284,qty:283,orders:132},
+  {n:'Leon',rev:155284,qty:283,orders:136},
   {n:'Emily Gaasbeek',rev:16503,qty:0,orders:9},
-  {n:'Unknown',rev:13924,qty:0,orders:113},
+  {n:'Unknown',rev:13302,qty:0,orders:108},
   {n:'Kantoor',rev:-606,qty:-17,orders:4}
 ];
 
@@ -55,12 +55,12 @@ export const customers = [
 ];
 
 export const products = [
-  {n:'Pro Elite 60 - GMO Controlled',rev:14604813,qty:0,orders:2414},
-  {n:'Pro Elite 40 - GMO Controlled',rev:4487078,qty:0,orders:576},
+  {n:'Pro Elite 60 - GMO Controlled',rev:14634088,qty:0,orders:2421},
+  {n:'Pro Elite 40 - GMO Controlled',rev:4504478,qty:0,orders:577},
   {n:'Optima Klima Ställe (OKS)',rev:2164265,qty:473,orders:70},
   {n:'Dairy Kälber TMR HL 18 - GMO Controlled',rev:2093730,qty:0,orders:900},
   {n:'Premium - GMO Controlled',rev:882847,qty:0,orders:81},
-  {n:'Dairy Kälber TMR HL 18',rev:528655,qty:0,orders:315},
+  {n:'Dairy Kälber TMR HL 18',rev:531339,qty:0,orders:317},
   {n:'Pro Elite 30 - GMO Controlled',rev:483462,qty:0,orders:124},
   {n:'Dairy Pansen Pro BB - GMO Controlled',rev:465098,qty:0,orders:146},
   {n:'Pro Elite 24 - GMO Controlled',rev:421602,qty:0,orders:13},
@@ -68,23 +68,23 @@ export const products = [
 ];
 
 export const categories = [
-  {n:'Melkpoeder',rev:21443983,orders:3272},
+  {n:'Melkpoeder',rev:21490658,orders:3280},
   {n:'Kalverhuisvesting',rev:3961231,orders:510},
   {n:'Overig veevoer',rev:3300260,orders:2047},
-  {n:'Perfect Udder',rev:1075619,orders:1590},
-  {n:'Veevoeders',rev:706877,orders:516},
-  {n:'Milkbar',rev:419492,orders:1233},
+  {n:'Perfect Udder',rev:1077658,orders:1594},
+  {n:'Veevoeders',rev:717573,orders:522},
+  {n:'Milkbar',rev:420218,orders:1236},
   {n:'Overige artikelen',rev:298355,orders:1934},
-  {n:'Kleine Kalverbenodigdheden',rev:287817,orders:2662},
-  {n:'Overige Artikelen',rev:42613,orders:636},
+  {n:'Kleine Kalverbenodigdheden',rev:288559,orders:2673},
+  {n:'Overige Artikelen',rev:42630,orders:646},
   {n:'Aanvullende diervoeders',rev:27143,orders:84},
   {n:'CalfOtel',rev:16680,orders:65},
   {n:'Aanvullende Veevoeders',rev:1969,orders:12},
-  {n:'Unknown',rev:1182,orders:18},
+  {n:'Unknown',rev:942,orders:21},
   {n:'Geen groep',rev:-406,orders:6}
 ];
 
-export const totalClients = 1355;
+export const totalClients = 1359;
 
 export const PALETTE = [
   '#0891B2', '#0369A1', '#0E7490', '#06B6D4', '#67E8F9',

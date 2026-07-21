@@ -1,9 +1,9 @@
-function Sidebar({ currentPage, onNavigate, onLogout }) {
+function Sidebar({ currentPage, onNavigate, onLogout, isOpen, onToggle, onClose }) {
   const navSections = [
     {
       section: 'Overview',
       items: [
-        { id: 'overview', icon: '⬡', label: 'Dashboard' },
+        { id: 'overview', icon: '📊', label: 'Dashboard' },
         { id: 'revenue', icon: '📈', label: 'Revenue Trends' },
       ]
     },
@@ -29,34 +29,57 @@ function Sidebar({ currentPage, onNavigate, onLogout }) {
     },
   ];
 
+  const handleNavigate = (id) => {
+    onNavigate(id);
+    onClose(); // auto-close the drawer on mobile after picking a page
+  };
+
   return (
-    <div className="sidebar">
-      <div className="sidebar-logo">
-        <div className="brand">▸ KnitWorks</div>
-        <div className="tagline">Sales Intelligence Platform</div>
+    <>
+      <button
+        type="button"
+        className="sidebar-toggle"
+        onClick={onToggle}
+        aria-label={isOpen ? 'Close navigation' : 'Open navigation'}
+        aria-expanded={isOpen}
+      >
+        {isOpen ? '✕' : '☰'}
+      </button>
+
+      <div
+        className={`sidebar-overlay ${isOpen ? 'open' : ''}`}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      <div className={`sidebar ${isOpen ? 'open' : ''}`}>
+        <div className="sidebar-logo">
+          <div className="brand">▸ KnitWorks</div>
+          <div className="tagline">Sales Intelligence Platform</div>
+        </div>
+        <nav className="nav">
+          {navSections.map((section, idx) => (
+            <div key={idx}>
+              <div className="nav-section">{section.section}</div>
+              {section.items.map(item => (
+                <div
+                  key={item.id}
+                  className={`nav-item ${currentPage === item.id ? 'active' : ''}`}
+                  onClick={() => handleNavigate(item.id)}
+                >
+                  <span className="nav-icon">{item.icon}</span>
+                  <span className="nav-label">{item.label}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          Data: Jan 2025 – Jul 2026<br />14,317 transactions · 1,349 clients
+          <div className="logout-btn" onClick={onLogout}>↩ Sign out</div>
+        </div>
       </div>
-      <nav className="nav">
-        {navSections.map((section, idx) => (
-          <div key={idx}>
-            <div className="nav-section">{section.section}</div>
-            {section.items.map(item => (
-              <div
-                key={item.id}
-                className={`nav-item ${currentPage === item.id ? 'active' : ''}`}
-                onClick={() => onNavigate(item.id)}
-              >
-                <span className="nav-icon">{item.icon}</span>
-                {item.label}
-              </div>
-            ))}
-          </div>
-        ))}
-      </nav>
-      <div className="sidebar-footer">
-        Data: Jan 2025 – Jul 2026<br />14,317 transactions · 1,349 clients
-        <div className="logout-btn" onClick={onLogout}>↩ Sign out</div>
-      </div>
-    </div>
+    </>
   );
 }
 

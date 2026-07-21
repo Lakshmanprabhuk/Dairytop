@@ -8,6 +8,7 @@ function Login({ onLogin }) {
   const handleSubmit = (e) => {
     e.preventDefault();
     if ((username === 'knitworks' && password === 'knitworks')||
+        (username === 'admin' && password === '1234')||
         (username === 'Jan.spiker' && password === 'Janspiker@123')||
         (username === 'Joahan.dairytop' && password === 'Johan@123'))  {
       onLogin();

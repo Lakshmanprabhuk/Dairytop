@@ -77,6 +77,9 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 
 /* ── SIDEBAR ── */
 .sb-logo{padding:20px 18px 16px;border-bottom:1px solid rgba(255,255,255,0.08);}
+@media(max-width:900px){
+  .sidebar .sb-logo{padding-left:65px !important;}
+}
 .sb-brand{font-size:14px;font-weight:800;letter-spacing:.07em;color:#fff;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
 .sb-mark{color:var(--accent);font-size:15px;}
 .sb-tag{font-size:9px;color:rgba(255,255,255,0.38);margin-top:2px;font-weight:500;letter-spacing:.04em;}
@@ -109,6 +112,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   flex-shrink:0;gap:12px;
   box-shadow:0 1px 0 rgba(31,55,65,0.06),0 2px 12px rgba(31,55,65,0.04);
 }
+  @media(max-width:900px){
+  .topbar{padding-left:62px !important;padding-top:18px !important;}
 .tb-title{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.2px;}
 .tb-sub{font-size:10.5px;color:var(--muted);margin-top:1px;display:flex;align-items:center;gap:5px;}
 .tb-sep{color:var(--border2);}

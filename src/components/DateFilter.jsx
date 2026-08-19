@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { maxFactuurDatum ,lastUpdated } from '../utils/data';
 
 function DateFilter({ onFilterChange, availableMonths }) {
   const [selectedYears, setSelectedYears] = useState([]);
@@ -11,7 +12,6 @@ function DateFilter({ onFilterChange, availableMonths }) {
     let newSelectedYears;
     if (selectedYears.includes(year)) {
       newSelectedYears = selectedYears.filter(y => y !== year);
-      // Remove months for this year
       const newMonths = { ...selectedMonths };
       delete newMonths[year];
       setSelectedMonths(newMonths);
@@ -61,7 +61,6 @@ function DateFilter({ onFilterChange, availableMonths }) {
     onFilterChange({ years, months });
   };
 
-
   const getYearLabel = (year) => {
     if (!selectedYears.includes(year)) return '☐ 20' + year;
     const monthCount = (selectedMonths[year] || []).length;
@@ -78,15 +77,25 @@ function DateFilter({ onFilterChange, availableMonths }) {
       padding: '12px 16px',
       marginBottom: '8px',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text)' }}>🔍 Date Filter</span>
-        {(selectedYears.length > 0) && (
-          <button onClick={handleClearAll} style={{
-            padding: '2px 8px', border: '1px solid var(--red)', borderRadius: '4px',
-            background: 'var(--surface)', color: 'var(--red)', cursor: 'pointer', fontSize: '10px', fontWeight: 600
-          }}>✕ Clear All</button>
-        )}
-      </div>
+<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+    <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>🔍 Date Filter</span>
+    {(selectedYears.length > 0) && (
+      <button onClick={handleClearAll} style={{
+        padding: '2px 8px', border: '1px solid var(--red)', borderRadius: '4px',
+        background: 'var(--surface)', color: 'var(--red)', cursor: 'pointer', fontSize: '10px', fontWeight: 600
+      }}>✕ Clear All</button>
+    )}
+  </div>
+  <div>
+    <div style={{ fontSize: 'clamp(12px, 1.5vw, 15px)', color: 'var(--muted)', whiteSpace: 'nowrap', textAlign: 'right',marginBottom: '8px' }}>
+      Last update: <strong>{lastUpdated}</strong>
+    </div>
+    <div style={{ fontSize: 'clamp(12px, 1.5vw, 15px)', color: 'var(--muted)', whiteSpace: 'nowrap', textAlign: 'right' }}>
+      Last invoice: <strong>{maxFactuurDatum}</strong>
+    </div>
+  </div>
+</div>
       
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         {years.map(year => (
@@ -101,7 +110,7 @@ function DateFilter({ onFilterChange, availableMonths }) {
                   background: selectedYears.includes(year) ? 'rgba(8,145,178,0.1)' : 'var(--surface)',
                   color: 'var(--text)',
                   cursor: 'pointer',
-                  fontSize: '11px',
+                  fontSize: '13px',
                   fontWeight: 600,
                 }}
               >

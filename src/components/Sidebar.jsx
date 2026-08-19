@@ -1,37 +1,37 @@
-function Sidebar({ currentPage, onNavigate, onLogout, isOpen, onToggle, onClose }) {
+function Sidebar({ currentPage, onNavigate, onLogout, isOpen, onToggle, onClose, totalTransactions, totalClients, dateRange }) {
   const navSections = [
     {
       section: 'Overview',
       items: [
-        { id: 'overview', icon: '📊', label: 'Dashboard' },
-        { id: 'revenue', icon: '📈', label: 'Revenue Trends' },
+        { id: 'overview',   icon: '▦',  label: 'Dashboard' },
+        { id: 'revenue',    icon: '↗',  label: 'Revenue Trends' },
       ]
     },
     {
       section: 'Performance',
       items: [
-        { id: 'salesreps', icon: '👥', label: 'Sales Reps' },
-        { id: 'customers', icon: '🏢', label: 'Top Customers' },
+        { id: 'salesreps',  icon: '◈',  label: 'Sales Team' },
+        { id: 'customers',  icon: '⬡',  label: 'Top Customers' },
       ]
     },
     {
       section: 'Catalogue',
       items: [
-        { id: 'products', icon: '📦', label: 'Products' },
-        { id: 'categories', icon: '🗂', label: 'Categories' },
+        { id: 'products',   icon: '◻',  label: 'Products' },
+        { id: 'categories', icon: '⊞',  label: 'Categories' },
       ]
     },
     {
       section: 'Channels',
       items: [
-        { id: 'channels', icon: '🔀', label: 'Channel Mix' },
+        { id: 'channels',   icon: '⇌',  label: 'Channel Mix' },
       ]
     },
   ];
 
   const handleNavigate = (id) => {
     onNavigate(id);
-    onClose(); // auto-close the drawer on mobile after picking a page
+    onClose();
   };
 
   return (
@@ -53,30 +53,57 @@ function Sidebar({ currentPage, onNavigate, onLogout, isOpen, onToggle, onClose 
       />
 
       <div className={`sidebar ${isOpen ? 'open' : ''}`}>
+        {/* Logo */}
         <div className="sidebar-logo">
-          <div className="brand">▸ KnitWorks</div>
-          <div className="tagline">Sales Intelligence Platform</div>
+          <div className="brand">
+            <span className="brand-mark">▸</span>
+            DairyTop
+          </div>
+          <div className="tagline">Sales Intelligence</div>
         </div>
+
+        {/* Nav */}
         <nav className="nav">
           {navSections.map((section, idx) => (
-            <div key={idx}>
+            <div key={idx} className="nav-group">
               <div className="nav-section">{section.section}</div>
               {section.items.map(item => (
                 <div
                   key={item.id}
                   className={`nav-item ${currentPage === item.id ? 'active' : ''}`}
                   onClick={() => handleNavigate(item.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => e.key === 'Enter' && handleNavigate(item.id)}
                 >
-                  <span className="nav-icon">{item.icon}</span>
+                  <span className="nav-icon" aria-hidden="true">{item.icon}</span>
                   <span className="nav-label">{item.label}</span>
+                  {currentPage === item.id && <span className="nav-active-pip" />}
                 </div>
               ))}
             </div>
           ))}
         </nav>
+
+        {/* Footer */}
         <div className="sidebar-footer">
-          Data: Jan 2025 – Jul 2026<br />14,317 transactions · 1,349 clients
-          <div className="logout-btn" onClick={onLogout}>↩ Sign out</div>
+          <div className="sidebar-stats">
+            <div className="stat-row">
+              <span className="stat-label">Period</span>
+              <span className="stat-value">{dateRange}</span>
+            </div>
+            <div className="stat-row">
+              <span className="stat-label">Transactions</span>
+              <span className="stat-value">{totalTransactions?.toLocaleString('en-US')}</span>
+            </div>
+            <div className="stat-row">
+              <span className="stat-label">Clients</span>
+              <span className="stat-value">{totalClients?.toLocaleString('en-US')}</span>
+            </div>
+          </div>
+          <button className="logout-btn" onClick={onLogout}>
+            <span>↩</span> Sign out
+          </button>
         </div>
       </div>
     </>

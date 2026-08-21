@@ -9,6 +9,8 @@ import {
   categories as categoriesRaw,
   customers as customersRaw,
   products as productsRaw,
+  salesmanCategorySales,
+  totalTonnageByCategory,
   totalClients,
   lastUpdated,
   maxFactuurDatum,
@@ -1280,7 +1282,10 @@ function SalesReps({ fm, label }) {
       ...TOOLTIP_STYLE,
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
-      formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`
+      formatter: p => {
+        const pct = totalRev > 0 ? (p[0].value / totalRev * 100).toFixed(2).replace('.', ',') : '0';
+        return `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)} (${pct}%)`;
+      }
     },
     grid: { left: '2%', right: '6%', bottom: '12%', top: '5%', containLabel: true },
     xAxis: {
@@ -1310,35 +1315,6 @@ function SalesReps({ fm, label }) {
     }]
   });
 
-  
-
-const donutData = reps.map((d,i)=>({
-  name: d.n.split(' ')[0],
-  value: d.rev,
-  itemStyle: {
-    color: selRep && selRep !== d.n ? PALETTE[i % PALETTE.length] + '44' : PALETTE[i % PALETTE.length]
-  }
-}));
-
-const donutOpt = {
-  tooltip: { ...TOOLTIP_STYLE, trigger: 'item', formatter: p => `${p.name}: ${fmtFull(p.value)} (${p.percent}%)` },
-  legend: {
-    bottom: 0,
-    textStyle: { color: '#5F7078', fontSize: 9 },
-    type: 'scroll',
-    selectedMode: 'multiple'
-  },
-  series: [{
-    type: 'pie',
-    radius: ['48%', '70%'],
-    center: ['50%', '44%'],
-    data: donutData,
-    itemStyle: { borderRadius: 3, borderColor: '#fff', borderWidth: 2 },
-    label: { show: false },
-    emphasis: { scaleSize: 6 }
-  }]
-};
-
   const tbl={headers:['#','Verkoper','Revenue','Orders','Avg Order Value'],rows:reps.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),fmtFull(Math.round(d.rev/(d.orders||1)))])};
 
   const handleRepClick = (p) => {
@@ -1346,16 +1322,108 @@ const donutOpt = {
     setSelRep(selRep === repName ? null : repName);
   };
 
-const handleDonutLegend = (params, echartsInstance) => {
-  if (echartsInstance) {
-    echartsInstance.dispatchAction({ type: 'legendSelect', name: params.name });
-  }
-  const rep = reps.find(r => r.n.split(' ')[0] === params.name);
-  const repName = rep?.n || null;
-  setSelRep(prev => prev === repName ? null : repName);
-};
+  /* ── Sales per Salesman by Category ────────────────────────────
+     salesmanCategorySales in data.js has no month field, so it isn't
+     filtered by the date filter bar — it always reflects the full
+     dataset regardless of `fm`/`label` above. */
+  const smCats = useMemo(() => [...new Set(salesmanCategorySales.map(s => s.category))], []);
+  const smOrder = useMemo(() => {
+    const totals = {};
+    salesmanCategorySales.forEach(s => {
+      if (s.salesman === 'Unknown') return;
+      totals[s.salesman] = (totals[s.salesman] || 0) + s.rev;
+    });
+    return Object.entries(totals).sort((a,b) => b[1]-a[1]).map(([n]) => n);
+  }, []);
 
+  const smSeries = smCats.map((cat, i) => ({
+    name: cat,
+    type: 'bar',
+    stack: 'total',
+    data: smOrder.map(n => {
+      const rec = salesmanCategorySales.find(s => s.salesman === n && s.category === cat);
+      return rec ? rec.rev : 0;
+    }),
+    itemStyle: { color: PALETTE[i % PALETTE.length] }
+  }));
 
+  const smOpt = withDataZoom({
+    tooltip: {
+      ...TOOLTIP_STYLE,
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: p => {
+        let html = `<strong>${p[0].name}</strong><br/>`;
+        let sum = 0;
+        p.forEach(s => { if (s.value) { html += `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}<br/>`; sum += s.value; } });
+        html += `<strong>Total: ${fmtFull(sum)}</strong>`;
+        return html;
+      }
+    },
+    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 8 }, type: 'scroll', itemWidth: 10, itemHeight: 10 },
+    grid: { left: '2%', right: '6%', bottom: '20%', top: '5%', containLabel: true },
+    xAxis: {
+      type: 'value', min: 0, minInterval: 1,
+      axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) },
+      splitLine: { lineStyle: { color: '#F0F3F4' } }
+    },
+    yAxis: {
+      type: 'category',
+      data: smOrder.map(n => n.split(' ')[0]),
+      axisLabel: { color: '#5F7078', fontSize: 9 },
+      inverse: true
+    },
+    series: smSeries
+  });
+
+  const smTbl = {
+    headers: ['Verkoper','Category','Revenue','Orders'],
+    rows: [...salesmanCategorySales]
+      .filter(s => s.salesman !== 'Unknown')
+      .sort((a,b) => b.rev - a.rev)
+      .map(s => [s.salesman, s.category, fmtFull(s.rev), fmtN(s.orders)])
+  };
+
+  /* ── Veevoeder & Melkpoeder — revenue + tonnage ────────────────
+     Salesman breakdown intentionally excluded per data reliability;
+     shown as totals only across the Melkpoeder and Veevoeders categories.
+     totalTonnageByCategory also has no month field, so it's not affected
+     by the date filter bar either. */
+  const vmData = useMemo(
+    () => totalTonnageByCategory.filter(c => ['Melkpoeder','Veevoeders'].includes(c.category)),
+    []
+  );
+
+  const vmOpt = {
+    tooltip: {
+      ...TOOLTIP_STYLE,
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: p => {
+        let html = `<strong>${p[0].name}</strong><br/>`;
+        p.forEach(s => {
+          html += `${s.marker} ${s.seriesName}: ${s.seriesName === 'Tonnage' ? fmtNum(s.value) + ' t' : fmtFull(s.value)}<br/>`;
+        });
+        return html;
+      }
+    },
+    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 } },
+    grid: { left: '12%', right: '12%', bottom: '18%', top: '8%', containLabel: true },
+    xAxis: { type: 'category', data: vmData.map(c => c.category), axisLabel: { color: '#5F7078', fontSize: 10 } },
+    yAxis: [
+      { type: 'value', name: 'Revenue', nameTextStyle: { color: '#5F7078', fontSize: 9 }, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+      { type: 'value', name: 'Tonnage', nameTextStyle: { color: '#5F7078', fontSize: 9 }, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmtNum(v) }, splitLine: { show: false } }
+    ],
+    series: [
+      { name: 'Revenue', type: 'bar', data: vmData.map(c => c.revenue), itemStyle: { color: '#40BCF3', borderRadius: [3,3,0,0] }, barMaxWidth: 50 },
+      { name: 'Tonnage', type: 'line', yAxisIndex: 1, data: vmData.map(c => c.tonnage), itemStyle: { color: '#1F3741' }, lineStyle: { width: 2 }, symbol: 'circle', symbolSize: 7 }
+    ]
+  };
+
+  const vmTbl = {
+    headers: ['Category','Revenue','Tonnage','Orders'],
+    rows: vmData.map(c => [c.category, fmtFull(c.revenue), fmtNum(c.tonnage) + ' t', fmtN(c.orders)])
+  };
 
   return (
     <div className="page-area" key="reps">
@@ -1376,17 +1444,11 @@ const handleDonutLegend = (params, echartsInstance) => {
           </div>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Revenue Share" subtitle="Click to isolate" flex={1} tableHeaders={['Verkoper','Revenue','Share']} tableRows={reps.map(d=>[d.n,fmtFull(d.rev),((d.rev/totalRev)*100).toFixed(1).replace('.',',')+'%'])}>
-            <EC 
-              option={donutOpt} 
-              onEvents={{
-                'legendselectchanged': handleDonutLegend,
-                'click': (p) => {
-                  const rep = reps.find(r => r.n.split(' ')[0] === p.name);
-                  setSelRep(selRep === rep?.n ? null : rep?.n || null);
-                }
-              }}
-            />
+          <Panel title="Sales per Verkoper by Category" subtitle="Stacked by category" flex={1} tableHeaders={smTbl.headers} tableRows={smTbl.rows}>
+            <EC option={smOpt} />
+          </Panel>
+          <Panel title="Veevoeder & Melkpoeder" subtitle="Revenue vs tonnage" flex={1} tableHeaders={vmTbl.headers} tableRows={vmTbl.rows}>
+            <EC option={vmOpt} />
           </Panel>
         </div>
       </div>

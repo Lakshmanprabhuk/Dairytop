@@ -549,7 +549,7 @@ function Login({ onLogin }) {
         />
         
         <div className="login-logo">▸ Business Intelligence</div>
-        <div className="login-title">Sales Dashboard</div>
+        <div className="login-title">Dashboard</div>
         <div className="login-sub">Sign in to access your analytics</div>
         
         {locked && (
@@ -1322,10 +1322,7 @@ function SalesReps({ fm, label }) {
     setSelRep(selRep === repName ? null : repName);
   };
 
-  /* ── Sales per Salesman by Category ────────────────────────────
-     salesmanCategorySales in data.js has no month field, so it isn't
-     filtered by the date filter bar — it always reflects the full
-     dataset regardless of `fm`/`label` above. */
+  /* ── Sales per Salesman by Category ──────────────────────────── */
   const smCats = useMemo(() => [...new Set(salesmanCategorySales.map(s => s.category))], []);
   const smOrder = useMemo(() => {
     const totals = {};
@@ -1384,11 +1381,7 @@ function SalesReps({ fm, label }) {
       .map(s => [s.salesman, s.category, fmtFull(s.rev), fmtN(s.orders)])
   };
 
-  /* ── Veevoeder & Melkpoeder — revenue + tonnage ────────────────
-     Salesman breakdown intentionally excluded per data reliability;
-     shown as totals only across the Melkpoeder and Veevoeders categories.
-     totalTonnageByCategory also has no month field, so it's not affected
-     by the date filter bar either. */
+  /* ── Veevoeder & Melkpoeder — revenue + tonnage ──────────────── */
   const vmData = useMemo(
     () => totalTonnageByCategory.filter(c => ['Melkpoeder','Veevoeders'].includes(c.category)),
     []
@@ -1438,10 +1431,9 @@ function SalesReps({ fm, label }) {
           <Panel title="Omzet per Verkoper" subtitle={label} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows}>
             <EC option={barOpt} onEvents={{'click': handleRepClick}}/>
           </Panel>
-          <div className="sec-title"><div className="sec-dot"/>Verkoper Leaderboard</div>
-          <div className="chart-panel" style={{flex:'none',maxHeight:160,overflow:'auto'}}>
-            <InlineTable headers={tbl.headers} rows={tbl.rows} height="140px"/>
-          </div>
+          <Panel title="Verkoper Leaderboard" subtitle="Ranked by revenue" flex={1}>
+            <InlineTable headers={tbl.headers} rows={tbl.rows} height="100%"/>
+          </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
           <Panel title="Sales per Verkoper by Category" subtitle="Stacked by category" flex={1} tableHeaders={smTbl.headers} tableRows={smTbl.rows}>
@@ -2691,7 +2683,7 @@ export default function App() {
         <div className={`sidebar${sideOpen?' open':''}`}>
           <div className="sb-logo">
             <div className="sb-brand"><span className="sb-mark">▸</span>DairyTop</div>
-            <div className="sb-tag">Sales Intelligence</div>
+            <div className="sb-tag">Business Intelligence</div>
           </div>
           <nav className="nav">
             {NAV.map((s,i)=>(

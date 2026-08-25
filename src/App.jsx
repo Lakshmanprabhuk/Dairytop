@@ -10,10 +10,14 @@ import {
   customers as customersRaw,
   products as productsRaw,
   salesmanCategorySales,
+  tonnagePerSalesman,
   totalTonnageByCategory,
   totalClients,
   lastUpdated,
   maxFactuurDatum,
+  openOrderValueFuture,
+  openOrderValuePresent,
+  projectedMTD,
   PALETTE,
   fmt,
   fmtFull,
@@ -223,6 +227,13 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 /* ── CHART AREA ── */
 .charts-row{display:flex;gap:10px;flex:1;min-height:0;min-width:0;}
 .charts-col{display:flex;flex-direction:column;gap:10px;flex:1;min-height:0;min-width:0;}
+
+/* Mini KPI rail — a narrow stack of small stat cards sitting beside a chart */
+.kpi-rail{display:flex;gap:10px;min-height:0;min-width:0;}
+.kpi-rail-col{display:flex;flex-direction:column;gap:8px;flex:0 0 152px;min-height:0;}
+.kpi-mini{padding:10px 12px;justify-content:center;}
+.kpi-mini .kpi-lbl{margin-bottom:4px;}
+.kpi-mini .kpi-val.sm{font-size:12px;}
 .chart-panel{
   flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
   padding:12px 14px;box-shadow:var(--shadow-sm);min-height:0;min-width:0;display:flex;flex-direction:column;
@@ -234,6 +245,19 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .cp-sub{font-size:10px;color:var(--muted);margin-top:1px;}
 .cp-tag{font-size:9px;background:var(--surface2);color:var(--accent2);padding:2px 7px;border-radius:4px;font-weight:700;white-space:nowrap;}
 .cp-body{flex:1;min-height:0;min-width:0;position:relative;overflow:hidden;}
+
+/* Compact panel-header select (period / salesman scope pickers) */
+.panel-select{
+  font-size:9.5px;font-weight:700;font-family:inherit;color:var(--accent2);
+  background:var(--surface2);border:1px solid var(--border);border-radius:6px;
+  padding:3px 18px 3px 7px;cursor:pointer;appearance:none;-webkit-appearance:none;
+  white-space:nowrap;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%2335A9DE' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 6px center;background-size:8px;
+  transition:border-color .14s,color .14s;
+}
+.panel-select:hover{border-color:var(--accent2);}
+.panel-select:focus{outline:none;border-color:var(--accent);}
 
 /* View toggle */
 .view-tog{display:inline-flex;background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:2px;gap:1px;}
@@ -417,6 +441,11 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   .cp-title{font-size:11px;}
   .cp-sub{font-size:9px;}
   .vt-btn{font-size:9px;padding:2px 6px;}
+
+  /* Mini KPI rail: stack above the chart, cards run in a row instead of a column */
+  .kpi-rail{flex-direction:column;}
+  .kpi-rail-col{flex-direction:row;flex:0 0 auto;}
+  .kpi-mini{padding:8px 10px;}
 
   /* Tables */
   .itbl{font-size:9px;}
@@ -650,7 +679,7 @@ function InlineTable({ headers, rows, height }) {
 }
 
 /* Chart panel wrapper */
-function Panel({ title, subtitle, tag, flex, height, style, className, children, defaultView = 'chart', tableHeaders, tableRows }) {
+function Panel({ title, subtitle, tag, controls, flex, height, style, className, children, defaultView = 'chart', tableHeaders, tableRows }) {
   const [view, setView] = useState(defaultView);
   const hasToggle = tableHeaders && tableRows;
   // height (explicit px/number) takes priority over flex-based sizing —
@@ -671,6 +700,7 @@ function Panel({ title, subtitle, tag, flex, height, style, className, children,
           {subtitle && <div className="cp-sub">{subtitle}</div>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap'}}>
+          {controls}
           {tag && <div className="cp-tag">{tag}</div>}
           {hasToggle && (
             <div className="view-tog">
@@ -1128,9 +1158,28 @@ const donutOpt = {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="2025 vs 2026 Comparison" subtitle="Monthly overlay" flex={1}>
-            <EC option={cmpOpt}/>
-          </Panel>
+          <div className="kpi-rail" style={{flex:1}}>
+            <div className="kpi-rail-col">
+              <div className="kpi-card blue kpi-mini">
+                <div className="kpi-lbl">Open Orders (Future)</div>
+                <div className="kpi-val sm">{fmtFull(openOrderValueFuture)}</div>
+                <div className="kpi-chg">Due after today</div>
+              </div>
+              <div className="kpi-card teal kpi-mini">
+                <div className="kpi-lbl">Open Orders (Due)</div>
+                <div className="kpi-val sm">{fmtFull(openOrderValuePresent)}</div>
+                <div className="kpi-chg">Due today or earlier</div>
+              </div>
+              <div className="kpi-card amber kpi-mini">
+                <div className="kpi-lbl">Projected MTD</div>
+                <div className="kpi-val sm">{fmtFull(projectedMTD)}</div>
+                <div className="kpi-chg">Open MTD + Revenue MTD</div>
+              </div>
+            </div>
+            <Panel title="2025 vs 2026 Comparison" subtitle="Monthly overlay" flex={1}>
+              <EC option={cmpOpt}/>
+            </Panel>
+          </div>
           <Panel title="Monthly Revenue Trend" subtitle={label} tag={`${fm.length}m`} flex={1} tableHeaders={lineTable.headers} tableRows={lineTable.rows}>
             <EC option={lineOpt}/>
           </Panel>
@@ -1323,15 +1372,39 @@ function SalesReps({ fm, label }) {
   };
 
   /* ── Sales per Salesman by Category ──────────────────────────── */
+  // Period options are read off the monthly breakdown so they always match
+  // whatever months are actually present in the underlying data.
+  const smPeriods = useMemo(() => {
+    const seen = new Set();
+    salesmanCategorySales.forEach(s => (s.monthly || []).forEach(mo => seen.add(mo.m)));
+    return [...seen];
+  }, []);
+  const [smPeriod, setSmPeriod] = useState('All');
+
+  // Resolve a salesman/category record's revenue/orders for the selected period —
+  // full total when 'All', otherwise that single month's figures (0 if absent).
+  const smRevFor = (rec, period) => {
+    if (!rec) return 0;
+    if (period === 'All') return rec.rev;
+    const mo = (rec.monthly || []).find(m => m.m === period);
+    return mo ? mo.rev : 0;
+  };
+  const smOrdersFor = (rec, period) => {
+    if (!rec) return 0;
+    if (period === 'All') return rec.orders;
+    const mo = (rec.monthly || []).find(m => m.m === period);
+    return mo ? mo.orders : 0;
+  };
+
   const smCats = useMemo(() => [...new Set(salesmanCategorySales.map(s => s.category))], []);
   const smOrder = useMemo(() => {
     const totals = {};
     salesmanCategorySales.forEach(s => {
       if (s.salesman === 'Unknown') return;
-      totals[s.salesman] = (totals[s.salesman] || 0) + s.rev;
+      totals[s.salesman] = (totals[s.salesman] || 0) + smRevFor(s, smPeriod);
     });
     return Object.entries(totals).sort((a,b) => b[1]-a[1]).map(([n]) => n);
-  }, []);
+  }, [smPeriod]);
 
   const smSeries = smCats.map((cat, i) => ({
     name: cat,
@@ -1339,7 +1412,7 @@ function SalesReps({ fm, label }) {
     stack: 'total',
     data: smOrder.map(n => {
       const rec = salesmanCategorySales.find(s => s.salesman === n && s.category === cat);
-      return rec ? rec.rev : 0;
+      return smRevFor(rec, smPeriod);
     }),
     itemStyle: { color: PALETTE[i % PALETTE.length] }
   }));
@@ -1377,15 +1450,53 @@ function SalesReps({ fm, label }) {
     headers: ['Verkoper','Category','Revenue','Orders'],
     rows: [...salesmanCategorySales]
       .filter(s => s.salesman !== 'Unknown')
-      .sort((a,b) => b.rev - a.rev)
-      .map(s => [s.salesman, s.category, fmtFull(s.rev), fmtN(s.orders)])
+      .map(s => ({ ...s, _rev: smRevFor(s, smPeriod), _orders: smOrdersFor(s, smPeriod) }))
+      .filter(s => smPeriod === 'All' || s._rev !== 0 || s._orders !== 0)
+      .sort((a,b) => b._rev - a._rev)
+      .map(s => [s.salesman, s.category, fmtFull(s._rev), fmtN(s._orders)])
   };
 
-  /* ── Veevoeder & Melkpoeder — revenue + tonnage ──────────────── */
-  const vmData = useMemo(
-    () => totalTonnageByCategory.filter(c => ['Melkpoeder','Veevoeders'].includes(c.category)),
+  const smPeriodControl = (
+    <select className="panel-select" value={smPeriod} onChange={e => setSmPeriod(e.target.value)} aria-label="Period">
+      <option value="All">Full period</option>
+      {smPeriods.map(p => <option key={p} value={p}>{p}</option>)}
+    </select>
+  );
+
+  /* ── Veevoeder & Melkpoeder — revenue + tonnage, by category or by salesman ── */
+  const vmPeriods = useMemo(() => {
+    const seen = new Set();
+    totalTonnageByCategory.forEach(c => (c.monthly || []).forEach(mo => seen.add(mo.m)));
+    return [...seen];
+  }, []);
+  const [vmPeriod, setVmPeriod] = useState('All');
+
+  const vmSalesmen = useMemo(
+    () => [...new Set(tonnagePerSalesman.map(t => t.salesman))].filter(n => n !== 'Unknown').sort(),
     []
   );
+  const [vmSalesman, setVmSalesman] = useState('All');
+
+  const VM_CATS = ['Melkpoeder', 'Veevoeders'];
+
+  const vmData = useMemo(() => {
+    const source = vmSalesman === 'All'
+      ? totalTonnageByCategory
+      : tonnagePerSalesman.filter(t => t.salesman === vmSalesman);
+
+    return VM_CATS.map(cat => {
+      const rec = source.find(c => c.category === cat);
+      if (!rec) return { category: cat, revenue: 0, tonnage: 0, orders: 0 };
+      if (vmPeriod === 'All') return rec;
+      const mo = (rec.monthly || []).find(m => m.m === vmPeriod);
+      return {
+        category: cat,
+        revenue: mo ? mo.revenue : 0,
+        tonnage: mo ? mo.tonnage : 0,
+        orders: mo ? (mo.orders ?? rec.orders) : 0,
+      };
+    });
+  }, [vmPeriod, vmSalesman]);
 
   const vmOpt = {
     tooltip: {
@@ -1418,6 +1529,19 @@ function SalesReps({ fm, label }) {
     rows: vmData.map(c => [c.category, fmtFull(c.revenue), fmtNum(c.tonnage) + ' t', fmtN(c.orders)])
   };
 
+  const vmControls = (
+    <>
+      <select className="panel-select" value={vmSalesman} onChange={e => setVmSalesman(e.target.value)} aria-label="Salesman">
+        <option value="All">All salesmen</option>
+        {vmSalesmen.map(n => <option key={n} value={n}>{n}</option>)}
+      </select>
+      <select className="panel-select" value={vmPeriod} onChange={e => setVmPeriod(e.target.value)} aria-label="Period">
+        <option value="All">Full period</option>
+        {vmPeriods.map(p => <option key={p} value={p}>{p}</option>)}
+      </select>
+    </>
+  );
+
   return (
     <div className="page-area" key="reps">
       <div className="kpi-strip">
@@ -1436,10 +1560,10 @@ function SalesReps({ fm, label }) {
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Sales per Verkoper by Category" subtitle="Stacked by category" flex={1} tableHeaders={smTbl.headers} tableRows={smTbl.rows}>
+          <Panel title="Sales per Verkoper by Category" subtitle="Stacked by category" flex={1} controls={smPeriodControl} tableHeaders={smTbl.headers} tableRows={smTbl.rows}>
             <EC option={smOpt} />
           </Panel>
-          <Panel title="Veevoeder & Melkpoeder" subtitle="Revenue vs tonnage" flex={1} tableHeaders={vmTbl.headers} tableRows={vmTbl.rows}>
+          <Panel title="Veevoeder & Melkpoeder" subtitle={vmSalesman === 'All' ? 'Revenue vs tonnage' : `Revenue vs tonnage — ${vmSalesman}`} flex={1} controls={vmControls} tableHeaders={vmTbl.headers} tableRows={vmTbl.rows}>
             <EC option={vmOpt} />
           </Panel>
         </div>

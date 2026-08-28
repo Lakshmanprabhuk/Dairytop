@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import ReactECharts from "echarts-for-react";
+import * as XLSX from 'xlsx';
 import ChatBot from './ChatBot.jsx';
 
 // Import all data from data.js
@@ -17,7 +18,9 @@ import {
   maxFactuurDatum,
   openOrderValueFuture,
   openOrderValuePresent,
+  openOrderValueMTD,
   projectedMTD,
+  turnoverMTD,
   PALETTE,
   fmt,
   fmtFull,
@@ -258,6 +261,16 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 }
 .panel-select:hover{border-color:var(--accent2);}
 .panel-select:focus{outline:none;border-color:var(--accent);}
+
+/* Compact panel-header action button (e.g. Export to Excel) */
+.panel-btn{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:9.5px;font-weight:700;font-family:inherit;color:var(--green);
+  background:rgba(46,155,98,0.08);border:1px solid rgba(46,155,98,0.25);border-radius:6px;
+  padding:3px 9px;cursor:pointer;white-space:nowrap;
+  transition:background .14s,border-color .14s;
+}
+.panel-btn:hover{background:rgba(46,155,98,0.16);border-color:var(--green);}
 
 /* View toggle */
 .view-tog{display:inline-flex;background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:2px;gap:1px;}
@@ -736,6 +749,23 @@ function EC({ option, onEvents }) {
   );
 }
 
+/* Small header-control button that exports a table's headers+rows to an
+   .xlsx file via SheetJS. Used on the Verkoper page for "Omzet per
+   Verkoper" and "Sales per Verkoper by Category". */
+function ExportExcelButton({ filename, headers, rows }) {
+  const handleExport = () => {
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Data');
+    XLSX.writeFile(wb, filename);
+  };
+  return (
+    <button className="panel-btn" onClick={handleExport} title="Export to Excel">
+      ⬇ Excel
+    </button>
+  );
+}
+
 /* ── DATE FILTER ─────────────────────────────────────────────── */
 function DateFilterBar({ filter, setFilter }) {
   const years = [...new Set(monthly.map(m => m.m.split(' ')[1]))].sort();
@@ -975,227 +1005,166 @@ function DateFilterBar({ filter, setFilter }) {
 
 /* ── PAGES ───────────────────────────────────────────────────── */
 
-function Overview({ fm, label }) {
-  const months = fm.map(m=>m.m);
-  const totalRev = fm.reduce((s,m)=>s+m.rev,0);
-  const totalOrders = fm.reduce((s,m)=>s+m.orders,0);
+function Overview() {
+  /* Dashboard has NO period selector — it always reflects "now":
+     the current month for MTD-style figures and the leaderboard, and
+     the trailing 3 months (incl. current) for the YoY bar chart and
+     category split. This is intentionally decoupled from the global
+     `monthly` filter used by every other page. */
+  const orderIdx = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  const reps = useMemo(() => {
-    const g={};
-    salesrepsRaw.filter(r=>months.includes(r.m)).forEach(r=>{
-      const k=r.n.trim();
-      if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};
-      g[k].rev+=r.rev;g[k].qty+=r.qty;g[k].orders+=r.orders;
+  const currentMonthEntry = monthly[monthly.length - 1];      // most recent month in the dataset
+  const currentMonth = currentMonthEntry?.m;                   // e.g. 'Aug 26'
+
+  // Last 3 months including the current one (e.g. Jun/Jul/Aug), each paired
+  // with the same calendar month one year earlier for a YoY comparison.
+  const last3 = monthly.slice(-3);
+  const last3WithPY = last3.map(cur => {
+    const [name, yy] = cur.m.split(' ');
+    const pyYear = String(parseInt(yy, 10) - 1).padStart(2, '0');
+    const py = monthly.find(x => x.m === `${name} ${pyYear}`);
+    return { name, cyLabel: cur.m, cy: cur.rev, py: py ? py.rev : null, pyLabel: py ? py.m : null };
+  });
+
+  /* ── Category split — same trailing-3-month window as the main chart ── */
+  const last3Names = last3.map(m => m.m);
+  const cats = useMemo(() => {
+    const g = {};
+    categoriesRaw.filter(c => last3Names.includes(c.m)).forEach(c => {
+      const k = c.n.trim();
+      if (!g[k]) g[k] = { n: k, rev: 0, orders: 0 };
+      g[k].rev += c.rev; g[k].orders += c.orders;
     });
-    return Object.values(g).sort((a,b)=>b.rev-a.rev);
-  },[months]);
+    return Object.values(g).sort((a, b) => b.rev - a.rev);
+  }, [last3Names.join(',')]);
+  const catsTotalRev = cats.reduce((s, c) => s + c.rev, 0);
 
-  const cats = useMemo(()=>{
-    const g={};
-    categoriesRaw.filter(c=>months.includes(c.m)).forEach(c=>{
-      const k=c.n.trim();
-      if(!g[k])g[k]={n:k,rev:0,orders:0};
-      g[k].rev+=c.rev;g[k].orders+=c.orders;
+  /* ── Verkoper Prestaties — current month only ── */
+  const repsCurrentMonth = useMemo(() => {
+    const g = {};
+    salesrepsRaw.filter(r => r.m === currentMonth).forEach(r => {
+      const k = r.n.trim();
+      if (!g[k]) g[k] = { n: k, rev: 0, qty: 0, orders: 0 };
+      g[k].rev += r.rev; g[k].qty += r.qty; g[k].orders += r.orders;
     });
-    return Object.values(g).sort((a,b)=>b.rev-a.rev);
-  },[months]);
+    return Object.values(g).sort((a, b) => b.rev - a.rev);
+  }, [currentMonth]);
 
-  const totalUnits = reps.reduce((s,r)=>s+r.qty,0);
-  const topProduct = useMemo(()=>{
-    const g={};
-    productsRaw.filter(p=>months.includes(p.m)).forEach(p=>{const k=p.n.trim();if(!g[k])g[k]={n:k,rev:0};g[k].rev+=p.rev;});
-    return Object.values(g).sort((a,b)=>b.rev-a.rev)[0]||{n:'—',rev:0};
-  },[months]);
-  const topRep = reps[0]||{n:'—',rev:0};
-
-  const lineOpt = withDataZoom(withCrosshair({
-    tooltip:{trigger:'axis',formatter:p=>`<strong>${p[0].name}</strong><br/>Revenue: ${fmtFull(p[0].value)}`},
-    grid:{left:'3%',right:'4%',bottom:'12%',top:'8%',containLabel:true},
-    xAxis:{type:'category',data:fm.map(d=>d.m),axisLabel:{color:'#5F7078',fontSize:9},axisLine:{lineStyle:{color:'#DDE6E9'}}},
-    yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    series:[{type:'line',data:fm.map(d=>d.rev),smooth:true,symbol:'circle',symbolSize:5,
-      lineStyle:{color:'#0891B2',width:2},
-      areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(115,212,242,.22)'},{offset:1,color:'rgba(115,212,242,.01)'}]}},
-      itemStyle:{color:'#0891B2',borderColor:'#fff',borderWidth:1.5}}]
-  }));
-
-  const m25=fm.filter(m=>m.m.includes('25')),m26=fm.filter(m=>m.m.includes('26'));
-  const order=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const n25=m25.map(m=>m.m.split(' ')[0]),n26=m26.map(m=>m.m.split(' ')[0]);
-  let cmpMonths=(m25.length&&m26.length)?n25.filter(m=>n26.includes(m)):[...new Set([...n25,...n26])];
-  cmpMonths.sort((a,b)=>order.indexOf(a)-order.indexOf(b));
-  const cmpSeries=[];
-  if(m25.length)cmpSeries.push({name:'2025',type:'bar',data:cmpMonths.map(m=>m25.find(d=>d.m.startsWith(m))?.rev||0),itemStyle:{color:'#0891B2',borderRadius:[3,3,0,0]},barGap:'0%',barCategoryGap:'30%'});
-  if(m26.length)cmpSeries.push({name:'2026',type:'bar',data:cmpMonths.map(m=>m26.find(d=>d.m.startsWith(m))?.rev||0),itemStyle:{color:'#73D4F2',borderRadius:[3,3,0,0]},barGap:'0%',barCategoryGap:'30%'});
-
+  /* ── Main chart: last 3 months, this year vs last year bars ── */
   const cmpOpt = withDataZoom({
     tooltip: {
       ...TOOLTIP_STYLE,
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
-      formatter: function(params) {
+      formatter: function (params) {
         let html = `<strong>${params[0].name}</strong><br/>`;
         params.forEach(p => {
-          html += `${p.marker} ${p.seriesName}: ${fmtFull(p.value)}<br/>`;
+          const val = p.value;
+          html += `${p.marker} ${p.seriesName}: ${val != null ? fmtFull(val) : '—'}<br/>`;
         });
         return html;
       }
     },
-    legend: {
-      bottom: 0,
-      textStyle: { color: '#5F7078', fontSize: 10 },
-      icon: 'roundRect',
-      selectedMode: false
-    },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '16%',
-      top: '5%',
-      containLabel: true
-    },
-    xAxis: {
-      type: 'category',
-      data: cmpMonths,
-      axisLabel: { color: '#5F7078', fontSize: 9 }
-    },
-    yAxis: {
-      type: 'value',
-      minInterval: 1,
-      axisLabel: {
-        color: '#5F7078',
-        fontSize: 9,
-        formatter: v => fmt(v)
-      },
-      splitLine: { lineStyle: { color: '#F0F3F4' } }
-    },
-    series: cmpSeries
+    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false },
+    grid: { left: '3%', right: '4%', bottom: '16%', top: '5%', containLabel: true },
+    xAxis: { type: 'category', data: last3WithPY.map(d => d.name), axisLabel: { color: '#5F7078', fontSize: 9 } },
+    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: [
+      { name: 'Last Year', type: 'bar', data: last3WithPY.map(d => d.py), itemStyle: { color: '#0891B2', borderRadius: [3,3,0,0] }, barGap: '0%', barCategoryGap: '30%' },
+      { name: 'This Year', type: 'bar', data: last3WithPY.map(d => d.cy), itemStyle: { color: '#73D4F2', borderRadius: [3,3,0,0] }, barGap: '0%', barCategoryGap: '30%' },
+    ]
   });
 
-  // Donut chart - ALL items visible by default, single selection toggles
-const donutData = cats.map((d,i)=>({
-  name:d.n,
-  value:d.rev,
-  itemStyle:{ color: PALETTE[i%PALETTE.length] }
-}));
-
-const donutOpt = {
-  tooltip: { 
-  ...TOOLTIP_STYLE, 
-  trigger: 'item', 
-  formatter: p => `${p.name}: ${fmtFull(p.value)} (${p.percent}%)`,
-  position: function (point, params, dom, rect, size) {
-    const [x, y] = point;
-    const { contentSize, viewSize } = size;
-    const chartCenterX = viewSize[0] / 2; // midpoint of chart horizontally
-
-    // Left half → show tooltip on right
-    if (x < chartCenterX) {
-      return [x + 10, Math.max(0, y - contentSize[1] / 2)];
-    } 
-    // Right half → show tooltip on left
-    else {
-      return [x - contentSize[0] - 10, Math.max(0, y - contentSize[1] / 2)];
-    }
-  }
-},
-  legend: {
-    bottom: 0,
-    textStyle: { color: '#5F7078', fontSize: 9 },
-    type: 'scroll',
-    selectedMode: false
-  },
-  series: [{
-    type: 'pie',
-    radius: ['48%', '70%'],
-    center: ['50%', '44%'],
-    data: donutData,
-    itemStyle: { borderRadius: 3, borderColor: '#fff', borderWidth: 2 },
-    label: { show: false },
-    emphasis: { scaleSize: 6 }
-  }]
-};
-
-  const repOpt = withDataZoom({
-    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}` },
-    grid: { left: '2%', right: '6%', bottom: '12%', top: '5%', containLabel: true },
+  /* ── Category split — vertical bar, one bar per category ── */
+  const catBarOpt = withDataZoom({
+    tooltip: {
+      ...TOOLTIP_STYLE,
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)} (${catsTotalRev > 0 ? (p[0].value / catsTotalRev * 100).toFixed(1).replace('.', ',') : 0}%)`
+    },
+    grid: { left: '3%', right: '4%', bottom: '22%', top: '5%', containLabel: true },
     xAxis: {
-      type: 'value',
-      min: 0,
-      minInterval: 1,
-      axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) },
-      splitLine: { lineStyle: { color: '#F0F3F4' } }
-    },
-    yAxis: {
       type: 'category',
-      data: reps.map(d => d.n.split(' ')[0]),
-      axisLabel: { color: '#5F7078', fontSize: 9 },
-      inverse: true
+      data: cats.map(c => c.n.length > 12 ? c.n.slice(0, 12) + '…' : c.n),
+      axisLabel: { color: '#5F7078', fontSize: 8, interval: 0, rotate: 30 }
     },
-    legend: { show: false },
+    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
     series: [{
       type: 'bar',
-      data: reps.map((d, i) => ({
-        value: d.rev,
-        itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: [0, 3, 3, 0] }
-      })),
-      barMaxWidth: 18
+      data: cats.map((c, i) => ({ value: c.rev, itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: [3,3,0,0] } })),
+      barMaxWidth: 30
     }]
   });
 
-  const lineTable={headers:['Month','Revenue','Orders','Avg Order Value'],rows:fm.map(m=>[m.m,fmtFull(m.rev),fmtN(m.orders),fmtFull(Math.round(m.rev/(m.orders||1)))])};
-  const repTable={headers:['#','Verkoper','Revenue','Orders'],rows:reps.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders)])};
+  /* ── Verkoper Prestaties — current month, horizontal bar ── */
+  const repOpt = withDataZoom({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}` },
+    grid: { left: '2%', right: '6%', bottom: '12%', top: '5%', containLabel: true },
+    xAxis: { type: 'value', min: 0, minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    yAxis: { type: 'category', data: repsCurrentMonth.map(d => d.n.split(' ')[0]), axisLabel: { color: '#5F7078', fontSize: 9 }, inverse: true },
+    legend: { show: false },
+    series: [{
+      type: 'bar',
+      data: repsCurrentMonth.map((d, i) => ({ value: d.rev, itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: [0,3,3,0] } })),
+      barMaxWidth: 22
+    }]
+  });
+
+  const cmpTable = { headers: ['Month', 'This Year', 'Last Year'], rows: last3WithPY.map(d => [d.cyLabel, fmtFull(d.cy), d.py != null ? fmtFull(d.py) : '—']) };
+  const catTable = { headers: ['Category', 'Revenue', 'Share'], rows: cats.map(d => [d.n, fmtFull(d.rev), catsTotalRev > 0 ? (d.rev / catsTotalRev * 100).toFixed(1).replace('.', ',') + '%' : '—']) };
+  const repTable = { headers: ['#', 'Verkoper', 'Revenue', 'Orders'], rows: repsCurrentMonth.map((d, i) => [i + 1, d.n, fmtFull(d.rev), fmtN(d.orders)]) };
 
   return (
     <div className="page-area" key="overview">
       <div className="kpi-strip">
-        <div className="kpi-card blue"><div className="kpi-icon">💶</div><div className="kpi-lbl">Total Revenue</div><div className="kpi-val sm">{fmtFull(totalRev)}</div><div className="kpi-chg">{fmtN(totalOrders)} transactions</div></div>
-        <div className="kpi-card teal"><div className="kpi-icon">📦</div><div className="kpi-lbl">Units Sold</div><div className="kpi-val sm">{fmtNum(totalUnits)}</div><div className="kpi-chg">All categories</div></div>
-        <div className="kpi-card green"><div className="kpi-icon">🏢</div><div className="kpi-lbl">Clients</div><div className="kpi-val sm">{totalClients.toLocaleString('de-DE')}</div><div className="kpi-chg">Active accounts</div></div>
-        <div className="kpi-card navy"><div className="kpi-icon">👥</div><div className="kpi-lbl">Verkopers</div><div className="kpi-val sm">{reps.length}</div><div className="kpi-chg">Active Verkoper</div></div>
-        <div className="kpi-card sky"><div className="kpi-icon">🥇</div><div className="kpi-lbl">Top Product</div><div className="kpi-val sm">{topProduct.n.split(' - ')[0]}</div><div className="kpi-chg">{fmtFull(topProduct.rev)}</div></div>
-        <div className="kpi-card amber"><div className="kpi-icon">⭐</div><div className="kpi-lbl">Top Verkoper</div><div className="kpi-val sm">{topRep.n.split(' ')[0]}</div><div className="kpi-chg">{fmtFull(topRep.rev)}</div></div>
+        <div className="kpi-card green">
+          <div className="kpi-lbl">Turnover MTD</div>
+          <div className="kpi-val sm">{fmtFull(turnoverMTD)}</div>
+          <div className="kpi-chg">Revenue this month, to date</div>
+        </div>
+        <div className="kpi-card amber">
+          <div className="kpi-lbl">Projected MTD</div>
+          <div className="kpi-val sm">{fmtFull(projectedMTD)}</div>
+          <div className="kpi-chg">Open MTD + Revenue MTD</div>
+        </div>
+        <div className="kpi-card blue">
+          <div className="kpi-lbl">Open Orders (Future)</div>
+          <div className="kpi-val sm">{fmtFull(openOrderValueFuture)}</div>
+          <div className="kpi-chg">Due after today</div>
+        </div>
+        <div className="kpi-card sky">
+          <div className="kpi-lbl">Open Value MTD</div>
+          <div className="kpi-val sm">{fmtFull(openOrderValueMTD)}</div>
+          <div className="kpi-chg">Open orders due this month</div>
+        </div>
+        <div className="kpi-card teal">
+          <div className="kpi-lbl">Open Value (Full)</div>
+          <div className="kpi-val sm">{fmtFull(openOrderValuePresent)}</div>
+          <div className="kpi-chg">All open orders due today or earlier</div>
+        </div>
       </div>
       <div className="charts-row">
-        <div className="charts-col" style={{flex:2}}>
-          <div className="kpi-rail" style={{flex:1}}>
-            <div className="kpi-rail-col">
-              <div className="kpi-card blue kpi-mini">
-                <div className="kpi-lbl">Open Orders (Future)</div>
-                <div className="kpi-val sm">{fmtFull(openOrderValueFuture)}</div>
-                <div className="kpi-chg">Due after today</div>
-              </div>
-              <div className="kpi-card teal kpi-mini">
-                <div className="kpi-lbl">Open Orders (Due)</div>
-                <div className="kpi-val sm">{fmtFull(openOrderValuePresent)}</div>
-                <div className="kpi-chg">Due today or earlier</div>
-              </div>
-              <div className="kpi-card amber kpi-mini">
-                <div className="kpi-lbl">Projected MTD</div>
-                <div className="kpi-val sm">{fmtFull(projectedMTD)}</div>
-                <div className="kpi-chg">Open MTD + Revenue MTD</div>
-              </div>
-            </div>
-            <Panel title="2025 vs 2026 Comparison" subtitle="Monthly overlay" flex={1}>
-              <EC option={cmpOpt}/>
-            </Panel>
-          </div>
-          <Panel title="Monthly Revenue Trend" subtitle={label} tag={`${fm.length}m`} flex={1} tableHeaders={lineTable.headers} tableRows={lineTable.rows}>
-            <EC option={lineOpt}/>
+        <div className="charts-col" style={{flex:1.4}}>
+          <Panel title="Turnover — Last 3 Months" subtitle={`This year vs last year · through ${currentMonth || '—'}`} flex={1} tableHeaders={cmpTable.headers} tableRows={cmpTable.rows}>
+            <EC option={cmpOpt}/>
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Category Split" subtitle={label} flex={1} tableHeaders={['Category','Revenue','Share']} tableRows={cats.map(d=>[d.n,fmtFull(d.rev),((d.rev/cats.reduce((s,c)=>s+c.rev,0))*100).toFixed(1).replace('.',',')+'%'])}>
-            <EC option={donutOpt} />
-          </Panel>
-          <Panel title="Verkoper Prestaties" subtitle={label} flex={1} tableHeaders={repTable.headers} tableRows={repTable.rows}>
-            <EC option={repOpt} />
+          <Panel title="Category Split" subtitle={`Last 3 months · through ${currentMonth || '—'}`} flex={1} tableHeaders={catTable.headers} tableRows={catTable.rows}>
+            <EC option={catBarOpt} />
           </Panel>
         </div>
+      </div>
+      <div className="charts-row" style={{flex:0.8}}>
+        <Panel title="Verkoper Prestaties" subtitle={`Actual month · ${currentMonth || '—'}`} flex={1} tableHeaders={repTable.headers} tableRows={repTable.rows}>
+          <EC option={repOpt} />
+        </Panel>
       </div>
     </div>
   );
 }
+
 
 function Revenue({ fm, label }) {
   const totalRev = fm.reduce((s,m)=>s+m.rev,0);
@@ -1552,7 +1521,7 @@ function SalesReps({ fm, label }) {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Omzet per Verkoper" subtitle={label} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows}>
+          <Panel title="Omzet per Verkoper" subtitle={label} flex={1} controls={<ExportExcelButton filename="omzet_per_verkoper.xlsx" headers={tbl.headers} rows={tbl.rows} />} tableHeaders={tbl.headers} tableRows={tbl.rows}>
             <EC option={barOpt} onEvents={{'click': handleRepClick}}/>
           </Panel>
           <Panel title="Verkoper Leaderboard" subtitle="Ranked by revenue" flex={1}>
@@ -1560,7 +1529,7 @@ function SalesReps({ fm, label }) {
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Sales per Verkoper by Category" subtitle="Stacked by category" flex={1} controls={smPeriodControl} tableHeaders={smTbl.headers} tableRows={smTbl.rows}>
+          <Panel title="Sales per Verkoper by Category" subtitle="Stacked by category" flex={1} controls={<>{smPeriodControl}<ExportExcelButton filename="sales_per_verkoper_by_category.xlsx" headers={smTbl.headers} rows={smTbl.rows} /></>} tableHeaders={smTbl.headers} tableRows={smTbl.rows}>
             <EC option={smOpt} />
           </Panel>
           <Panel title="Veevoeder & Melkpoeder" subtitle={vmSalesman === 'All' ? 'Revenue vs tonnage' : `Revenue vs tonnage — ${vmSalesman}`} flex={1} controls={vmControls} tableHeaders={vmTbl.headers} tableRows={vmTbl.rows}>
@@ -2783,7 +2752,7 @@ export default function App() {
   const renderPage = () => {
     const props={fm,label:filterLabel};
     switch(page){
-      case 'overview': return <Overview {...props}/>;
+      case 'overview': return <Overview/>;
       case 'revenue': return <Revenue {...props}/>;
       case 'salesreps': return <SalesReps {...props}/>;
       case 'customers': return <Customers {...props}/>;
@@ -2840,11 +2809,17 @@ export default function App() {
             <div>
               <div className="tb-title">{PAGE_NAMES[page]}</div>
               <div className="tb-sub">
-                <span>{filterLabel}</span>
-                <span className="tb-sep">·</span>
-                <span>{dateRange}</span>
-                <span className="tb-sep">·</span>
-                <span>All products</span>
+                {page === 'overview' ? (
+                  <span>Live · Current month{monthly.length ? ` (${monthly[monthly.length-1].m})` : ''}</span>
+                ) : (
+                  <>
+                    <span>{filterLabel}</span>
+                    <span className="tb-sep">·</span>
+                    <span>{dateRange}</span>
+                    <span className="tb-sep">·</span>
+                    <span>All products</span>
+                  </>
+                )}
               </div>
             </div>
             <div className="tb-right">
@@ -2852,7 +2827,10 @@ export default function App() {
               <div className="live-badge"><span className="blink-dot"/>Live</div>
             </div>
           </div>
-          <DateFilterBar filter={filter} setFilter={setFilter}/>
+          {/* Period selector applies to every page EXCEPT the Dashboard,
+              which always reflects "now" (current month / trailing 3
+              months) and has no period concept of its own. */}
+          {page !== 'overview' && <DateFilterBar filter={filter} setFilter={setFilter}/>}
           {renderPage()}
           
         </div>

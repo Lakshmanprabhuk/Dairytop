@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import ReactECharts from "echarts-for-react";
 import * as XLSX from 'xlsx';
 import ChatBot from './ChatBot.jsx';
@@ -105,6 +106,7 @@ const css = `
   --green:#2E9B62;--amber:#E5A93D;--red:#D95C5C;
   --text:#1F3741;--muted:#5F7078;--muted2:#7B898F;
   --sidebar-w:220px;
+  --sidebar-w-collapsed:64px;
   --topbar-h:52px;
   --filter-h:56px;
   --r-sm:8px;--r-md:12px;--r-lg:14px;
@@ -119,44 +121,137 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .sidebar{
   position:relative;width:var(--sidebar-w);background:var(--accent3);
   display:flex;flex-direction:column;z-index:10;flex-shrink:0;
+  margin:0;border-radius:0;
   box-shadow:2px 0 20px rgba(0,0,0,0.18);
-  transition:transform .28s cubic-bezier(.4,0,.2,1);
+  transition:width .32s cubic-bezier(.34,1.3,.44,1),margin .32s cubic-bezier(.34,1.3,.44,1),
+             border-radius .32s cubic-bezier(.34,1.3,.44,1),box-shadow .32s ease,
+             transform .28s cubic-bezier(.4,0,.2,1);
+}
+/* Collapsed = a floating rounded capsule rather than a flush rail — lifts
+   off the top/left/bottom edges with a visible gap of page background
+   around it and a bigger, softer elevation shadow, like a dock hovering
+   above the dashboard rather than a strip built into the screen edge.
+   The gentle overshoot easing above (instead of a plain ease-out) is
+   what gives the widen/narrow morph its slightly springy, "settling
+   into place" feel rather than a flat mechanical resize. */
+.sidebar.collapsed{
+  width:var(--sidebar-w-collapsed);
+  margin:14px;
+  border-radius:22px;
+  box-shadow:0 18px 40px rgba(15,23,28,.32),0 6px 16px rgba(15,23,28,.2),inset 0 1px 0 rgba(255,255,255,.05);
 }
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0;}
 
+/* Clips the sidebar's own content to its (possibly rounded, when
+   collapsed) shape, while the collapse-toggle button below stays
+   outside this wrapper on purpose — it deliberately straddles the
+   sidebar's edge, half in / half out, which overflow:hidden here would
+   otherwise chop off. */
+.sidebar-inner{height:100%;display:flex;flex-direction:column;overflow:hidden;border-radius:inherit;}
+
 /* ── SIDEBAR ── */
-.sb-logo{padding:20px 18px 16px;border-bottom:1px solid rgba(255,255,255,0.08);}
+.sb-logo{padding:20px 18px 16px;border-bottom:1px solid rgba(255,255,255,0.08);position:relative;}
+.sidebar.collapsed .sb-logo{padding:12px 0 8px;display:flex;justify-content:center;}
 .sb-brand{font-size:14px;font-weight:800;letter-spacing:.07em;color:#fff;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
 .sb-mark{color:var(--accent);font-size:15px;}
+/* The lone "▸" mark with no wordmark next to it read as an odd stray
+   glyph once collapsed — drop it entirely and shrink the header's
+   padding (above) so the icon rail below shifts up to reclaim that
+   vertical space instead of leaving a gap where the wordmark used to be. */
+.sidebar.collapsed .sb-mark{display:none;}
+.sidebar.collapsed .sb-brand-text{display:none;}
 .sb-tag{font-size:9px;color:rgba(255,255,255,0.38);margin-top:2px;font-weight:500;letter-spacing:.04em;}
-.nav{flex:1;padding:6px 0;overflow-y:auto;}
+.sidebar.collapsed .sb-tag{display:none;}
+/* Collapse/expand toggle — sits on the sidebar's edge like a standard
+   dock/rail control, always reachable regardless of collapsed state. */
+.sb-collapse-btn{
+  position:absolute;top:20px;right:-12px;width:24px;height:24px;border-radius:50%;
+  background:var(--accent);color:#fff;border:2px solid var(--accent3);
+  display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);z-index:11;transition:background .14s,transform .14s;
+}
+.sb-collapse-btn:hover{background:var(--accent2);transform:scale(1.08);}
+.sidebar.collapsed .sb-collapse-btn{right:-12px;top:10px;}
+.nav{flex:1;padding:6px 0;overflow-y:auto;overflow-x:hidden;}
 .nav::-webkit-scrollbar{width:2px;}
 .nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:2px;}
 .nav-section{font-size:8px;letter-spacing:.16em;color:rgba(255,255,255,0.28);text-transform:uppercase;padding:10px 18px 4px;font-weight:700;}
+.sidebar.collapsed .nav-section{display:none;}
+.nav-divider{height:1px;background:rgba(255,255,255,.09);margin:8px 16px;display:none;}
+.sidebar.collapsed .nav-divider{display:block;}
 .nav-item{
-  display:flex;align-items:center;gap:9px;padding:8px 18px;
+  display:flex;align-items:center;gap:9px;padding:8px 18px;position:relative;
   cursor:pointer;font-size:11.5px;font-weight:500;color:rgba(255,255,255,0.58);
   transition:background .14s,color .14s,border-left-color .14s;
   border-left:2px solid transparent;user-select:none;
 }
 .nav-item:hover{background:rgba(64,188,243,0.10);color:rgba(255,255,255,0.90);}
 .nav-item.active{color:#fff;background:rgba(64,188,243,0.16);border-left-color:var(--accent);}
-.nav-icon{font-size:13px;width:16px;text-align:center;flex-shrink:0;opacity:.75;}
+.nav-icon{font-size:13px;width:16px;text-align:center;flex-shrink:0;opacity:.75;transition:transform .15s ease-out;}
+.nav-item.hovered .nav-icon{transform:scale(1.12);opacity:1;}
 .nav-pip{margin-left:auto;width:5px;height:5px;border-radius:50%;background:var(--accent);opacity:.8;}
+/* Collapsed rail: icon-only, centered, like an app dock — the label and
+   section headings hand off to the hover flyout instead. */
+.sidebar.collapsed .nav-item{justify-content:center;padding:11px 0;gap:0;}
+.sidebar.collapsed .nav-icon{font-size:16px;width:auto;}
+.sidebar.collapsed .nav-label{display:none;}
+.sidebar.collapsed .nav-pip{position:absolute;right:8px;top:50%;transform:translateY(-50%);margin-left:0;}
 .sb-footer{padding:10px 16px;border-top:1px solid rgba(255,255,255,0.07);background:rgba(0,0,0,0.12);}
+.sidebar.collapsed .sb-footer{padding:10px 0;display:flex;justify-content:center;}
+.sidebar.collapsed .sb-footer-stats{display:none;}
 .stat-row{display:flex;justify-content:space-between;align-items:baseline;gap:6px;padding:2px 0;}
 .stat-lbl{font-size:9px;color:rgba(255,255,255,0.32);font-weight:700;letter-spacing:.06em;text-transform:uppercase;}
 .stat-val{font-size:10px;color:rgba(255,255,255,0.55);font-family:'JetBrains Mono',monospace;font-weight:500;}
 .logout-btn{display:flex;align-items:center;gap:5px;color:rgba(255,255,255,0.38);cursor:pointer;font-size:11px;font-weight:500;background:none;border:none;padding:8px 0 0;font-family:inherit;transition:color .14s;}
 .logout-btn:hover{color:var(--red);}
+.sidebar.collapsed .logout-btn{padding:8px 0 0;}
+.sidebar.collapsed .logout-btn-label{display:none;}
+
+/* Hover flyout for the collapsed icon rail. Portaled to <body> (see JS)
+   so it always renders as a clean floating element regardless of any
+   ancestor's overflow/stacking — the same escape-hatch used elsewhere in
+   this file. Sits a few px off the rail with a fully rounded pill shape
+   and a soft, evenly-diffused shadow (matching the rounding of the
+   panels elsewhere in the app), rather than an offset shadow that reads
+   as a plain rectangle behind it.
+   the "key={id}" prop on the portaled node (see JS) forces a fresh mount — and so
+   a fresh play of this entrance animation — every time a *different*
+   icon is hovered, which is what makes each tray feel like it belongs to
+   that specific icon instead of one tooltip sliding between them. */
+.nav-flyout{
+  position:fixed;z-index:400;pointer-events:none;
+  display:flex;align-items:center;gap:9px;
+  background:linear-gradient(135deg,var(--accent3) 0%,#16262c 100%);
+  color:#fff;padding:0 16px 0 10px;height:42px;
+  border-radius:14px;
+  box-shadow:0 10px 28px rgba(15,23,28,.38),0 3px 10px rgba(15,23,28,.2),inset 0 1px 0 rgba(255,255,255,.06);
+  white-space:nowrap;
+  will-change:clip-path,opacity;
+  animation:navFlyoutPull .2s cubic-bezier(.22,.9,.36,1) both;
+}
+@keyframes navFlyoutPull{
+  from{opacity:0;clip-path:inset(0 100% 0 0 round 14px);}
+  to{opacity:1;clip-path:inset(0 0 0 0 round 14px);}
+}
+.nav-flyout-badge{
+  width:24px;height:24px;border-radius:50%;background:var(--accent);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;
+  box-shadow:0 0 0 3px rgba(64,188,243,.2);
+}
+.nav-flyout-text{display:flex;flex-direction:column;line-height:1.3;}
+.nav-flyout-title{font-size:11.5px;font-weight:700;color:#fff;}
+.nav-flyout-desc{font-size:9px;color:rgba(255,255,255,.55);margin-top:1px;}
+.nav-flyout-chevron{font-size:12px;color:rgba(255,255,255,.35);}
 
 /* ── TOPBAR ── */
 .topbar{
   height:var(--topbar-h);background:rgba(255,255,255,0.92);backdrop-filter:blur(14px);
   border-bottom:1px solid var(--border);padding:0 20px;
+  margin:0;border-radius:0;
   display:flex;align-items:center;justify-content:space-between;
   flex-shrink:0;gap:12px;
   box-shadow:0 1px 0 rgba(31,55,65,0.06),0 2px 12px rgba(31,55,65,0.04);
+  transition:margin .32s cubic-bezier(.34,1.3,.44,1),border-radius .32s cubic-bezier(.34,1.3,.44,1),box-shadow .32s ease;
 }
 .tb-title{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.2px;}
 .tb-sub{font-size:10.5px;color:var(--muted);margin-top:1px;display:flex;align-items:center;gap:5px;}
@@ -175,7 +270,9 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .filter-bar{
   height:var(--filter-h);background:var(--surface);border-bottom:1px solid var(--border);
   padding:0 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;
+  margin:0;border-radius:0;
   overflow:visible;position:relative;z-index:100;
+  transition:margin .32s cubic-bezier(.34,1.3,.44,1),border-radius .32s cubic-bezier(.34,1.3,.44,1);
 }
 .filter-label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;white-space:nowrap;}
 .filter-chips{display:flex;gap:6px;align-items:center;overflow-x:auto;padding:4px 0;flex:1;min-width:0;position:relative;}
@@ -203,7 +300,30 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   flex:1;overflow:hidden;padding:12px 16px;
   display:flex;flex-direction:column;gap:10px;
   min-height:0;
+  transition:padding-left .32s cubic-bezier(.34,1.3,.44,1),padding-right .32s cubic-bezier(.34,1.3,.44,1);
 }
+
+/* ── FLOATING TOPBAR/FILTER-BAR — COLLAPSED SIDEBAR ONLY ──────────
+   ".sidebar.collapsed ~ .main" only matches when a *preceding* sibling
+   (the sidebar, which sits before .main in the DOM under .app) has the
+   .collapsed class — so every rule below is scoped to that state and
+   the expanded sidebar keeps the original flush, edge-to-edge bars
+   exactly as they were, app-wide, unaffected.
+   The card edges are deliberately kept at the SAME 14px inset as the
+   sidebar's own floating margin and as page-area's padding here — not
+   "14px margin + extra internal padding" — because it's the box edges
+   that need to line up with the KPI cards below, not the text inside
+   them. Filter-bar gets the identical margin/radius so it reads as the
+   same width and shape as the topbar above it, not a mismatched bar. */
+.sidebar.collapsed ~ .main .topbar{
+  margin:14px 14px 10px 14px;border-radius:18px;border:1px solid var(--border);
+  box-shadow:0 10px 26px rgba(31,55,65,0.08),0 2px 8px rgba(31,55,65,0.05);
+}
+.sidebar.collapsed ~ .main .filter-bar{
+  margin:0 14px 10px 14px;border-radius:18px;border:1px solid var(--border);
+  box-shadow:0 8px 20px rgba(31,55,65,0.06),0 2px 6px rgba(31,55,65,0.04);
+}
+.sidebar.collapsed ~ .main .page-area{padding-left:14px;padding-right:14px;}
 
 /* ── KPI STRIP ── */
 .kpi-strip{display:flex;gap:10px;flex-shrink:0;}
@@ -414,20 +534,53 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   /* Sidebar drawer */
   .sidebar{position:fixed;top:0;left:0;bottom:0;transform:translateX(-100%);z-index:250;width:260px;}
   .sidebar.open{transform:translateX(0);}
+  /* The desktop icon-rail collapse is a separate feature from the mobile
+     drawer — force the drawer to always render fully expanded (labels,
+     sections, footer stats) no matter what collapsed state was left on
+     from a desktop session, and hide the collapse toggle since the
+     drawer already opens/closes via the hamburger button. */
+  .sidebar.collapsed{width:260px !important;margin:0 !important;border-radius:0 !important;box-shadow:2px 0 20px rgba(0,0,0,0.18) !important;}
+  .sidebar.collapsed .sb-logo{padding:20px 18px 16px;display:block;}
+  .sidebar.collapsed .sb-mark{display:inline !important;}
+  .sidebar.collapsed .sb-tag,
+  .sidebar.collapsed .sb-brand-text,
+  .sidebar.collapsed .nav-section,
+  .sidebar.collapsed .nav-label,
+  .sidebar.collapsed .sb-footer-stats,
+  .sidebar.collapsed .logout-btn-label{display:block !important;}
+  .sidebar.collapsed .nav-divider{display:none !important;}
+  .sidebar.collapsed .nav-item{justify-content:flex-start;padding:8px 18px;gap:9px;}
+  .sidebar.collapsed .nav-pip{position:static;transform:none;margin-left:auto;}
+  .sidebar.collapsed .sb-footer{display:block;padding:10px 16px;}
+  .sb-collapse-btn{display:none !important;}
   .main{margin-left:0;}
   .mob-toggle{display:inline-flex;}
   .mob-overlay{z-index:200;}
   .mob-overlay.open{display:block;}
 
-  /* Topbar */
-  .topbar{padding-left:56px;padding-right:12px;height:auto;min-height:var(--topbar-h);flex-wrap:wrap;}
+  /* Topbar — flush edge-to-edge bar on mobile (not the floating rounded
+     card used on desktop/tablet when the sidebar is collapsed); the
+     hamburger button needs the flush top-left corner and floating
+     margins would eat into already-tight mobile width. Matches the
+     scoped ".sidebar.collapsed ~ .main .topbar" selector's specificity
+     so this reliably wins even if a "collapsed" preference was left on
+     from a desktop session. */
+  .topbar,
+  .sidebar.collapsed ~ .main .topbar{margin:0;border-radius:0;border:none;border-bottom:1px solid var(--border);padding-left:56px;padding-right:12px;height:auto;min-height:var(--topbar-h);flex-wrap:wrap;box-shadow:0 1px 0 rgba(31,55,65,0.06),0 2px 12px rgba(31,55,65,0.04);}
   .tb-title{font-size:13px;}
   .tb-sub{font-size:9px;flex-wrap:wrap;}
   .tb-right .tb-time{font-size:9px;}
   .tb-right .live-badge{font-size:8px;padding:2px 6px;}
+  .tb-right{flex-wrap:wrap;gap:6px;row-gap:6px;}
+  .tb-search input{width:120px;font-size:10px;}
+  .tb-search input:focus{width:150px;}
+  .tb-refresh{display:none;}
+  .tb-print-btn{padding:5px 8px;font-size:9px;}
 
-  /* Filter bar: compact single row */
-  .filter-bar{height:auto;padding:6px 12px;flex-wrap:nowrap;gap:6px;}
+  /* Filter bar: compact single row (and, matching the topbar above,
+     cancel the collapsed-sidebar floating card treatment on mobile). */
+  .filter-bar,
+  .sidebar.collapsed ~ .main .filter-bar{height:auto;padding:6px 12px;flex-wrap:nowrap;gap:6px;margin:0;border-radius:0;box-shadow:none;}
   .filter-chips{gap:5px;}
   .filter-chip{font-size:9px;padding:3px 8px;min-height:auto;}
   .filter-label{font-size:9px;}
@@ -435,7 +588,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   .filter-clear{padding:4px 8px;font-size:8px;}
 
   /* Page area: allow scroll on mobile so all content is reachable */
-  .page-area{overflow-y:auto;overflow-x:hidden;padding:8px;gap:8px;-webkit-overflow-scrolling:touch;}
+  .page-area,
+  .sidebar.collapsed ~ .main .page-area{overflow-y:auto;overflow-x:hidden;padding:8px;gap:8px;-webkit-overflow-scrolling:touch;}
 
   /* KPI grid: 3 columns so 6 cards = 2 rows, compact */
   .kpi-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
@@ -491,6 +645,143 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   .kpi-strip{grid-template-columns:repeat(4,1fr);}
   .kpi-card{padding:5px 7px;}
   .chart-panel{min-height:160px;}
+}
+
+/* ── ADDITIVE ENHANCEMENTS ──────────────────────────────────────
+   Everything below is new: chart insights, comparison toggles,
+   click-to-drill highlighting, table search, sticky headers, CSV
+   export, global search, page-snapshot printing, and skeleton
+   loaders. Nothing above this line was modified. ── */
+
+/* Sticky table headers so long tables stay legible while scrolling */
+.itbl thead th{position:sticky;top:0;z-index:2;box-shadow:0 1px 0 var(--border);}
+
+/* Auto-generated "insight" line under a chart-panel header */
+.cp-insight{
+  display:flex;align-items:center;gap:6px;flex-shrink:0;
+  font-size:10.5px;color:var(--accent2);font-weight:600;
+  background:rgba(64,188,243,0.07);border:1px solid rgba(64,188,243,0.16);
+  border-radius:var(--r-sm);padding:5px 9px;margin-bottom:7px;line-height:1.4;
+}
+.cp-insight-icon{flex-shrink:0;opacity:.85;}
+
+/* Delta / trend badges (KPI cards, insights, tables) */
+.delta{display:inline-flex;align-items:center;gap:2px;font-weight:700;font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:1px 6px;border-radius:20px;white-space:nowrap;}
+.delta.up{color:var(--green);background:rgba(46,155,98,0.10);}
+.delta.down{color:var(--red);background:rgba(217,92,92,0.10);}
+.delta.flat{color:var(--muted);background:var(--surface3);}
+
+/* Comparison-overlay toggle button living in a panel's controls row */
+.cmp-toggle{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:9.5px;font-weight:700;font-family:inherit;color:var(--muted);
+  background:var(--surface3);border:1px solid var(--border);border-radius:6px;
+  padding:3px 9px;cursor:pointer;white-space:nowrap;transition:all .14s;
+}
+.cmp-toggle:hover{border-color:var(--accent2);color:var(--accent2);}
+.cmp-toggle.active{background:rgba(64,188,243,0.10);border-color:var(--accent);color:var(--accent2);}
+
+/* Drill-down selection chip ("Showing: X  ✕") shown above a filtered table */
+.drill-chip{
+  display:inline-flex;align-items:center;gap:6px;flex-shrink:0;
+  font-size:10px;font-weight:600;color:var(--accent2);
+  background:rgba(64,188,243,0.1);border:1px solid var(--accent);
+  border-radius:20px;padding:3px 6px 3px 10px;margin-bottom:6px;
+}
+.drill-chip button{
+  border:none;background:rgba(31,55,65,0.08);color:var(--accent3);
+  width:15px;height:15px;border-radius:50%;cursor:pointer;font-size:9px;
+  line-height:1;display:inline-flex;align-items:center;justify-content:center;
+}
+.drill-chip button:hover{background:var(--red);color:#fff;}
+
+/* Client-side table search box, used inside InlineTable */
+.tbl-search-wrap{flex-shrink:0;margin-bottom:6px;position:relative;}
+.tbl-search-wrap input{
+  width:100%;padding:6px 10px 6px 26px;border:1px solid var(--border);border-radius:var(--r-sm);
+  background:var(--surface3);color:var(--text);font-size:11px;font-family:inherit;outline:none;
+  transition:border-color .15s;
+}
+.tbl-search-wrap input:focus{border-color:var(--accent);}
+.tbl-search-wrap::before{content:'🔍';position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:10px;opacity:.5;}
+.tbl-search-count{font-size:9px;color:var(--muted);position:absolute;right:8px;top:50%;transform:translateY(-50%);font-family:'JetBrains Mono',monospace;}
+
+/* Skeleton loader shown briefly while a chart panel mounts */
+.cp-skeleton{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;gap:6px;padding:4px;background:var(--surface);z-index:1;}
+.cp-skeleton-bar{background:linear-gradient(90deg,var(--surface3) 25%,var(--border) 50%,var(--surface3) 75%);background-size:200% 100%;border-radius:4px;animation:skeleton-pulse 1.1s ease-in-out infinite;}
+@keyframes skeleton-pulse{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+
+/* Topbar global search */
+.tb-search{position:relative;flex-shrink:0;}
+.tb-search input{
+  width:190px;padding:6px 10px 6px 28px;border:1px solid var(--border);border-radius:20px;
+  background:var(--surface3);color:var(--text);font-size:11px;font-family:inherit;outline:none;
+  transition:border-color .15s,width .2s;
+}
+.tb-search input:focus{border-color:var(--accent);width:230px;}
+.tb-search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:10px;opacity:.5;pointer-events:none;}
+/* Results are rendered as position:fixed (see JS: measured off the input's
+   getBoundingClientRect, the same escape-hatch pattern DateFilterBar's year
+   popover uses) so the dropdown can never be clipped by an ancestor's
+   overflow:hidden or lose a stacking fight with a chart panel. */
+.tb-search-results{
+  position:fixed;max-height:60vh;overflow-y:auto;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);
+  box-shadow:0 12px 32px rgba(31,55,65,.22);z-index:2000;
+}
+.tb-search-group{border-bottom:1px solid var(--border);}
+.tb-search-group:last-child{border-bottom:none;}
+.tb-search-group-head{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:7px 12px;background:var(--surface3);position:sticky;top:0;
+  font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+}
+.tb-search-group-head strong{color:var(--accent2);}
+.tb-search-group-dest{font-size:8.5px;font-weight:600;color:var(--muted2);text-transform:none;letter-spacing:0;white-space:nowrap;}
+.tb-search-item{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;cursor:pointer;border-bottom:1px solid rgba(221,230,233,.5);transition:background .12s;}
+.tb-search-item:last-child{border-bottom:none;}
+.tb-search-item:hover{background:var(--surface2);}
+.tb-search-item-name{font-size:11px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tb-search-item-arrow{font-size:11px;color:var(--border2);flex-shrink:0;transition:transform .12s,color .12s;}
+.tb-search-item:hover .tb-search-item-arrow{color:var(--accent2);transform:translateX(2px);}
+.tb-search-empty{padding:14px 12px;font-size:10.5px;color:var(--muted);text-align:center;font-style:italic;}
+.tb-refresh{font-size:9.5px;color:var(--muted);white-space:nowrap;}
+
+/* Export-page-as-PDF (print) button in the topbar */
+.tb-print-btn{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:10px;font-weight:700;font-family:inherit;color:var(--accent2);
+  background:var(--surface3);border:1px solid var(--border);border-radius:20px;
+  padding:6px 11px;cursor:pointer;white-space:nowrap;transition:all .14s;flex-shrink:0;
+}
+.tb-print-btn:hover{border-color:var(--accent);background:rgba(64,188,243,0.08);}
+
+/* Print / snapshot styles: hide chrome, show only the active page's content */
+@media print{
+  /* The base layout hard-codes html/body/#root/.app to 100% height with
+     overflow:hidden (see the app-shell rules above) so the on-screen
+     dashboard never scrolls the whole page — only individual panels do.
+     Printing while that's still in effect made the browser capture just
+     whatever one screenful was visible, i.e. a "partial" export. Every
+     ancestor that constrains height has to be freed here so the full,
+     un-scrolled content can flow onto as many printed pages as it needs. */
+  html,body,#root{height:auto !important;overflow:visible !important;}
+  .app{height:auto !important;overflow:visible !important;display:block !important;}
+  .main{overflow:visible !important;height:auto !important;display:block !important;}
+  .sidebar,.tb-search,.tb-search-results,.tb-print-btn,.filter-bar,.mob-toggle,.live-badge,.tb-time,.view-tog,.panel-btn,.cmp-toggle,.tbl-search-wrap,.drill-chip button,.cb-toggle,.cb-panel,.cb-greet,.cb-moo-wrap,.nav-flyout{display:none !important;}
+  .page-area{overflow:visible !important;height:auto !important;display:block !important;padding:12px 16px;}
+  .charts-row{display:block !important;}
+  .charts-col{display:block !important;}
+  /* Charts size themselves off their flex-column parent's height (see
+     .chart-panel{display:flex;flex-direction:column} + .cp-body{flex:1}
+     above) — with charts-row/col no longer flexing, that parent has no
+     height to hand down unless we give the panel one explicitly, so an
+     un-sized chart would otherwise print as a blank sliver. */
+  .chart-panel{box-shadow:none !important;border:1px solid #ccc !important;break-inside:avoid;page-break-inside:avoid;margin-bottom:14px;flex:none !important;height:auto !important;min-height:340px !important;}
+  .cp-body{min-height:270px !important;overflow:visible !important;}
+  .kpi-strip{display:flex !important;flex-wrap:wrap;break-inside:avoid;}
+  .kpi-card{flex:1 1 30% !important;min-width:140px;margin-bottom:8px;}
+  .cp-skeleton{display:none !important;}
 }
 `;
 
@@ -656,12 +947,20 @@ function Login({ onLogin }) {
   );
 }
 
-/* Inline sortable table */
-function InlineTable({ headers, rows, height }) {
+/* Inline sortable table.
+   New: `searchable` turns on a client-side filter box above the table
+   (matches against every cell, case-insensitive); `initialQuery` seeds it
+   (used by the topbar global search to jump straight to a filtered page). */
+function InlineTable({ headers, rows, height, searchable, initialQuery }) {
   const [sc, setSc] = useState(null);
   const [sd, setSd] = useState('asc');
+  const [q, setQ] = useState(initialQuery || '');
+  useEffect(() => { if (initialQuery !== undefined) setQ(initialQuery || ''); }, [initialQuery]);
   const handleSort = (i) => { if (sc === i) setSd(d => d === 'asc' ? 'desc' : 'asc'); else { setSc(i); setSd('asc'); } };
-  const sorted = [...rows].sort((a, b) => {
+  const filteredRows = (searchable && q.trim())
+    ? rows.filter(row => row.some(cell => String(cell).toLowerCase().includes(q.trim().toLowerCase())))
+    : rows;
+  const sorted = [...filteredRows].sort((a, b) => {
     if (sc === null) return 0;
     const av = a[sc], bv = b[sc];
     const an = parseFloat(String(av).replace(/[^0-9.-]/g,'')), bn = parseFloat(String(bv).replace(/[^0-9.-]/g,''));
@@ -669,7 +968,20 @@ function InlineTable({ headers, rows, height }) {
     return sd === 'asc' ? cmp : -cmp;
   });
   return (
-    <div className="tbl-wrap" style={{height}}>
+    <div className="tbl-wrap" style={{height, display:'flex', flexDirection:'column'}}>
+      {searchable && (
+        <div className="tbl-search-wrap">
+          <input
+            type="text"
+            placeholder="Search this table…"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            aria-label="Search table"
+          />
+          {q.trim() && <span className="tbl-search-count">{sorted.length}/{rows.length}</span>}
+        </div>
+      )}
+      <div style={{flex:1, minHeight:0, overflow:'auto'}}>
       <table className="itbl">
         <thead><tr>{headers.map((h,i) => <th key={i} onClick={()=>handleSort(i)}>{h} <span style={{opacity:.5,fontSize:8}}>{sc===i?(sd==='asc'?'↑':'↓'):'⇅'}</span></th>)}</tr></thead>
         <tbody>{sorted.map((row,ri) => {
@@ -687,13 +999,24 @@ function InlineTable({ headers, rows, height }) {
           );
         })}</tbody>
       </table>
+      </div>
     </div>
   );
 }
 
-/* Chart panel wrapper */
-function Panel({ title, subtitle, tag, controls, flex, height, style, className, children, defaultView = 'chart', tableHeaders, tableRows }) {
+/* Chart panel wrapper.
+   New: `insight` renders an auto-generated one-line takeaway under the
+   header; a lightweight skeleton is shown for a beat while the chart
+   mounts instead of a blank panel; `searchableTable` forwards to
+   InlineTable so the chart/table toggle's table view gets a search box;
+   `tableInitialQuery` seeds that search (used by global search). */
+function Panel({ title, subtitle, tag, controls, flex, height, style, className, children, defaultView = 'chart', tableHeaders, tableRows, insight, searchableTable, tableInitialQuery }) {
   const [view, setView] = useState(defaultView);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setReady(true), 260);
+    return () => clearTimeout(t);
+  }, []);
   const hasToggle = tableHeaders && tableRows;
   // height (explicit px/number) takes priority over flex-based sizing —
   // used where a panel must match another element's measured height exactly,
@@ -729,15 +1052,40 @@ function Panel({ title, subtitle, tag, controls, flex, height, style, className,
           )}
         </div>
       </div>
+      {insight && <div className="cp-insight"><span className="cp-insight-icon">💡</span><span>{insight}</span></div>}
       <div className="cp-body">
-        {view === 'chart' ? children : <InlineTable headers={tableHeaders} rows={tableRows} height="100%" />}
+        {!ready && view === 'chart' && (
+          <div className="cp-skeleton" aria-hidden="true">
+            <div className="cp-skeleton-bar" style={{height:'40%'}}/>
+            <div className="cp-skeleton-bar" style={{height:'70%'}}/>
+            <div className="cp-skeleton-bar" style={{height:'55%'}}/>
+            <div className="cp-skeleton-bar" style={{height:'85%'}}/>
+            <div className="cp-skeleton-bar" style={{height:'30%'}}/>
+          </div>
+        )}
+        {view === 'chart' ? children : <InlineTable headers={tableHeaders} rows={tableRows} height="100%" searchable={searchableTable} initialQuery={tableInitialQuery} />}
       </div>
     </div>
   );
 }
 
 /* ECharts wrapper that fills parent */
+// Every live chart instance registers itself here (see EC below) so the
+// sidebar-collapse effect in App can resize them directly, instead of
+// broadcasting a blanket window "resize" event. A direct method call per
+// chart is cheaper than a DOM event (which every resize listener on the
+// page — not just ours — would also wake up for), and it's what makes the
+// difference between the bars visibly keeping pace with the sidebar's
+// width transition versus stuttering behind it.
+const liveChartInstances = new Set();
+
 function EC({ option, onEvents }) {
+  const instRef = useRef(null);
+  const handleReady = (inst) => {
+    instRef.current = inst;
+    liveChartInstances.add(inst);
+  };
+  useEffect(() => () => { if (instRef.current) liveChartInstances.delete(instRef.current); }, []);
   return (
     <ReactECharts
       option={option}
@@ -745,13 +1093,32 @@ function EC({ option, onEvents }) {
       opts={{renderer:'svg'}}
       notMerge={true}
       onEvents={onEvents}
+      onChartReady={handleReady}
     />
   );
 }
 
 /* Small header-control button that exports a table's headers+rows to an
    .xlsx file via SheetJS. Used on the Verkoper page for "Omzet per
-   Verkoper" and "Sales per Verkoper by Category". */
+   Verkoper" and "Sales per Verkoper by Category".
+   Now also renders a matching CSV export button alongside it, built from
+   the same headers/rows — no extra dependency needed for CSV. */
+function csvEscape(val) {
+  const s = String(val ?? '');
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+function downloadCSV(filename, headers, rows) {
+  const lines = [headers, ...rows].map(r => r.map(csvEscape).join(','));
+  const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename.replace(/\.xlsx$/i, '.csv');
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 function ExportExcelButton({ filename, headers, rows }) {
   const handleExport = () => {
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -760,9 +1127,19 @@ function ExportExcelButton({ filename, headers, rows }) {
     XLSX.writeFile(wb, filename);
   };
   return (
-    <button className="panel-btn" onClick={handleExport} title="Export to Excel">
-      ⬇ Excel
-    </button>
+    <span style={{display:'inline-flex',gap:5}}>
+      <button className="panel-btn" onClick={handleExport} title="Export to Excel">
+        ⬇ Excel
+      </button>
+      <button
+        className="panel-btn"
+        style={{color:'var(--accent2)',background:'rgba(64,188,243,0.08)',borderColor:'rgba(64,188,243,0.25)'}}
+        onClick={() => downloadCSV(filename, headers, rows)}
+        title="Export to CSV"
+      >
+        ⬇ CSV
+      </button>
+    </span>
   );
 }
 
@@ -1115,6 +1492,17 @@ function Overview() {
   const catTable = { headers: ['Category', 'Revenue', 'Share'], rows: cats.map(d => [d.n, fmtFull(d.rev), catsTotalRev > 0 ? (d.rev / catsTotalRev * 100).toFixed(1).replace('.', ',') + '%' : '—']) };
   const repTable = { headers: ['#', 'Verkoper', 'Revenue', 'Orders'], rows: repsCurrentMonth.map((d, i) => [i + 1, d.n, fmtFull(d.rev), fmtN(d.orders)]) };
 
+  /* ── Auto-generated insight lines (derived purely from data already loaded) ── */
+  const momDelta = last3.length >= 2 && last3[last3.length - 2].rev
+    ? ((last3[last3.length - 1].rev - last3[last3.length - 2].rev) / last3[last3.length - 2].rev) * 100
+    : null;
+  const turnoverInsight = momDelta != null
+    ? `Revenue ${momDelta >= 0 ? 'up' : 'down'} ${Math.abs(momDelta).toFixed(1)}% vs last month${cats[0] ? ` · Top category: ${cats[0].n} (${catsTotalRev > 0 ? (cats[0].rev / catsTotalRev * 100).toFixed(0) : 0}% of last 3 months)` : ''}`
+    : null;
+  const repInsight = repsCurrentMonth[0]
+    ? `Leading this month: ${repsCurrentMonth[0].n} with ${fmtFull(repsCurrentMonth[0].rev)}${repsCurrentMonth.length > 1 ? ` (${(repsCurrentMonth[0].rev / repsCurrentMonth.reduce((s,r)=>s+r.rev,0) * 100).toFixed(0)}% of this month's revenue)` : ''}`
+    : null;
+
   return (
     <div className="page-area" key="overview">
       <div className="kpi-strip">
@@ -1146,7 +1534,7 @@ function Overview() {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:1.4}}>
-          <Panel title="Turnover — Last 3 Months" subtitle={`This year vs last year · through ${currentMonth || '—'}`} flex={1} tableHeaders={cmpTable.headers} tableRows={cmpTable.rows}>
+          <Panel title="Turnover — Last 3 Months" subtitle={`This year vs last year · through ${currentMonth || '—'}`} flex={1} tableHeaders={cmpTable.headers} tableRows={cmpTable.rows} insight={turnoverInsight}>
             <EC option={cmpOpt}/>
           </Panel>
         </div>
@@ -1157,7 +1545,7 @@ function Overview() {
         </div>
       </div>
       <div className="charts-row" style={{flex:0.8}}>
-        <Panel title="Verkoper Prestaties" subtitle={`Actual month · ${currentMonth || '—'}`} flex={1} tableHeaders={repTable.headers} tableRows={repTable.rows}>
+        <Panel title="Verkoper Prestaties" subtitle={`Actual month · ${currentMonth || '—'}`} flex={1} tableHeaders={repTable.headers} tableRows={repTable.rows} insight={repInsight}>
           <EC option={repOpt} />
         </Panel>
       </div>
@@ -1174,23 +1562,79 @@ function Revenue({ fm, label }) {
 
   const [selectedMonth, setSelectedMonth] = useState(null);
 
+  /* ── "This period vs Previous period" overlay ──────────────────
+     Previous period = the same number of months immediately preceding
+     the current selection, taken from the same `monthly` dataset — no
+     new data required. Aligned by position (index), not by calendar
+     label, since the two windows rarely share month names. */
+  const [showPrevOverlay, setShowPrevOverlay] = useState(false);
+  const prevPeriod = useMemo(() => {
+    if (!fm.length) return [];
+    const startIdx = monthly.findIndex(m => m.m === fm[0].m);
+    if (startIdx <= 0) return [];
+    const from = Math.max(0, startIdx - fm.length);
+    return monthly.slice(from, startIdx);
+  }, [fm]);
+  const canShowPrev = prevPeriod.length > 0;
+  const prevTotal = prevPeriod.reduce((s,m)=>s+m.rev,0);
+  const periodDelta = (canShowPrev && prevTotal) ? ((totalRev - prevTotal) / prevTotal) * 100 : null;
+
   const barOpt = withDataZoom(withCrosshair({
-    tooltip:{trigger:'axis',formatter:p=>`<strong>${p[0].name}</strong><br/>Revenue: ${fmtFull(p[0].value)}`},
-    grid:{left:'3%',right:'4%',bottom:'12%',top:'8%',containLabel:true},
+    tooltip:{
+      trigger:'axis',
+      formatter:p=>{
+        let html = `<strong>${p[0].name}</strong><br/>`;
+        p.forEach(s => { html += `${s.marker} ${s.seriesName}: ${s.value != null ? fmtFull(s.value) : '—'}<br/>`; });
+        return html;
+      }
+    },
+    legend: showPrevOverlay && canShowPrev ? { bottom: 0, textStyle:{color:'#5F7078',fontSize:10}, icon:'roundRect', selectedMode:false } : undefined,
+    grid:{left:'3%',right:'4%',bottom: showPrevOverlay && canShowPrev ? '18%' : '12%',top:'8%',containLabel:true},
     xAxis:{type:'category',data:fm.map(d=>d.m),axisLabel:{color:'#5F7078',fontSize:9}},
     yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    series:[{
-      type:'bar',
-      data:fm.map(d => ({
-        value: d.rev,
-        itemStyle: {
-          color: selectedMonth && selectedMonth !== d.m ? 'rgba(8,145,178,0.2)' : 'rgba(8,145,178,0.75)',
-          borderRadius: [3,3,0,0]
-        }
-      })),
-      barMaxWidth:28
-    }]
+    series:[
+      {
+        name: 'Current period',
+        type:'bar',
+        data:fm.map(d => ({
+          value: d.rev,
+          itemStyle: {
+            color: selectedMonth && selectedMonth !== d.m ? 'rgba(8,145,178,0.2)' : 'rgba(8,145,178,0.75)',
+            borderRadius: [3,3,0,0]
+          }
+        })),
+        barMaxWidth:28
+      },
+      ...(showPrevOverlay && canShowPrev ? [{
+        name: 'Previous period',
+        type: 'line',
+        data: fm.map((_, i) => prevPeriod[i] ? prevPeriod[i].rev : null),
+        smooth: true,
+        symbol: 'circle',
+        symbolSize: 5,
+        lineStyle: { color: '#E5A93D', width: 2, type: 'dashed' },
+        itemStyle: { color: '#E5A93D' }
+      }] : [])
+    ]
   }));
+
+  const prevToggleControl = (
+    <button
+      className={`cmp-toggle${showPrevOverlay ? ' active' : ''}`}
+      onClick={() => setShowPrevOverlay(v => !v)}
+      disabled={!canShowPrev}
+      title={canShowPrev ? 'Overlay the previous equal-length period' : 'No earlier data available to compare'}
+    >
+      ↔ {showPrevOverlay ? 'Hide' : 'vs'} Previous period
+    </button>
+  );
+
+  const revenueInsight = (() => {
+    const parts = [];
+    if (periodDelta != null) parts.push(`Revenue ${periodDelta >= 0 ? 'up' : 'down'} ${Math.abs(periodDelta).toFixed(1)}% vs the previous ${fm.length}-month period`);
+    if (best) parts.push(`best month: ${best.m} (${fmtFull(best.rev)})`);
+    return parts.length ? parts.join(' · ') : null;
+  })();
 
   const m25=fm.filter(m=>m.m.includes('25')),m26=fm.filter(m=>m.m.includes('26'));
   const order=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1263,7 +1707,7 @@ function Revenue({ fm, label }) {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Monthly Revenue" subtitle={label} tag={`${fm.length}m`} flex={1} tableHeaders={barTbl.headers} tableRows={barTbl.rows}>
+          <Panel title="Monthly Revenue" subtitle={label} tag={`${fm.length}m`} flex={1} controls={prevToggleControl} tableHeaders={barTbl.headers} tableRows={barTbl.rows} insight={revenueInsight}>
             <EC option={barOpt} onEvents={{'click': handleMonthClick}}/>
           </Panel>
           <Panel title="2025 vs 2026" subtitle="Year overlay" flex={1}>
@@ -1280,7 +1724,7 @@ function Revenue({ fm, label }) {
   );
 }
 
-function SalesReps({ fm, label }) {
+function SalesReps({ fm, label, highlightQuery }) {
   const months = fm.map(m=>m.m);
   const reps = useMemo(()=>{
     const g={};
@@ -1339,6 +1783,14 @@ function SalesReps({ fm, label }) {
     const repName = reps[p.dataIndex]?.n;
     setSelRep(selRep === repName ? null : repName);
   };
+
+  // Click-to-drill: selecting a bar in "Omzet per Verkoper" filters the
+  // Leaderboard table below to that one rep.
+  const leaderboardRows = selRep ? tbl.rows.filter(r => r[1] === selRep) : tbl.rows;
+
+  const repsInsight = reps[0]
+    ? `${reps[0].n} leads with ${fmtFull(reps[0].rev)}${totalRev > 0 ? ` (${(reps[0].rev/totalRev*100).toFixed(0)}% of shown revenue)` : ''}`
+    : null;
 
   /* ── Sales per Salesman by Category ──────────────────────────── */
   // Period options are read off the monthly breakdown so they always match
@@ -1521,11 +1973,21 @@ function SalesReps({ fm, label }) {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Omzet per Verkoper" subtitle={label} flex={1} controls={<ExportExcelButton filename="omzet_per_verkoper.xlsx" headers={tbl.headers} rows={tbl.rows} />} tableHeaders={tbl.headers} tableRows={tbl.rows}>
+          <Panel title="Omzet per Verkoper" subtitle={label} flex={1} controls={<ExportExcelButton filename="omzet_per_verkoper.xlsx" headers={tbl.headers} rows={tbl.rows} />} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={repsInsight}>
             <EC option={barOpt} onEvents={{'click': handleRepClick}}/>
           </Panel>
-          <Panel title="Verkoper Leaderboard" subtitle="Ranked by revenue" flex={1}>
-            <InlineTable headers={tbl.headers} rows={tbl.rows} height="100%"/>
+          <Panel title="Verkoper Leaderboard" subtitle={selRep ? `Filtered · click the chart to change` : 'Ranked by revenue · click a bar above to drill in'} flex={1}>
+            <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
+              {selRep && (
+                <div className="drill-chip">
+                  Showing: {selRep}
+                  <button onClick={() => setSelRep(null)} title="Clear selection">✕</button>
+                </div>
+              )}
+              <div style={{flex:1, minHeight:0}}>
+                <InlineTable headers={tbl.headers} rows={leaderboardRows} height="100%" searchable initialQuery={highlightQuery}/>
+              </div>
+            </div>
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
@@ -1546,7 +2008,7 @@ function SalesReps({ fm, label }) {
    Bar click-to-isolate selection was removed since selecting a bar
    didn't drive any other action — instead the chart gets the same
    show more / show less / show full pagination as Products. */
-function Customers({ fm, label }) {
+function Customers({ fm, label, highlightQuery }) {
   const months=fm.map(m=>m.m);
   const totalRevenue=fm.reduce((s,m)=>s+m.rev,0);
 
@@ -1589,6 +2051,10 @@ function Customers({ fm, label }) {
 
   const tbl={headers:['#','Customer','Revenue','Orders','Avg Order Value'],rows:currentItems.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),fmtFull(Math.round(d.rev/(d.orders||1)))])};
   const fullTbl={headers:['#','Customer','Revenue','Orders','Avg Order Value'],rows:custs.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),fmtFull(Math.round(d.rev/(d.orders||1)))])};
+
+  const customersInsight = custs[0]
+    ? `Top customer: ${custs[0].n} — ${fmtFull(custs[0].rev)}${totalRevenue > 0 ? ` (${(custs[0].rev/totalRevenue*100).toFixed(1)}% of total revenue)` : ''}`
+    : null;
 
   const PaginationControls = () => (
     <div style={{
@@ -1645,7 +2111,7 @@ function Customers({ fm, label }) {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Customers by Revenue" subtitle={label} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows}>
+          <Panel title="Customers by Revenue" subtitle={label} flex={1} controls={<ExportExcelButton filename="customers_by_revenue.xlsx" headers={fullTbl.headers} rows={fullTbl.rows} />} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={customersInsight}>
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               <div style={{ flex: 1, minHeight: 0 }}>
                 <EC option={barOpt}/>
@@ -1655,8 +2121,8 @@ function Customers({ fm, label }) {
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-<Panel title="Leaderboard" subtitle="Top 15 clients" flex={1}>
-  <InlineTable headers={tbl.headers} rows={tbl.rows.slice(0, 15)} height="100%"/>
+<Panel title="Leaderboard" subtitle="All clients · searchable" flex={1}>
+  <InlineTable headers={fullTbl.headers} rows={fullTbl.rows} height="100%" searchable initialQuery={highlightQuery}/>
 </Panel>
         </div>
       </div>
@@ -1664,7 +2130,7 @@ function Customers({ fm, label }) {
   );
 }
 
-function Products({ fm, label }) {
+function Products({ fm, label, highlightQuery }) {
   const months = fm.map(m => m.m);
   const prods = useMemo(() => {
     const g = {};
@@ -1683,6 +2149,9 @@ function Products({ fm, label }) {
   
   const [itemsPerPage, setItemsPerPage] = useState(15);
   const [currentCount, setCurrentCount] = useState(15);
+  // Jumping in from the global search? Expand to the full list so the
+  // searched-for product is actually present in the table to find.
+  useEffect(() => { if (highlightQuery) setCurrentCount(prods.length); }, [highlightQuery, prods.length]);
   const [donutItemsPerPage, setDonutItemsPerPage] = useState(10);
   const [donutCurrentCount, setDonutCurrentCount] = useState(10);
   
@@ -1968,7 +2437,7 @@ const handleDonutLegend = (params, echartsInstance) => {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{ flex: 2 }}>
-          <Panel title="Top Products by Revenue" subtitle={label} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows}>
+          <Panel title="Top Products by Revenue" subtitle={label} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows} defaultView={highlightQuery ? 'table' : 'chart'} searchableTable tableInitialQuery={highlightQuery}>
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               <div style={{ flex: 1, minHeight: 0 }}>
                 <EC option={barOpt} onEvents={{ 'click': handleBarClick }}/>
@@ -2001,7 +2470,7 @@ const handleDonutLegend = (params, echartsInstance) => {
 /* ── CATEGORIES ───────────────────────────────────────────────
    "Category Revenue" panel now shows only the table (no chart/table
    toggle) — the bar chart and its click handler were removed. */
-function Categories({ fm, label }) {
+function Categories({ fm, label, highlightQuery }) {
   const months=fm.map(m=>m.m);
 
   const cats=useMemo(()=>{
@@ -2038,6 +2507,18 @@ const donutOpt={
 
   const tbl={headers:['#','Category','Revenue','Orders','Share'],rows:cats.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),((d.rev/totalRev)*100).toFixed(1).replace('.',',')+'%'])};
 
+  // Click-to-drill: clicking a donut slice filters the Category Revenue
+  // table on the left down to that one category. Arriving here from the
+  // global search pre-selects the searched-for category the same way.
+  const [selectedCat, setSelectedCat] = useState(highlightQuery || null);
+  useEffect(() => { if (highlightQuery) setSelectedCat(highlightQuery); }, [highlightQuery]);
+  const handleCatDonutClick = (p) => setSelectedCat(prev => prev === p.name ? null : p.name);
+  const catRows = selectedCat ? tbl.rows.filter(r => r[1] === selectedCat) : tbl.rows;
+
+  const catsInsight = cats[0]
+    ? `${cats[0].n} leads with ${fmtFull(cats[0].rev)}${totalRev > 0 ? ` (${(cats[0].rev/totalRev*100).toFixed(0)}% share)` : ''}`
+    : null;
+
   return (
     <div className="page-area" key="cats">
       <div className="kpi-strip">
@@ -2048,13 +2529,23 @@ const donutOpt={
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Category Revenue" subtitle={label} flex={1}>
-            <InlineTable headers={tbl.headers} rows={tbl.rows} height="100%"/>
+          <Panel title="Category Revenue" subtitle={selectedCat ? `Filtered · click the donut to change` : label} flex={1}>
+            <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
+              {selectedCat && (
+                <div className="drill-chip">
+                  Showing: {selectedCat}
+                  <button onClick={() => setSelectedCat(null)} title="Clear selection">✕</button>
+                </div>
+              )}
+              <div style={{flex:1, minHeight:0}}>
+                <InlineTable headers={tbl.headers} rows={catRows} height="100%"/>
+              </div>
+            </div>
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Category Split" flex={1} tableHeaders={['Category','Revenue','Share']} tableRows={cats.map(d=>[d.n,fmtFull(d.rev),((d.rev/totalRev)*100).toFixed(1).replace('.',',')+'%'])}>
-            <EC option={donutOpt} />
+          <Panel title="Category Split" subtitle="Click a slice to drill in" flex={1} tableHeaders={['Category','Revenue','Share']} tableRows={cats.map(d=>[d.n,fmtFull(d.rev),((d.rev/totalRev)*100).toFixed(1).replace('.',',')+'%'])} insight={catsInsight}>
+            <EC option={donutOpt} onEvents={{'click': handleCatDonutClick}} />
           </Panel>
         </div>
       </div>
@@ -2611,13 +3102,31 @@ function FinLedger() {
 
 /* ── APP ────────────────────────────────────────────────────── */
 const NAV = [
-  {section:'Overview',items:[{id:'overview',icon:'▦',label:'Dashboard'},{id:'revenue',icon:'↗',label:'Revenue Trends'}]},
-  {section:'Performance',items:[{id:'salesreps',icon:'◈',label:'Verkoper'},{id:'customers',icon:'⬡',label:'Customers'}]},
-  {section:'Catalogue',items:[{id:'products',icon:'◻',label:'Products'},{id:'categories',icon:'⊞',label:'Categories'}]},
-  {section:'Channels',items:[{id:'channels',icon:'⇌',label:'Channel Mix'}]},
-  {section:'Finance',items:[{id:'plsummary',icon:'⟡',label:'P&L Summary'},{id:'finrevcosts',icon:'↕',label:'Revenue & Costs'},{id:'finledger',icon:'≣',label:'Ledger'}]},
+  {section:'Overview',items:[{id:'overview',icon:'▦',label:'Dashboard',desc:'Live KPIs & monthly trend'},{id:'revenue',icon:'↗',label:'Revenue Trends',desc:'Monthly revenue & period comparison'}]},
+  {section:'Performance',items:[{id:'salesreps',icon:'◈',label:'Verkoper',desc:'Verkoper leaderboard & rankings'},{id:'customers',icon:'⬡',label:'Customers',desc:'Top customers by revenue'}]},
+  {section:'Catalogue',items:[{id:'products',icon:'◻',label:'Products',desc:'Product-level revenue breakdown'},{id:'categories',icon:'⊞',label:'Categories',desc:'Category split & revenue share'}]},
+  {section:'Channels',items:[{id:'channels',icon:'⇌',label:'Channel Mix',desc:'Direct sales vs webshop split'}]},
+  {section:'Finance',items:[{id:'plsummary',icon:'⟡',label:'P&L Summary',desc:'Margins & profit & loss summary'},{id:'finrevcosts',icon:'↕',label:'Revenue & Costs',desc:'Revenue vs cost lines over time'},{id:'finledger',icon:'≣',label:'Ledger',desc:'Full financial ledger detail'}]},
 ];
 const PAGE_NAMES = {overview:'Overview Dashboard',revenue:'Revenue Trends',salesreps:'Verkoper',customers:'Top Customers',products:'Product Analysis',categories:'Category Breakdown',channels:'Channel Mix',plsummary:'P&L Summary',finrevcosts:'Revenue & Costs',finledger:'Ledger'};
+
+// Suggested-question chips passed to ChatBot, per page, so people don't
+// have to type their first question. NOTE: ChatBot.jsx wasn't part of the
+// files provided for this change, so it needs its own update to actually
+// render `suggestedQuestions` / `context` — see the chat message for details.
+const SUGGESTED_QUESTIONS = {
+  overview: ['How is revenue trending this month?', 'Which category is driving sales right now?', 'Who is this month\'s top verkoper?'],
+  revenue: ['What was our best month on record?', 'How does this period compare to the previous one?', 'What\'s the average monthly revenue?'],
+  salesreps: ['Who is the top-performing verkoper?', 'How concentrated is revenue among the top 3 reps?', 'Break down sales by verkoper and category'],
+  customers: ['Who are our top 5 customers?', 'What share of revenue comes from our top customers?', 'What\'s the average revenue per client?'],
+  products: ['What is our best-selling product?', 'How concentrated is revenue across products?', 'Show me products with the smallest share'],
+  categories: ['Which category has the biggest share of revenue?', 'How many active category groups are there?', 'Compare the top two categories'],
+  channels: ['Which channel drives the most revenue?', 'How is revenue split across channels?'],
+  plsummary: ['How is gross margin trending?', 'What is driving EBITDA this period?'],
+  finrevcosts: ['What are our biggest cost drivers?', 'How do revenue and costs compare year over year?'],
+  finledger: ['What are the largest YoY swings in the ledger?', 'Which accounts saw the biggest cost increases?'],
+  default: ['What can you tell me about this page?', 'Summarize the key numbers here'],
+};
 
 // Idle timeout: 30 minutes with NO user interaction. Any interaction
 // (mouse move/click, keypress, scroll, touch) resets the clock, so someone
@@ -2632,6 +3141,92 @@ const AUTH_ACTIVITY_KEY = 'dairytop_auth_activity';
 // would be wasteful; this keeps the recorded "last active" time accurate
 // to within a few seconds, which is more than enough for a 30-minute window.
 const ACTIVITY_WRITE_THROTTLE_MS = 5000;
+
+/* Collapsible left navigation rail. Its hover-flyout state is kept
+   entirely local to this component (not lifted into App) on purpose:
+   the previous version stored it on the top-level App component, so
+   every mouseenter/mouseleave while hovering the collapsed icon rail
+   re-rendered the *entire* app — every chart on the current page along
+   with it — which is what caused the reported lag/hang. Scoping it here
+   means a hover only ever re-renders this small nav tree. */
+function Sidebar({ page, setPage, sideOpen, setSideOpen, collapsed, toggleCollapsed, setHighlightQuery, dateRange, totalTx, totalClients, handleLogout }) {
+  const [navFlyout, setNavFlyout] = useState(null);
+  const handleNavHover = (e, item) => {
+    if (!collapsed) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setNavFlyout({ id: item.id, icon: item.icon, label: item.label, desc: item.desc, top: rect.top + rect.height / 2, left: rect.right + 6 });
+  };
+  const handleNavLeave = () => setNavFlyout(null);
+  const goTo = (id) => { setPage(id); setSideOpen(false); setHighlightQuery(null); };
+
+  return (
+    <>
+      <div className={`sidebar${sideOpen?' open':''}${collapsed?' collapsed':''}`}>
+        <div className="sidebar-inner">
+          <div className="sb-logo">
+            <div className="sb-brand"><span className="sb-mark">▸</span><span className="sb-brand-text">DairyTop</span></div>
+            <div className="sb-tag">Business Intelligence</div>
+          </div>
+          <nav className="nav">
+            {NAV.map((s,i)=>(
+              <div key={i}>
+                {i>0 && <div className="nav-divider"/>}
+                <div className="nav-section">{s.section}</div>
+                {s.items.map(item=>(
+                  <div key={item.id} className={`nav-item${page===item.id?' active':''}${navFlyout?.id===item.id?' hovered':''}`}
+                    onClick={()=>goTo(item.id)}
+                    onMouseEnter={(e)=>handleNavHover(e,item)}
+                    onMouseLeave={handleNavLeave}
+                    role="button" tabIndex={0} onKeyDown={e=>e.key==='Enter'&&goTo(item.id)}>
+                    <span className="nav-icon">{item.icon}</span>
+                    <span className="nav-label">{item.label}</span>
+                    {page===item.id&&<span className="nav-pip"/>}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </nav>
+          <div className="sb-footer">
+            <div className="sb-footer-stats" style={{marginBottom:8}}>
+              <div className="stat-row"><span className="stat-lbl">Period</span><span className="stat-val">{dateRange}</span></div>
+              <div className="stat-row"><span className="stat-lbl">Trans.</span><span className="stat-val">{totalTx.toLocaleString('de-DE')}</span></div>
+              <div className="stat-row"><span className="stat-lbl">Clients</span><span className="stat-val">{totalClients.toLocaleString('de-DE')}</span></div>
+            </div>
+            <button className="logout-btn" onClick={handleLogout} title={collapsed ? 'Sign out' : undefined}
+              onMouseEnter={(e)=>collapsed && handleNavHover(e,{id:'logout',icon:'↩',label:'Sign out',desc:'End your session'})}
+              onMouseLeave={handleNavLeave}>
+              <span>↩</span><span className="logout-btn-label"> Sign out</span>
+            </button>
+          </div>
+        </div>
+        {/* Deliberately outside .sidebar-inner's clipped/rounded box so it
+            can keep straddling the sidebar's edge (half in, half out) even
+            now that the collapsed capsule clips its own rounded corners. */}
+        <button
+          className="sb-collapse-btn"
+          onClick={toggleCollapsed}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-pressed={collapsed}
+        >
+          {collapsed ? '›' : '‹'}
+        </button>
+      </div>
+
+      {navFlyout && createPortal(
+        <div key={navFlyout.id} className="nav-flyout" style={{ top: navFlyout.top, left: navFlyout.left, transform: 'translateY(-50%)' }}>
+          <span className="nav-flyout-badge">{navFlyout.icon}</span>
+          <span className="nav-flyout-text">
+            <span className="nav-flyout-title">{navFlyout.label}</span>
+            {navFlyout.desc && <span className="nav-flyout-desc">{navFlyout.desc}</span>}
+          </span>
+          <span className="nav-flyout-chevron">›</span>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
 
 export default function App() {
   const [authed, setAuthed] = useState(() => {
@@ -2654,10 +3249,164 @@ export default function App() {
     return false;
   });
   
-  const [page, setPage] = useState('overview');
-  const [filter, setFilter] = useState({years:[],months:{}});
+  // Remember the last-viewed page and date filter for this browser tab so a
+  // refresh (or coming back from the login idle-timeout) doesn't dump the
+  // user back at square one. Same sessionStorage pattern already used for
+  // the login lockout above — scoped to the tab, cleared when it closes.
+  const SESSION_PAGE_KEY = 'dairytop_last_page';
+  const SESSION_FILTER_KEY = 'dairytop_last_filter';
+  const [page, setPage] = useState(() => sessionStorage.getItem(SESSION_PAGE_KEY) || 'overview');
+  const [filter, setFilter] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(SESSION_FILTER_KEY);
+      return saved ? JSON.parse(saved) : { years: [], months: {} };
+    } catch { return { years: [], months: {} }; }
+  });
   const [sideOpen, setSideOpen] = useState(false);
+
+  // Collapsible desktop sidebar (icon-only rail vs full labels). Persisted
+  // across visits like the chatbot's remembered position. Mobile ignores
+  // this entirely — see the max-width:900px overrides in the CSS above —
+  // the drawer there always opens fully expanded.
+  const SIDEBAR_COLLAPSE_KEY = 'dairytop_sidebar_collapsed';
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(SIDEBAR_COLLAPSE_KEY) || 'false'); } catch { return false; }
+  });
+  const toggleCollapsed = () => {
+    setCollapsed(v => {
+      const next = !v;
+      try { localStorage.setItem(SIDEBAR_COLLAPSE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+  // ECharts only re-measures when told to — it has no idea its own
+  // container just changed size because the sidebar animated narrower/
+  // wider. The previous version broadcast a plain window "resize" event
+  // on every animation frame; each chart's internal listener would catch
+  // that and call its own resize(), but a DOM event dispatch also wakes
+  // every *other* resize listener on the page and forces a fresh
+  // getBoundingClientRect read each time, which is where the remaining
+  // stutter was coming from. Calling .resize() directly on each live
+  // chart instance (registered via EC above) skips that overhead
+  // entirely, so the bars keep pace with the sidebar's width transition
+  // far more smoothly.
+  useEffect(() => {
+    const DURATION = 340; // a touch past the .26s sidebar width transition, to catch the settle
+    const start = performance.now();
+    let raf;
+    const tick = (now) => {
+      liveChartInstances.forEach(inst => { try { inst.resize(); } catch { /* instance may have just unmounted */ } });
+      if (now - start < DURATION) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [collapsed]);
+
   const [time, setTime] = useState(new Date());
+
+  useEffect(() => { sessionStorage.setItem(SESSION_PAGE_KEY, page); }, [page]);
+  useEffect(() => { try { sessionStorage.setItem(SESSION_FILTER_KEY, JSON.stringify(filter)); } catch {} }, [filter]);
+
+  /* ── Global search (topbar) ─────────────────────────────────────
+     Looks up a typed name against every customer, product, and sales
+     rep already loaded (no new data), and jumps straight to the right
+     page with that name pre-filled into its table search box.
+     Results are grouped by type (Customer / Product / Verkoper), each
+     under its own heading naming the page it opens — so typing
+     something ambiguous like "Ver" doesn't dump 466 mixed rows on the
+     user with no indication of where each one leads. */
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [highlightQuery, setHighlightQuery] = useState(null);
+  const searchIndex = useMemo(() => {
+    const seen = new Set();
+    const idx = [];
+    customersRaw.forEach(c => { if (!seen.has('c:'+c.n)) { seen.add('c:'+c.n); idx.push({ name: c.n, type: 'Customer', page: 'customers' }); } });
+    productsRaw.forEach(p => { if (!seen.has('p:'+p.n)) { seen.add('p:'+p.n); idx.push({ name: p.n, type: 'Product', page: 'products' }); } });
+    salesrepsRaw.forEach(r => { if (!seen.has('r:'+r.n)) { seen.add('r:'+r.n); idx.push({ name: r.n, type: 'Verkoper', page: 'salesreps' }); } });
+    categoriesRaw.forEach(c => { if (!seen.has('cat:'+c.n)) { seen.add('cat:'+c.n); idx.push({ name: c.n, type: 'Category', page: 'categories' }); } });
+    return idx;
+  }, []);
+  const SEARCH_GROUPS = [
+    { type: 'Customer', page: 'customers', label: 'Customers' },
+    { type: 'Product', page: 'products', label: 'Products' },
+    { type: 'Verkoper', page: 'salesreps', label: 'Verkopers' },
+    { type: 'Category', page: 'categories', label: 'Categories' },
+  ];
+  const MAX_PER_GROUP = 6;
+  const groupedResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return SEARCH_GROUPS
+      .map(g => {
+        const matches = searchIndex.filter(i => i.type === g.type && i.name.toLowerCase().includes(q));
+        return { ...g, items: matches.slice(0, MAX_PER_GROUP), total: matches.length };
+      })
+      .filter(g => g.items.length > 0);
+  }, [searchQuery, searchIndex]);
+  const firstResult = groupedResults[0]?.items?.[0];
+  const goToSearchResult = (result) => {
+    setPage(result.page);
+    setHighlightQuery(result.name);
+    setSearchQuery(result.name);
+    setSearchOpen(false);
+  };
+
+  const searchRef = useRef(null);
+  const searchResultsRef = useRef(null);
+  useEffect(() => {
+    // Now that the results dropdown is portaled to document.body (to escape
+    // .topbar's backdrop-filter containing block — see below), it's no
+    // longer a DOM descendant of `.tb-search`. The outside-click check must
+    // also look at the portaled results node, or a mousedown on a result
+    // (which fires before the click) gets treated as "outside" and closes
+    // the dropdown — unmounting the item before its own onClick ever runs.
+    // That was silently swallowing every navigation click.
+    const handler = (e) => {
+      if (searchRef.current?.contains(e.target)) return;
+      if (searchResultsRef.current?.contains(e.target)) return;
+      setSearchOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Position the dropdown with `position:fixed`, measured directly off the
+  // search box's on-screen rect — the same pattern DateFilterBar's year
+  // popover already uses — so it always renders as a clean floating panel
+  // instead of being clipped by `.main{overflow:hidden}` or losing a
+  // stacking fight with chart panels / KPI cards further down the page.
+  const [searchPos, setSearchPos] = useState(null);
+  useLayoutEffect(() => {
+    if (searchOpen && searchQuery.trim() && searchRef.current) {
+      const rect = searchRef.current.getBoundingClientRect();
+      setSearchPos({
+        top: rect.bottom + 6,
+        right: Math.max(8, window.innerWidth - rect.right),
+        width: Math.max(rect.width, 300),
+      });
+    }
+  }, [searchOpen, searchQuery, groupedResults.length]);
+  // Close on a scroll that moves the search box itself (page/window
+  // scrolling, which would leave the dropdown floating in the wrong spot) —
+  // but NOT on scrolling inside the results list, which is just the user
+  // reading further down a long, categorized result set. The previous
+  // version used capture-phase scroll on `window`, which also catches
+  // scroll events bubbling up from inside the dropdown's own scrollable
+  // list, closing it the instant the person tried to scroll it.
+  useEffect(() => {
+    if (!searchOpen) return;
+    const close = (e) => {
+      if (searchResultsRef.current?.contains(e.target)) return;
+      setSearchOpen(false);
+    };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [searchOpen]);
 
   // Track real user activity and reset the idle clock on every interaction.
   useEffect(() => {
@@ -2751,13 +3500,14 @@ export default function App() {
 
   const renderPage = () => {
     const props={fm,label:filterLabel};
+    const searchProps={highlightQuery};
     switch(page){
       case 'overview': return <Overview/>;
       case 'revenue': return <Revenue {...props}/>;
-      case 'salesreps': return <SalesReps {...props}/>;
-      case 'customers': return <Customers {...props}/>;
-      case 'products': return <Products {...props}/>;
-      case 'categories': return <Categories {...props}/>;
+      case 'salesreps': return <SalesReps {...props} {...searchProps}/>;
+      case 'customers': return <Customers {...props} {...searchProps}/>;
+      case 'products': return <Products {...props} {...searchProps}/>;
+      case 'categories': return <Categories {...props} {...searchProps}/>;
       case 'channels': return <Channels {...props}/>;
       case 'plsummary': return <PLSummary/>;
       case 'finrevcosts': return <FinRevCosts/>;
@@ -2766,6 +3516,11 @@ export default function App() {
     }
   };
 
+  // Export the current page as a PDF/snapshot via the browser's native
+  // print dialog (choose "Save as PDF") — print CSS above hides the
+  // sidebar/topbar/filters so only the page content is captured.
+  const handleExportPage = () => window.print();
+
   return (
     <>
             <style>{css}</style>
@@ -2773,36 +3528,19 @@ export default function App() {
         <button className="mob-toggle" onClick={()=>setSideOpen(v=>!v)} aria-label="Menu">{sideOpen?'✕':'☰'}</button>
         <div className={`mob-overlay${sideOpen?' open':''}`} onClick={()=>setSideOpen(false)}/>
 
-        <div className={`sidebar${sideOpen?' open':''}`}>
-          <div className="sb-logo">
-            <div className="sb-brand"><span className="sb-mark">▸</span>DairyTop</div>
-            <div className="sb-tag">Business Intelligence</div>
-          </div>
-          <nav className="nav">
-            {NAV.map((s,i)=>(
-              <div key={i}>
-                <div className="nav-section">{s.section}</div>
-                {s.items.map(item=>(
-                  <div key={item.id} className={`nav-item${page===item.id?' active':''}`}
-                    onClick={()=>{setPage(item.id);setSideOpen(false);}}
-                    role="button" tabIndex={0} onKeyDown={e=>e.key==='Enter'&&(setPage(item.id),setSideOpen(false))}>
-                    <span className="nav-icon">{item.icon}</span>
-                    <span>{item.label}</span>
-                    {page===item.id&&<span className="nav-pip"/>}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </nav>
-          <div className="sb-footer">
-            <div style={{marginBottom:8}}>
-              <div className="stat-row"><span className="stat-lbl">Period</span><span className="stat-val">{dateRange}</span></div>
-              <div className="stat-row"><span className="stat-lbl">Trans.</span><span className="stat-val">{totalTx.toLocaleString('de-DE')}</span></div>
-              <div className="stat-row"><span className="stat-lbl">Clients</span><span className="stat-val">{totalClients.toLocaleString('de-DE')}</span></div>
-            </div>
-            <button className="logout-btn" onClick={handleLogout}><span>↩</span> Sign out</button>
-          </div>
-        </div>
+        <Sidebar
+          page={page}
+          setPage={setPage}
+          sideOpen={sideOpen}
+          setSideOpen={setSideOpen}
+          collapsed={collapsed}
+          toggleCollapsed={toggleCollapsed}
+          setHighlightQuery={setHighlightQuery}
+          dateRange={dateRange}
+          totalTx={totalTx}
+          totalClients={totalClients}
+          handleLogout={handleLogout}
+        />
 
         <div className="main">
           <div className="topbar">
@@ -2823,6 +3561,48 @@ export default function App() {
               </div>
             </div>
             <div className="tb-right">
+              <div className="tb-search" ref={searchRef}>
+                <span className="tb-search-icon">🔍</span>
+                <input
+                  type="text"
+                  placeholder="Find a customer, product, verkoper…"
+                  value={searchQuery}
+                  onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true); }}
+                  onFocus={() => setSearchOpen(true)}
+                  onKeyDown={e => { if (e.key === 'Enter' && firstResult) goToSearchResult(firstResult); if (e.key === 'Escape') setSearchOpen(false); }}
+                  aria-label="Global search"
+                />
+                {searchOpen && searchQuery.trim() && searchPos && createPortal(
+                  <div ref={searchResultsRef} className="tb-search-results" style={{ top: searchPos.top, right: searchPos.right, width: searchPos.width }}>
+                    {groupedResults.length === 0 ? (
+                      <div className="tb-search-empty">No matches in customers, products, or verkopers</div>
+                    ) : groupedResults.map(g => (
+                      <div key={g.type} className="tb-search-group">
+                        <div className="tb-search-group-head">
+                          <span><strong>{g.label}</strong> ({g.total})</span>
+                          <span className="tb-search-group-dest">→ {PAGE_NAMES[g.page]}</span>
+                        </div>
+                        {g.items.map((r, i) => (
+                          <div key={i} className="tb-search-item" onClick={() => goToSearchResult(r)}>
+                            <span className="tb-search-item-name" title={r.name}>{r.name}</span>
+                            <span className="tb-search-item-arrow">→</span>
+                          </div>
+                        ))}
+                        {g.total > g.items.length && (
+                          <div className="tb-search-empty" style={{padding:'5px 12px', fontStyle:'normal'}}>
+                            +{g.total - g.items.length} more — refine your search
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>,
+                  document.body
+                )}
+              </div>
+              <button className="tb-print-btn" onClick={handleExportPage} title="Export this page as a PDF via your browser's print dialog">
+                ⬇ Export page
+              </button>
+              <div className="tb-refresh">Updated <strong>{lastUpdated}</strong></div>
               <div className="tb-time">{time.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>
               <div className="live-badge"><span className="blink-dot"/>Live</div>
             </div>
@@ -2835,7 +3615,10 @@ export default function App() {
           
         </div>
 
-        <ChatBot />
+        <ChatBot
+          context={{ page, pageName: PAGE_NAMES[page], filterLabel, dateRange }}
+          suggestedQuestions={SUGGESTED_QUESTIONS[page] || SUGGESTED_QUESTIONS.default}
+        />
       </div>
     </>
   );

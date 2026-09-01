@@ -178,6 +178,7 @@ const chatCss = `
 }
 .cb-head-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px;}
 .cb-head-sub{font-size:9.5px;color:rgba(255,255,255,.55);margin-top:1px;}
+.cb-head-context{font-size:9px;color:rgba(255,255,255,.75);margin-top:3px;display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.1);padding:1px 7px;border-radius:20px;font-weight:600;}
 .cb-head-right{display:flex;align-items:center;gap:10px;flex-shrink:0;}
 
 .cb-lang{display:flex;border:1px solid rgba(255,255,255,.35);border-radius:7px;overflow:hidden;flex-shrink:0;}
@@ -274,7 +275,7 @@ const chatCss = `
 .cb-moo-4{animation-delay:2.2s;left:-2px;}
 `;
 
-export default function ChatBot() {
+export default function ChatBot({ context, suggestedQuestions } = {}) {
   const [open, setOpen] = useState(false);
   const [lang, setLang] = useState('en');
   const [messages, setMessages] = useState([]);
@@ -296,6 +297,16 @@ export default function ChatBot() {
   const bodyRef = useRef(null);
   const dragRef = useRef({ dragging: false, moved: false, startX: 0, startY: 0, origX: 0, origY: 0 });
   const t = STRINGS[lang];
+
+  // Page-aware suggestion chips: prefer the ones the dashboard passed in for
+  // whatever page is currently open (see App.jsx's SUGGESTED_QUESTIONS), and
+  // fall back to the static translated defaults otherwise. The passed-in
+  // list is English-only today, so it's only swapped in for the EN tab —
+  // the NL tab always shows the maintained Dutch defaults rather than a
+  // mixed-language list.
+  const suggestions = (lang === 'en' && suggestedQuestions && suggestedQuestions.length)
+    ? suggestedQuestions
+    : t.suggestions;
 
   // On first mount: show a greeting speech bubble for 10s, and a few
   // "Moo~" text puffs drifting up from behind the button for 4s.
@@ -389,7 +400,22 @@ export default function ChatBot() {
     setLoading(true);
 
     try {
-      const systemPrompt = buildSystemPrompt(lang);
+      // buildSystemPrompt(lang) already gives the model the full dashboard
+      // dataset; this appends a short, plain-text note about what the user
+      // is actually looking at right now (page + active date filter) so
+      // answers can be scoped to their current view when that's relevant,
+      // without needing to touch utils/chatContext.js itself.
+      const basePrompt = buildSystemPrompt(lang);
+      const contextNote = context
+        ? (lang === 'nl'
+            ? `\n\nContext: de gebruiker bekijkt op dit moment de pagina "${context.pageName}"` +
+              (context.filterLabel ? ` met periodefilter "${context.filterLabel}"${context.dateRange ? ` (${context.dateRange})` : ''}.` : '.') +
+              ' Stem je antwoord hierop af wanneer dat relevant is, maar je mag ook de volledige dataset gebruiken.'
+            : `\n\nContext: the user is currently viewing the "${context.pageName}" page` +
+              (context.filterLabel ? ` with the date filter set to "${context.filterLabel}"${context.dateRange ? ` (${context.dateRange})` : ''}.` : '.') +
+              ' Tailor your answer to what they can currently see when that\'s relevant, but you may still draw on the full dataset.')
+        : '';
+      const systemPrompt = basePrompt + contextNote;
       const historyForApi = nextHistory
         .filter(m => m.role === 'user' || m.role === 'bot')
         .slice(0, -1);
@@ -401,7 +427,7 @@ export default function ChatBot() {
     } finally {
       setLoading(false);
     }
-  }, [input, loading, messages, lang, t]);
+  }, [input, loading, messages, lang, t, context]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -492,6 +518,9 @@ export default function ChatBot() {
             <div>
               <div className="cb-head-title">🐄 {t.title}</div>
               <div className="cb-head-sub">{t.subtitle}</div>
+              {context?.pageName && (
+                <div className="cb-head-context">{lang === 'nl' ? 'Bekijkt: ' : 'Viewing: '}{context.pageName}</div>
+              )}
             </div>
             <div className="cb-head-right">
               <div className="cb-lang" role="group" aria-label="Language">
@@ -520,7 +549,7 @@ export default function ChatBot() {
                 <div className="cb-empty-icon">📊</div>
                 {t.emptyTitle}
                 <div className="cb-suggestions">
-                  {t.suggestions.map(s => (
+                  {suggestions.map(s => (
                     <button key={s} className="cb-sugg-btn" onClick={() => send(s)}>{s}</button>
                   ))}
                 </div>

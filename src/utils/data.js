@@ -9517,7 +9517,7 @@ export const categories = [
 
 export const totalClients = 1411;
 
-export const lastUpdated = '02/09/2026';
+export const lastUpdated = '03/09/2026';
 
 export const maxFactuurDatum = '01/09/2026';
 

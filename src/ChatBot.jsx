@@ -30,6 +30,8 @@ const STRINGS = {
     closeLabel: 'Close',
     sendLabel: 'Send',
     greeting: "Hi! I'm your dashboard assistant 🐮 Ask me anything about your sales & finance data.",
+    greetingBody: "I'm your dashboard assistant 🐮 Ask me anything about your sales & finance data.",
+    timeGreetings: { night: 'Good night', morning: 'Good morning', afternoon: 'Good afternoon', evening: 'Good evening' },
     suggestions: [
       'What was our best revenue month?',
       'Who is the top sales rep?',
@@ -48,6 +50,8 @@ const STRINGS = {
     closeLabel: 'Sluiten',
     sendLabel: 'Verzenden',
     greeting: 'Hoi! Ik ben je dashboard-assistent 🐮 Vraag me gerust iets over je verkoop- en financiële gegevens.',
+    greetingBody: 'Ik ben je dashboard-assistent 🐮 Vraag me gerust iets over je verkoop- en financiële gegevens.',
+    timeGreetings: { night: 'Goedenacht', morning: 'Goedemorgen', afternoon: 'Goedemiddag', evening: 'Goedenavond' },
     suggestions: [
       'Wat was onze beste omzetmaand?',
       'Wie is de beste verkoper?',
@@ -56,6 +60,19 @@ const STRINGS = {
     ],
   },
 };
+
+// Picks the right salutation for the visitor's own system clock (not
+// server time) — morning/afternoon/evening/night bands, localized to
+// whichever tab (EN/NL) is currently active.
+function getTimeGreeting(lang) {
+  const hour = new Date().getHours();
+  const g = (STRINGS[lang] || STRINGS.en).timeGreetings;
+  if (hour < 5) return g.night;
+  if (hour < 12) return g.morning;
+  if (hour < 18) return g.afternoon;
+  if (hour < 22) return g.evening;
+  return g.night;
+}
 
 // ── Layout constants for the draggable widget ──────────────────
 const BTN_SIZE = 58;
@@ -176,6 +193,7 @@ const chatCss = `
   background:var(--accent3);color:#fff;padding:14px 16px;
   display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:8px;
 }
+.cb-head-greeting{font-size:11px;font-weight:700;color:#8FE3B8;margin-bottom:2px;letter-spacing:.1px;}
 .cb-head-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px;}
 .cb-head-sub{font-size:9.5px;color:rgba(255,255,255,.55);margin-top:1px;}
 .cb-head-context{font-size:9px;color:rgba(255,255,255,.75);margin-top:3px;display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.1);padding:1px 7px;border-radius:20px;font-weight:600;}
@@ -275,9 +293,13 @@ const chatCss = `
 .cb-moo-4{animation-delay:2.2s;left:-2px;}
 `;
 
-export default function ChatBot({ context, suggestedQuestions } = {}) {
+export default function ChatBot({ context, suggestedQuestions, userName } = {}) {
   const [open, setOpen] = useState(false);
   const [lang, setLang] = useState('en');
+  // Recomputed on every open (not just once at mount) so a session left
+  // open across a time-of-day boundary — e.g. someone opens it at 11:58
+  // and actually reads it at 12:02 — still shows the right salutation.
+  const [now, setNow] = useState(() => new Date());
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -297,6 +319,15 @@ export default function ChatBot({ context, suggestedQuestions } = {}) {
   const bodyRef = useRef(null);
   const dragRef = useRef({ dragging: false, moved: false, startX: 0, startY: 0, origX: 0, origY: 0 });
   const t = STRINGS[lang];
+  const timeGreeting = getTimeGreeting(lang);
+  const personalGreeting = userName ? `${timeGreeting}, ${userName}` : timeGreeting;
+
+  // Keep the salutation fresh if the widget is left open/idle across a
+  // morning→afternoon-style boundary.
+  useEffect(() => {
+    const iv = setInterval(() => setNow(new Date()), 5 * 60 * 1000);
+    return () => clearInterval(iv);
+  }, []);
 
   // Page-aware suggestion chips: prefer the ones the dashboard passed in for
   // whatever page is currently open (see App.jsx's SUGGESTED_QUESTIONS), and
@@ -490,7 +521,7 @@ export default function ChatBot({ context, suggestedQuestions } = {}) {
           >
             ✕
           </button>
-          {t.greeting}
+          {personalGreeting}! {t.greetingBody}
         </div>
       )}
 
@@ -516,6 +547,7 @@ export default function ChatBot({ context, suggestedQuestions } = {}) {
         >
           <div className="cb-head">
             <div>
+              <div className="cb-head-greeting">{personalGreeting} 👋</div>
               <div className="cb-head-title">🐄 {t.title}</div>
               <div className="cb-head-sub">{t.subtitle}</div>
               {context?.pageName && (

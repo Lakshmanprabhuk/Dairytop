@@ -34,6 +34,16 @@ import {
   fmtPct
 } from './utils/data.js';
 
+/* Turns a login username like "Jan.spiker" or "Joahan.dairytop" into a
+   friendly first name ("Jan", "Joahan") for greetings in the topbar and
+   chatbot. Falls back gracefully for the generic/shared accounts. */
+function formatDisplayName(username) {
+  if (!username) return '';
+  const first = username.split(/[.\s_-]+/)[0];
+  if (!first) return '';
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+}
+
 /* ── SHARED ECHARTS DEFAULTS ──────────────────────────────────── */
 const TOOLTIP_STYLE = {
   backgroundColor: 'rgba(15,35,45,0.96)',
@@ -41,11 +51,6 @@ const TOOLTIP_STYLE = {
   borderWidth: 1,
   textStyle: { color: '#e8f4f8', fontSize: 12, fontFamily: 'Inter, sans-serif' },
   extraCssText: 'border-radius:10px;padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,0.3);max-width:320px;white-space:normal;',
-  // Tooltips must NEVER be clipped by a chart panel's overflow:hidden.
-  // appendToBody detaches the tooltip node and renders it on <body>, escaping
-  // any ancestor's overflow/clipping. confine keeps it fully inside the
-  // viewport (instead of appendToBody's default of "wherever the cursor is,
-  // even off-screen"), so it's always completely visible either way.
   appendToBody: true,
   confine: true,
 };
@@ -109,15 +114,31 @@ const css = `
   --sidebar-w-collapsed:64px;
   --topbar-h:52px;
   --filter-h:56px;
-  --r-sm:8px;--r-md:12px;--r-lg:14px;
-  --shadow-sm:0 1px 4px rgba(31,55,65,0.06),0 2px 8px rgba(31,55,65,0.04);
-  --shadow-md:0 4px 16px rgba(31,55,65,0.09),0 1px 4px rgba(31,55,65,0.04);
+  --r-sm:4px;--r-md:5px;--r-lg:6px;
+  --shadow-sm:0 1px 2px rgba(31,55,65,0.05);
+  --shadow-md:0 2px 6px rgba(31,55,65,0.06);
+  --shadow-lg:0 3px 10px rgba(20,40,50,0.07);
+  --glow-accent:0 0 0 1px rgba(64,188,243,0.18);
+  --surface-elevated:#FCFEFF;
+  --wash-blue:rgba(64,188,243,0.05);
+  --wash-green:rgba(46,155,98,0.05);
+  --wash-amber:rgba(229,169,61,0.06);
+  --wash-red:rgba(217,92,92,0.05);
+  --r-xl:8px;
+  --hairline:1px solid var(--border);
 }
 html,body,#root{height:100%;overflow:hidden;}
 body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;}
 
 /* ── APP SHELL ── */
-.app{display:flex;height:100vh;height:100dvh;overflow:hidden;}
+.app{
+  display:flex;height:100vh;height:100dvh;overflow:hidden;
+  padding-top:env(safe-area-inset-top);
+  padding-bottom:env(safe-area-inset-bottom);
+  padding-left:env(safe-area-inset-left);
+  padding-right:env(safe-area-inset-right);
+}
+html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjust:100%;}
 .sidebar{
   position:relative;width:var(--sidebar-w);background:var(--accent3);
   display:flex;flex-direction:column;z-index:10;flex-shrink:0;
@@ -127,13 +148,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
              border-radius .32s cubic-bezier(.34,1.3,.44,1),box-shadow .32s ease,
              transform .28s cubic-bezier(.4,0,.2,1);
 }
-/* Collapsed = a floating rounded capsule rather than a flush rail — lifts
-   off the top/left/bottom edges with a visible gap of page background
-   around it and a bigger, softer elevation shadow, like a dock hovering
-   above the dashboard rather than a strip built into the screen edge.
-   The gentle overshoot easing above (instead of a plain ease-out) is
-   what gives the widen/narrow morph its slightly springy, "settling
-   into place" feel rather than a flat mechanical resize. */
 .sidebar.collapsed{
   width:var(--sidebar-w-collapsed);
   margin:14px;
@@ -142,11 +156,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 }
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0;}
 
-/* Clips the sidebar's own content to its (possibly rounded, when
-   collapsed) shape, while the collapse-toggle button below stays
-   outside this wrapper on purpose — it deliberately straddles the
-   sidebar's edge, half in / half out, which overflow:hidden here would
-   otherwise chop off. */
 .sidebar-inner{height:100%;display:flex;flex-direction:column;overflow:hidden;border-radius:inherit;}
 
 /* ── SIDEBAR ── */
@@ -154,16 +163,10 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .sidebar.collapsed .sb-logo{padding:12px 0 8px;display:flex;justify-content:center;}
 .sb-brand{font-size:14px;font-weight:800;letter-spacing:.07em;color:#fff;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
 .sb-mark{color:var(--accent);font-size:15px;}
-/* The lone "▸" mark with no wordmark next to it read as an odd stray
-   glyph once collapsed — drop it entirely and shrink the header's
-   padding (above) so the icon rail below shifts up to reclaim that
-   vertical space instead of leaving a gap where the wordmark used to be. */
 .sidebar.collapsed .sb-mark{display:none;}
 .sidebar.collapsed .sb-brand-text{display:none;}
 .sb-tag{font-size:9px;color:rgba(255,255,255,0.38);margin-top:2px;font-weight:500;letter-spacing:.04em;}
 .sidebar.collapsed .sb-tag{display:none;}
-/* Collapse/expand toggle — sits on the sidebar's edge like a standard
-   dock/rail control, always reachable regardless of collapsed state. */
 .sb-collapse-btn{
   position:absolute;top:20px;right:-12px;width:24px;height:24px;border-radius:50%;
   background:var(--accent);color:#fff;border:2px solid var(--accent3);
@@ -186,12 +189,10 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   border-left:2px solid transparent;user-select:none;
 }
 .nav-item:hover{background:rgba(64,188,243,0.10);color:rgba(255,255,255,0.90);}
-.nav-item.active{color:#fff;background:rgba(64,188,243,0.16);border-left-color:var(--accent);}
+.nav-item.active{color:#fff;background:rgba(64,188,243,0.12);border-left-color:var(--accent);}
 .nav-icon{font-size:13px;width:16px;text-align:center;flex-shrink:0;opacity:.75;transition:transform .15s ease-out;}
 .nav-item.hovered .nav-icon{transform:scale(1.12);opacity:1;}
 .nav-pip{margin-left:auto;width:5px;height:5px;border-radius:50%;background:var(--accent);opacity:.8;}
-/* Collapsed rail: icon-only, centered, like an app dock — the label and
-   section headings hand off to the hover flyout instead. */
 .sidebar.collapsed .nav-item{justify-content:center;padding:11px 0;gap:0;}
 .sidebar.collapsed .nav-icon{font-size:16px;width:auto;}
 .sidebar.collapsed .nav-label{display:none;}
@@ -207,17 +208,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .sidebar.collapsed .logout-btn{padding:8px 0 0;}
 .sidebar.collapsed .logout-btn-label{display:none;}
 
-/* Hover flyout for the collapsed icon rail. Portaled to <body> (see JS)
-   so it always renders as a clean floating element regardless of any
-   ancestor's overflow/stacking — the same escape-hatch used elsewhere in
-   this file. Sits a few px off the rail with a fully rounded pill shape
-   and a soft, evenly-diffused shadow (matching the rounding of the
-   panels elsewhere in the app), rather than an offset shadow that reads
-   as a plain rectangle behind it.
-   the "key={id}" prop on the portaled node (see JS) forces a fresh mount — and so
-   a fresh play of this entrance animation — every time a *different*
-   icon is hovered, which is what makes each tray feel like it belongs to
-   that specific icon instead of one tooltip sliding between them. */
 .nav-flyout{
   position:fixed;z-index:400;pointer-events:none;
   display:flex;align-items:center;gap:9px;
@@ -245,15 +235,15 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 
 /* ── TOPBAR ── */
 .topbar{
-  height:var(--topbar-h);background:rgba(255,255,255,0.92);backdrop-filter:blur(14px);
-  border-bottom:1px solid var(--border);padding:0 20px;
+  height:var(--topbar-h);background:var(--surface);
+  border-bottom:var(--hairline);padding:0 20px;
   margin:0;border-radius:0;
   display:flex;align-items:center;justify-content:space-between;
   flex-shrink:0;gap:12px;
-  box-shadow:0 1px 0 rgba(31,55,65,0.06),0 2px 12px rgba(31,55,65,0.04);
-  transition:margin .32s cubic-bezier(.34,1.3,.44,1),border-radius .32s cubic-bezier(.34,1.3,.44,1),box-shadow .32s ease;
+  box-shadow:none;
+  transition:margin .32s cubic-bezier(.34,1.3,.44,1),border-radius .32s cubic-bezier(.34,1.3,.44,1);
 }
-.tb-title{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.2px;}
+.tb-title{font-size:14.5px;font-weight:700;color:var(--text);letter-spacing:-.1px;}
 .tb-sub{font-size:10.5px;color:var(--muted);margin-top:1px;display:flex;align-items:center;gap:5px;}
 .tb-sep{color:var(--border2);}
 .tb-right{display:flex;align-items:center;gap:10px;flex-shrink:0;}
@@ -294,8 +284,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .filter-clear:hover{background:var(--red);color:#fff;}
 
 /* ── PAGE CONTENT AREA ── */
-/* Desktop: no scroll, panels fill remaining height via flex */
-/* Mobile: scroll allowed so all content is reachable */
 .page-area{
   flex:1;overflow:hidden;padding:12px 16px;
   display:flex;flex-direction:column;gap:10px;
@@ -303,86 +291,75 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   transition:padding-left .32s cubic-bezier(.34,1.3,.44,1),padding-right .32s cubic-bezier(.34,1.3,.44,1);
 }
 
-/* ── FLOATING TOPBAR/FILTER-BAR — COLLAPSED SIDEBAR ONLY ──────────
-   ".sidebar.collapsed ~ .main" only matches when a *preceding* sibling
-   (the sidebar, which sits before .main in the DOM under .app) has the
-   .collapsed class — so every rule below is scoped to that state and
-   the expanded sidebar keeps the original flush, edge-to-edge bars
-   exactly as they were, app-wide, unaffected.
-   The card edges are deliberately kept at the SAME 14px inset as the
-   sidebar's own floating margin and as page-area's padding here — not
-   "14px margin + extra internal padding" — because it's the box edges
-   that need to line up with the KPI cards below, not the text inside
-   them. Filter-bar gets the identical margin/radius so it reads as the
-   same width and shape as the topbar above it, not a mismatched bar. */
 .sidebar.collapsed ~ .main .topbar{
-  margin:14px 14px 10px 14px;border-radius:18px;border:1px solid var(--border);
-  box-shadow:0 10px 26px rgba(31,55,65,0.08),0 2px 8px rgba(31,55,65,0.05);
+  margin:14px 14px 10px 14px;border-radius:var(--r-md);border:1px solid var(--border);
+  box-shadow:var(--shadow-sm);
 }
 .sidebar.collapsed ~ .main .filter-bar{
-  margin:0 14px 10px 14px;border-radius:18px;border:1px solid var(--border);
-  box-shadow:0 8px 20px rgba(31,55,65,0.06),0 2px 6px rgba(31,55,65,0.04);
+  margin:0 14px 10px 14px;border-radius:var(--r-md);border:1px solid var(--border);
+  box-shadow:none;
 }
 .sidebar.collapsed ~ .main .page-area{padding-left:14px;padding-right:14px;}
 
 /* ── KPI STRIP ── */
 .kpi-strip{display:flex;gap:10px;flex-shrink:0;}
 .kpi-card{
-  flex:1;min-width:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
-  padding:12px 14px;position:relative;overflow:hidden;
-  box-shadow:var(--shadow-sm);transition:box-shadow .2s,transform .2s;
+  flex:1;min-width:0;background:var(--surface);
+  border:var(--hairline);border-left:2.5px solid var(--kpi-accent,var(--accent));border-radius:var(--r-sm);
+  padding:11px 14px;position:relative;overflow:hidden;
+  box-shadow:none;transition:background .16s,border-color .16s;
 }
-.kpi-card:hover{box-shadow:var(--shadow-md);transform:translateY(-1px);}
-.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:var(--r-lg) var(--r-lg) 0 0;}
-.kpi-card.blue::before{background:linear-gradient(90deg,var(--accent),#73D4F2);}
-.kpi-card.teal::before{background:linear-gradient(90deg,var(--accent2),var(--accent));}
-.kpi-card.navy::before{background:linear-gradient(90deg,var(--accent3),#2E4F5E);}
-.kpi-card.green::before{background:linear-gradient(90deg,var(--green),#4EC48A);}
-.kpi-card.amber::before{background:linear-gradient(90deg,var(--amber),#F5C86A);}
-.kpi-card.sky::before{background:linear-gradient(90deg,#8FD5F5,#B8EAFD);}
-.kpi-card.red::before{background:linear-gradient(90deg,var(--red),#ED8686);}
+.kpi-card:hover{background:var(--surface3);border-color:var(--border2);border-left-color:var(--kpi-accent,var(--accent));}
+.kpi-card.blue{--kpi-accent:var(--accent);}
+.kpi-card.teal{--kpi-accent:var(--accent2);}
+.kpi-card.navy{--kpi-accent:var(--accent3);}
+.kpi-card.green{--kpi-accent:var(--green);}
+.kpi-card.amber{--kpi-accent:var(--amber);}
+.kpi-card.sky{--kpi-accent:#63C4EE;}
+.kpi-card.red{--kpi-accent:var(--red);}
 .kpi-icon{position:absolute;right:10px;top:10px;font-size:16px;opacity:.3;}
-.kpi-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:5px;}
-.kpi-val{font-size:16px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1;color:var(--text);word-break:break-all;}
+.kpi-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:5px;position:relative;}
+.kpi-val{font-size:17px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1;color:var(--text);word-break:break-all;position:relative;letter-spacing:-.2px;}
 .kpi-val.sm{font-size:13px;}
-.kpi-chg{font-size:9.5px;color:var(--muted);margin-top:4px;font-weight:500;}
+.kpi-chg{font-size:9.5px;color:var(--muted);margin-top:5px;font-weight:500;position:relative;display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.kpi-trend{display:inline-flex;align-items:center;gap:2px;font-weight:800;font-size:9.5px;padding:1px 6px 1px 5px;border-radius:20px;font-family:'JetBrains Mono',monospace;}
+.kpi-trend.up{color:#1C7A46;background:rgba(46,155,98,0.12);}
+.kpi-trend.down{color:#B23D3D;background:rgba(217,92,92,0.12);}
+.kpi-spark{position:absolute;right:12px;bottom:10px;opacity:.85;pointer-events:none;}
 
 /* ── CHART AREA ── */
 .charts-row{display:flex;gap:10px;flex:1;min-height:0;min-width:0;}
 .charts-col{display:flex;flex-direction:column;gap:10px;flex:1;min-height:0;min-width:0;}
 
-/* Mini KPI rail — a narrow stack of small stat cards sitting beside a chart */
 .kpi-rail{display:flex;gap:10px;min-height:0;min-width:0;}
 .kpi-rail-col{display:flex;flex-direction:column;gap:8px;flex:0 0 152px;min-height:0;}
 .kpi-mini{padding:10px 12px;justify-content:center;}
 .kpi-mini .kpi-lbl{margin-bottom:4px;}
 .kpi-mini .kpi-val.sm{font-size:12px;}
 .chart-panel{
-  flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
-  padding:12px 14px;box-shadow:var(--shadow-sm);min-height:0;min-width:0;display:flex;flex-direction:column;
-  transition:box-shadow .2s;overflow:hidden;
+  flex:1;background:var(--surface);border:var(--hairline);border-radius:var(--r-sm);
+  padding:12px 14px;box-shadow:none;min-height:0;min-width:0;display:flex;flex-direction:column;
+  transition:border-color .16s;overflow:hidden;position:relative;
 }
-.chart-panel:hover{box-shadow:var(--shadow-md);}
-.cp-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;gap:8px;flex-shrink:0;flex-wrap:wrap;}
-.cp-title{font-size:12px;font-weight:700;color:var(--text);}
-.cp-sub{font-size:10px;color:var(--muted);margin-top:1px;}
-.cp-tag{font-size:9px;background:var(--surface2);color:var(--accent2);padding:2px 7px;border-radius:4px;font-weight:700;white-space:nowrap;}
+.chart-panel:hover{box-shadow:none;border-color:var(--border2);}
+.cp-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:9px;gap:8px;flex-shrink:0;flex-wrap:wrap;
+  padding-bottom:9px;border-bottom:var(--hairline);}
+.cp-title{font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;}
+.cp-sub{font-size:10px;color:var(--muted);margin-top:2px;}
+.cp-tag{font-size:9px;background:var(--surface3);color:var(--accent2);padding:2px 7px;border-radius:3px;font-weight:700;white-space:nowrap;border:1px solid var(--border);}
 .cp-body{flex:1;min-height:0;min-width:0;position:relative;overflow:hidden;}
 
-/* Compact panel-header select (period / salesman scope pickers) */
 .panel-select{
   font-size:9.5px;font-weight:700;font-family:inherit;color:var(--accent2);
   background:var(--surface2);border:1px solid var(--border);border-radius:6px;
   padding:3px 18px 3px 7px;cursor:pointer;appearance:none;-webkit-appearance:none;
   white-space:nowrap;
-  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%2335A9DE' stroke-width='1.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   background-repeat:no-repeat;background-position:right 6px center;background-size:8px;
   transition:border-color .14s,color .14s;
 }
 .panel-select:hover{border-color:var(--accent2);}
 .panel-select:focus{outline:none;border-color:var(--accent);}
 
-/* Compact panel-header action button (e.g. Export to Excel) */
 .panel-btn{
   display:inline-flex;align-items:center;gap:4px;
   font-size:9.5px;font-weight:700;font-family:inherit;color:var(--green);
@@ -392,7 +369,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 }
 .panel-btn:hover{background:rgba(46,155,98,0.16);border-color:var(--green);}
 
-/* View toggle */
 .view-tog{display:inline-flex;background:var(--surface3);border:1px solid var(--border);border-radius:6px;padding:2px;gap:1px;}
 .vt-btn{
   display:inline-flex;align-items:center;gap:4px;padding:3px 8px;
@@ -403,7 +379,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .vt-btn:hover{color:var(--text);background:var(--surface2);}
 .vt-btn.active{background:var(--surface);color:var(--accent2);box-shadow:0 1px 3px rgba(31,55,65,0.1);}
 
-/* Inline table */
 .tbl-wrap{height:100%;width:100%;min-width:0;overflow:auto;}
 .tbl-wrap::-webkit-scrollbar{width:3px;height:3px;}
 .tbl-wrap::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
@@ -425,9 +400,11 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .login-screen{
   position:fixed;inset:0;background:var(--bg);
   background-image:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(64,188,243,.12) 0%,transparent 70%);
-  display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px;
+  display:flex;align-items:center;justify-content:center;z-index:1000;
+  padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
 }
-.login-box{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:48px 40px;width:400px;max-width:100%;box-shadow:var(--shadow-md);position:relative;}
+.login-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:48px 40px;width:400px;max-width:100%;box-shadow:var(--shadow-md);position:relative;}
+.login-box::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent);}
 .login-logo{font-size:9px;letter-spacing:.22em;color:var(--accent);text-transform:uppercase;margin-bottom:8px;font-family:'JetBrains Mono',monospace;font-weight:500;}
 .login-title{font-size:26px;font-weight:800;margin-bottom:4px;color:var(--text);letter-spacing:-.5px;}
 .login-sub{color:var(--muted);font-size:12px;margin-bottom:32px;}
@@ -435,8 +412,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .field label{display:block;font-size:9px;font-weight:700;color:var(--muted2);margin-bottom:5px;letter-spacing:.1em;text-transform:uppercase;}
 .field input{width:100%;padding:11px 13px;background:var(--surface3);border:1.5px solid var(--border);border-radius:var(--r-md);color:var(--text);font-size:14px;font-family:inherit;outline:none;transition:border-color .17s,box-shadow .17s;}
 .field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(64,188,243,.13);}
-.login-btn{width:100%;padding:13px;background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 100%);border:none;border-radius:var(--r-md);color:#fff;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:8px;letter-spacing:.04em;transition:opacity .17s,transform .1s;box-shadow:0 4px 14px rgba(64,188,243,.30);}
-.login-btn:hover:not(:disabled){opacity:.92;}
+.login-btn{width:100%;padding:13px;background:var(--accent3);border:none;border-radius:var(--r-md);color:#fff;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:8px;letter-spacing:.04em;transition:background .15s,transform .1s;box-shadow:none;}
+.login-btn:hover:not(:disabled){background:#2A4855;}
 .login-btn:active:not(:disabled){transform:scale(.98);}
 .login-btn:disabled{opacity:.55;cursor:not-allowed;}
 .login-err{color:var(--red);font-size:11px;margin-top:8px;font-weight:500;}
@@ -460,24 +437,14 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .donut-legend-wrapper::-webkit-scrollbar{height:3px;}
 .donut-legend-wrapper::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
 
-/* ── FINANCE PAGES: allow vertical scrolling so panels get a real floor
-   height instead of being flex-squeezed into each other/overlapping ── */
+/* ── FINANCE PAGES ── */
 .page-area.fin-scroll{overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}
 .page-area.fin-scroll .charts-row{flex:none;}
 .page-area.fin-scroll .chart-panel{min-height:300px !important;}
 .page-area.fin-scroll .kpi-strip{flex-shrink:0;}
-/* Ledger page: the two small watch panels hug their own content instead of
-   being forced to the 300px floor above; the ledger panel gets an explicit
-   JS-measured height (see FinLedger) matching that content height exactly. */
 .page-area.fin-scroll .chart-panel.hug{flex:none !important;min-height:0 !important;height:auto !important;}
 .page-area.fin-scroll .chart-panel.hug .cp-body{flex:none !important;}
 .page-area.fin-scroll .chart-panel.ledger-fixed{min-height:0 !important;}
-/* Fixed-height finance panels (P&L Summary, Revenue & Costs): the explicit
-   height passed via the Panel "height" prop wins outright over the 300px
-   floor above, and stays put when the chart/table toggle swaps content, so
-   a sibling panel in the same row never resizes because of it. Width is
-   deliberately left to whatever flex value the page sets inline (e.g.
-   flex:1 to split a row evenly) rather than being forced here. */
 .page-area.fin-scroll .chart-panel.fin-fixed{min-height:0 !important;height:var(--fin-fixed-h) !important;}
 
 /* ── FINANCE COMPONENTS ── */
@@ -489,10 +456,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .fin-badge{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:20px;font-size:9px;font-weight:700;white-space:nowrap;}
 .fin-badge.bad{background:rgba(217,92,92,0.10);color:#B53939;}
 .fin-badge.good{background:rgba(46,155,98,0.10);color:var(--green);}
-/* Shown on margin-derived figures (Gross Margin, EBITDA, Net Margin) while
-   stock data is unreliable — COGS, and everything downstream of it, is an
-   estimate until stock counts are confirmed. Remove per-card once stock
-   data is confirmed reliable for that metric. */
 .indicative-tag{display:inline-flex;align-items:center;padding:1px 6px;border-radius:20px;font-size:7.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;background:rgba(229,169,61,0.12);color:var(--amber);border:1px solid rgba(229,169,61,0.3);margin-left:5px;vertical-align:middle;white-space:nowrap;}
 .gauge-row{display:flex;gap:16px;flex:1;min-height:0;align-items:stretch;}
 .gauge-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;}
@@ -531,14 +494,12 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 
 /* ── MOBILE ≤900px: sidebar becomes drawer, everything stacks ── */
 @media(max-width:900px){
-  /* Sidebar drawer */
+  html,body,#root{height:auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}
+  .app{height:auto;min-height:100vh;min-height:100dvh;overflow:visible;}
+  .main{overflow:visible;min-height:0;}
+
   .sidebar{position:fixed;top:0;left:0;bottom:0;transform:translateX(-100%);z-index:250;width:260px;}
   .sidebar.open{transform:translateX(0);}
-  /* The desktop icon-rail collapse is a separate feature from the mobile
-     drawer — force the drawer to always render fully expanded (labels,
-     sections, footer stats) no matter what collapsed state was left on
-     from a desktop session, and hide the collapse toggle since the
-     drawer already opens/closes via the hamburger button. */
   .sidebar.collapsed{width:260px !important;margin:0 !important;border-radius:0 !important;box-shadow:2px 0 20px rgba(0,0,0,0.18) !important;}
   .sidebar.collapsed .sb-logo{padding:20px 18px 16px;display:block;}
   .sidebar.collapsed .sb-mark{display:inline !important;}
@@ -558,15 +519,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   .mob-overlay{z-index:200;}
   .mob-overlay.open{display:block;}
 
-  /* Topbar — flush edge-to-edge bar on mobile (not the floating rounded
-     card used on desktop/tablet when the sidebar is collapsed); the
-     hamburger button needs the flush top-left corner and floating
-     margins would eat into already-tight mobile width. Matches the
-     scoped ".sidebar.collapsed ~ .main .topbar" selector's specificity
-     so this reliably wins even if a "collapsed" preference was left on
-     from a desktop session. */
   .topbar,
-  .sidebar.collapsed ~ .main .topbar{margin:0;border-radius:0;border:none;border-bottom:1px solid var(--border);padding-left:56px;padding-right:12px;height:auto;min-height:var(--topbar-h);flex-wrap:wrap;box-shadow:0 1px 0 rgba(31,55,65,0.06),0 2px 12px rgba(31,55,65,0.04);}
+  .sidebar.collapsed ~ .main .topbar{position:sticky;top:0;z-index:60;margin:0;border-radius:0;border:none;border-bottom:1px solid var(--border);padding-left:56px;padding-right:12px;height:auto;min-height:var(--topbar-h);flex-wrap:wrap;box-shadow:none;background:var(--surface);}
   .tb-title{font-size:13px;}
   .tb-sub{font-size:9px;flex-wrap:wrap;}
   .tb-right .tb-time{font-size:9px;}
@@ -577,21 +531,18 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   .tb-refresh{display:none;}
   .tb-print-btn{padding:5px 8px;font-size:9px;}
 
-  /* Filter bar: compact single row (and, matching the topbar above,
-     cancel the collapsed-sidebar floating card treatment on mobile). */
   .filter-bar,
-  .sidebar.collapsed ~ .main .filter-bar{height:auto;padding:6px 12px;flex-wrap:nowrap;gap:6px;margin:0;border-radius:0;box-shadow:none;}
+  .sidebar.collapsed ~ .main .filter-bar{position:sticky;top:var(--topbar-h);z-index:55;height:auto;padding:6px 12px;flex-wrap:nowrap;gap:6px;margin:0;border-radius:0;box-shadow:none;background:var(--surface);}
   .filter-chips{gap:5px;}
   .filter-chip{font-size:9px;padding:3px 8px;min-height:auto;}
   .filter-label{font-size:9px;}
   .filter-meta{display:none;}
   .filter-clear{padding:4px 8px;font-size:8px;}
 
-  /* Page area: allow scroll on mobile so all content is reachable */
   .page-area,
-  .sidebar.collapsed ~ .main .page-area{overflow-y:auto;overflow-x:hidden;padding:8px;gap:8px;-webkit-overflow-scrolling:touch;}
+  .page-area.fin-scroll,
+  .sidebar.collapsed ~ .main .page-area{overflow:visible;height:auto;padding:8px;gap:8px;}
 
-  /* KPI grid: 3 columns so 6 cards = 2 rows, compact */
   .kpi-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
   .kpi-card{padding:8px 10px;}
   .kpi-icon{font-size:13px;right:7px;top:7px;}
@@ -600,7 +551,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   .kpi-val.sm{font-size:11px;}
   .kpi-chg{font-size:8px;margin-top:3px;}
 
-  /* Charts: stack columns vertically, each panel gets min-height */
   .charts-row{flex-direction:column;}
   .charts-col{flex:none;}
   .chart-panel{flex:none;min-height:220px;padding:10px 12px;}
@@ -609,26 +559,62 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   .cp-sub{font-size:9px;}
   .vt-btn{font-size:9px;padding:2px 6px;}
 
-  /* Mini KPI rail: stack above the chart, cards run in a row instead of a column */
   .kpi-rail{flex-direction:column;}
   .kpi-rail-col{flex-direction:row;flex:0 0 auto;}
   .kpi-mini{padding:8px 10px;}
 
-  /* Tables */
   .itbl{font-size:9px;}
   .itbl th,.itbl td{padding:5px 7px;}
   .rank{width:18px;height:18px;font-size:8px;}
 
-  /* Login */
   .login-box{padding:28px 20px;}
   .login-title{font-size:22px;}
 
-  /* Finance specific mobile */
   .watch-split{flex-direction:column;}
   .fin-note{font-size:9px;padding:4px 10px;}
   .gauge-val{font-size:16px;}
   .ledger-search{font-size:10px;}
   .ledger-count{font-size:8px;}
+
+.tb-print-btn,
+.tb-time,
+.live-badge {
+  display: none !important;
+}
+
+.tb-search input {
+  width: 100px !important;
+}
+.tb-search input:focus {
+  width: 130px !important;
+}
+
+.filter-bar,
+.sidebar.collapsed ~ .main .filter-bar {
+  position: relative !important;
+  top: auto !important;
+  z-index: 50;
+  padding: 6px 12px;
+}
+
+.page-area,
+.sidebar.collapsed ~ .main .page-area {
+  padding: 12px !important;
+}
+
+.kpi-strip {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.kpi-card {
+  padding: 8px 10px;
+}
+.kpi-val.sm {
+  font-size: 12px;
+}
+.kpi-chg {
+  font-size: 8px;
+}
 }
 
 @media(max-width:480px){
@@ -647,31 +633,23 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   .chart-panel{min-height:160px;}
 }
 
-/* ── ADDITIVE ENHANCEMENTS ──────────────────────────────────────
-   Everything below is new: chart insights, comparison toggles,
-   click-to-drill highlighting, table search, sticky headers, CSV
-   export, global search, page-snapshot printing, and skeleton
-   loaders. Nothing above this line was modified. ── */
-
-/* Sticky table headers so long tables stay legible while scrolling */
+/* ── ADDITIVE ENHANCEMENTS ── */
 .itbl thead th{position:sticky;top:0;z-index:2;box-shadow:0 1px 0 var(--border);}
 
-/* Auto-generated "insight" line under a chart-panel header */
 .cp-insight{
-  display:flex;align-items:center;gap:6px;flex-shrink:0;
-  font-size:10.5px;color:var(--accent2);font-weight:600;
-  background:rgba(64,188,243,0.07);border:1px solid rgba(64,188,243,0.16);
-  border-radius:var(--r-sm);padding:5px 9px;margin-bottom:7px;line-height:1.4;
+  display:flex;align-items:center;gap:7px;flex-shrink:0;
+  font-size:10.5px;color:#1B5E82;font-weight:600;
+  background:var(--surface3);
+  border:var(--hairline);border-left:2.5px solid var(--accent);
+  border-radius:var(--r-sm);padding:6px 10px;margin-bottom:7px;line-height:1.4;
 }
-.cp-insight-icon{flex-shrink:0;opacity:.85;}
+.cp-insight-icon{flex-shrink:0;opacity:.9;font-size:11px;}
 
-/* Delta / trend badges (KPI cards, insights, tables) */
 .delta{display:inline-flex;align-items:center;gap:2px;font-weight:700;font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:1px 6px;border-radius:20px;white-space:nowrap;}
 .delta.up{color:var(--green);background:rgba(46,155,98,0.10);}
 .delta.down{color:var(--red);background:rgba(217,92,92,0.10);}
 .delta.flat{color:var(--muted);background:var(--surface3);}
 
-/* Comparison-overlay toggle button living in a panel's controls row */
 .cmp-toggle{
   display:inline-flex;align-items:center;gap:4px;
   font-size:9.5px;font-weight:700;font-family:inherit;color:var(--muted);
@@ -681,7 +659,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .cmp-toggle:hover{border-color:var(--accent2);color:var(--accent2);}
 .cmp-toggle.active{background:rgba(64,188,243,0.10);border-color:var(--accent);color:var(--accent2);}
 
-/* Drill-down selection chip ("Showing: X  ✕") shown above a filtered table */
 .drill-chip{
   display:inline-flex;align-items:center;gap:6px;flex-shrink:0;
   font-size:10px;font-weight:600;color:var(--accent2);
@@ -695,7 +672,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 }
 .drill-chip button:hover{background:var(--red);color:#fff;}
 
-/* Client-side table search box, used inside InlineTable */
 .tbl-search-wrap{flex-shrink:0;margin-bottom:6px;position:relative;}
 .tbl-search-wrap input{
   width:100%;padding:6px 10px 6px 26px;border:1px solid var(--border);border-radius:var(--r-sm);
@@ -703,15 +679,12 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   transition:border-color .15s;
 }
 .tbl-search-wrap input:focus{border-color:var(--accent);}
-.tbl-search-wrap::before{content:'🔍';position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:10px;opacity:.5;}
 .tbl-search-count{font-size:9px;color:var(--muted);position:absolute;right:8px;top:50%;transform:translateY(-50%);font-family:'JetBrains Mono',monospace;}
 
-/* Skeleton loader shown briefly while a chart panel mounts */
 .cp-skeleton{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;gap:6px;padding:4px;background:var(--surface);z-index:1;}
 .cp-skeleton-bar{background:linear-gradient(90deg,var(--surface3) 25%,var(--border) 50%,var(--surface3) 75%);background-size:200% 100%;border-radius:4px;animation:skeleton-pulse 1.1s ease-in-out infinite;}
 @keyframes skeleton-pulse{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
 
-/* Topbar global search */
 .tb-search{position:relative;flex-shrink:0;}
 .tb-search input{
   width:190px;padding:6px 10px 6px 28px;border:1px solid var(--border);border-radius:20px;
@@ -720,10 +693,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 }
 .tb-search input:focus{border-color:var(--accent);width:230px;}
 .tb-search-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:10px;opacity:.5;pointer-events:none;}
-/* Results are rendered as position:fixed (see JS: measured off the input's
-   getBoundingClientRect, the same escape-hatch pattern DateFilterBar's year
-   popover uses) so the dropdown can never be clipped by an ancestor's
-   overflow:hidden or lose a stacking fight with a chart panel. */
 .tb-search-results{
   position:fixed;max-height:60vh;overflow-y:auto;
   background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);
@@ -747,7 +716,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .tb-search-empty{padding:14px 12px;font-size:10.5px;color:var(--muted);text-align:center;font-style:italic;}
 .tb-refresh{font-size:9.5px;color:var(--muted);white-space:nowrap;}
 
-/* Export-page-as-PDF (print) button in the topbar */
 .tb-print-btn{
   display:inline-flex;align-items:center;gap:5px;
   font-size:10px;font-weight:700;font-family:inherit;color:var(--accent2);
@@ -756,15 +724,11 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 }
 .tb-print-btn:hover{border-color:var(--accent);background:rgba(64,188,243,0.08);}
 
-/* Print / snapshot styles: hide chrome, show only the active page's content */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:0.001ms!important;animation-iteration-count:1!important;transition-duration:0.001ms!important;scroll-behavior:auto!important;}
+}
+
 @media print{
-  /* The base layout hard-codes html/body/#root/.app to 100% height with
-     overflow:hidden (see the app-shell rules above) so the on-screen
-     dashboard never scrolls the whole page — only individual panels do.
-     Printing while that's still in effect made the browser capture just
-     whatever one screenful was visible, i.e. a "partial" export. Every
-     ancestor that constrains height has to be freed here so the full,
-     un-scrolled content can flow onto as many printed pages as it needs. */
   html,body,#root{height:auto !important;overflow:visible !important;}
   .app{height:auto !important;overflow:visible !important;display:block !important;}
   .main{overflow:visible !important;height:auto !important;display:block !important;}
@@ -772,11 +736,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
   .page-area{overflow:visible !important;height:auto !important;display:block !important;padding:12px 16px;}
   .charts-row{display:block !important;}
   .charts-col{display:block !important;}
-  /* Charts size themselves off their flex-column parent's height (see
-     .chart-panel{display:flex;flex-direction:column} + .cp-body{flex:1}
-     above) — with charts-row/col no longer flexing, that parent has no
-     height to hand down unless we give the panel one explicitly, so an
-     un-sized chart would otherwise print as a blank sliver. */
   .chart-panel{box-shadow:none !important;border:1px solid #ccc !important;break-inside:avoid;page-break-inside:avoid;margin-bottom:14px;flex:none !important;height:auto !important;min-height:340px !important;}
   .cp-body{min-height:270px !important;overflow:visible !important;}
   .kpi-strip{display:flex !important;flex-wrap:wrap;break-inside:avoid;}
@@ -837,7 +796,7 @@ function Login({ onLogin }) {
       sessionStorage.removeItem('login_attempts');
       sessionStorage.removeItem('login_locked');
       sessionStorage.removeItem('login_timeleft');
-      onLogin(); 
+      onLogin(u); 
     } else {
       const a = attempts + 1; 
       setAttempts(a);
@@ -868,7 +827,6 @@ function Login({ onLogin }) {
   return (
     <div className="login-screen">
       <div className="login-box" style={{ position: 'relative' }}>
-        {/* Logo from your code - positioned at top right */}
         <img 
           src="/favicon.png" 
           alt="DairyTop Logo" 
@@ -947,10 +905,7 @@ function Login({ onLogin }) {
   );
 }
 
-/* Inline sortable table.
-   New: `searchable` turns on a client-side filter box above the table
-   (matches against every cell, case-insensitive); `initialQuery` seeds it
-   (used by the topbar global search to jump straight to a filtered page). */
+/* Inline sortable table. */
 function InlineTable({ headers, rows, height, searchable, initialQuery }) {
   const [sc, setSc] = useState(null);
   const [sd, setSd] = useState('asc');
@@ -985,12 +940,10 @@ function InlineTable({ headers, rows, height, searchable, initialQuery }) {
       <table className="itbl">
         <thead><tr>{headers.map((h,i) => <th key={i} onClick={()=>handleSort(i)}>{h} <span style={{opacity:.5,fontSize:8}}>{sc===i?(sd==='asc'?'↑':'↓'):'⇅'}</span></th>)}</tr></thead>
         <tbody>{sorted.map((row,ri) => {
-          const isRankColumn = headers[0] === '#' || headers[0] === '#';
           return (
             <tr key={ri}>
               {row.map((cell,ci) => {
-                // Only show rank badge on first column if it's a number/rank column
-                if (ci === 0 && (headers[0] === '#' || headers[0] === '#' || typeof cell === 'number' || /^\d+$/.test(String(cell)))) {
+                if (ci === 0 && (headers[0] === '#' || typeof cell === 'number' || /^\d+$/.test(String(cell)))) {
                   return <td key={ci}><span className={`rank ${ri===0?'r1':ri===1?'r2':ri===2?'r3':'rn'}`}>{cell}</span></td>;
                 }
                 return <td key={ci}>{cell}</td>;
@@ -1004,12 +957,7 @@ function InlineTable({ headers, rows, height, searchable, initialQuery }) {
   );
 }
 
-/* Chart panel wrapper.
-   New: `insight` renders an auto-generated one-line takeaway under the
-   header; a lightweight skeleton is shown for a beat while the chart
-   mounts instead of a blank panel; `searchableTable` forwards to
-   InlineTable so the chart/table toggle's table view gets a search box;
-   `tableInitialQuery` seeds that search (used by global search). */
+/* Chart panel wrapper. */
 function Panel({ title, subtitle, tag, controls, flex, height, style, className, children, defaultView = 'chart', tableHeaders, tableRows, insight, searchableTable, tableInitialQuery }) {
   const [view, setView] = useState(defaultView);
   const [ready, setReady] = useState(false);
@@ -1018,10 +966,6 @@ function Panel({ title, subtitle, tag, controls, flex, height, style, className,
     return () => clearTimeout(t);
   }, []);
   const hasToggle = tableHeaders && tableRows;
-  // height (explicit px/number) takes priority over flex-based sizing —
-  // used where a panel must match another element's measured height exactly,
-  // or where a panel must stay a fixed height regardless of chart/table toggle
-  // (see fin-fixed CSS class) so a sibling panel never resizes because of it.
   const panelStyle = { ...(height != null ? { flex: '0 0 auto', height } : flex ? { flex } : {}), ...style };
   const fixedVars = height != null ? { '--fin-fixed-h': typeof height === 'number' ? `${height}px` : height } : undefined;
 
@@ -1069,14 +1013,6 @@ function Panel({ title, subtitle, tag, controls, flex, height, style, className,
   );
 }
 
-/* ECharts wrapper that fills parent */
-// Every live chart instance registers itself here (see EC below) so the
-// sidebar-collapse effect in App can resize them directly, instead of
-// broadcasting a blanket window "resize" event. A direct method call per
-// chart is cheaper than a DOM event (which every resize listener on the
-// page — not just ours — would also wake up for), and it's what makes the
-// difference between the bars visibly keeping pace with the sidebar's
-// width transition versus stuttering behind it.
 const liveChartInstances = new Set();
 
 function EC({ option, onEvents }) {
@@ -1098,11 +1034,6 @@ function EC({ option, onEvents }) {
   );
 }
 
-/* Small header-control button that exports a table's headers+rows to an
-   .xlsx file via SheetJS. Used on the Verkoper page for "Omzet per
-   Verkoper" and "Sales per Verkoper by Category".
-   Now also renders a matching CSV export button alongside it, built from
-   the same headers/rows — no extra dependency needed for CSV. */
 function csvEscape(val) {
   const s = String(val ?? '');
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -1383,18 +1314,11 @@ function DateFilterBar({ filter, setFilter }) {
 /* ── PAGES ───────────────────────────────────────────────────── */
 
 function Overview() {
-  /* Dashboard has NO period selector — it always reflects "now":
-     the current month for MTD-style figures and the leaderboard, and
-     the trailing 3 months (incl. current) for the YoY bar chart and
-     category split. This is intentionally decoupled from the global
-     `monthly` filter used by every other page. */
   const orderIdx = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  const currentMonthEntry = monthly[monthly.length - 1];      // most recent month in the dataset
-  const currentMonth = currentMonthEntry?.m;                   // e.g. 'Aug 26'
+  const currentMonthEntry = monthly[monthly.length - 1];
+  const currentMonth = currentMonthEntry?.m;
 
-  // Last 3 months including the current one (e.g. Jun/Jul/Aug), each paired
-  // with the same calendar month one year earlier for a YoY comparison.
   const last3 = monthly.slice(-3);
   const last3WithPY = last3.map(cur => {
     const [name, yy] = cur.m.split(' ');
@@ -1403,7 +1327,6 @@ function Overview() {
     return { name, cyLabel: cur.m, cy: cur.rev, py: py ? py.rev : null, pyLabel: py ? py.m : null };
   });
 
-  /* ── Category split — same trailing-3-month window as the main chart ── */
   const last3Names = last3.map(m => m.m);
   const cats = useMemo(() => {
     const g = {};
@@ -1416,7 +1339,6 @@ function Overview() {
   }, [last3Names.join(',')]);
   const catsTotalRev = cats.reduce((s, c) => s + c.rev, 0);
 
-  /* ── Verkoper Prestaties — current month only ── */
   const repsCurrentMonth = useMemo(() => {
     const g = {};
     salesrepsRaw.filter(r => r.m === currentMonth).forEach(r => {
@@ -1427,7 +1349,6 @@ function Overview() {
     return Object.values(g).sort((a, b) => b.rev - a.rev);
   }, [currentMonth]);
 
-  /* ── Main chart: last 3 months, this year vs last year bars ── */
   const cmpOpt = withDataZoom({
     tooltip: {
       ...TOOLTIP_STYLE,
@@ -1452,7 +1373,6 @@ function Overview() {
     ]
   });
 
-  /* ── Category split — vertical bar, one bar per category ── */
   const catBarOpt = withDataZoom({
     tooltip: {
       ...TOOLTIP_STYLE,
@@ -1474,7 +1394,6 @@ function Overview() {
     }]
   });
 
-  /* ── Verkoper Prestaties — current month, horizontal bar ── */
   const repOpt = withDataZoom({
     tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}` },
     grid: { left: '2%', right: '6%', bottom: '12%', top: '5%', containLabel: true },
@@ -1492,7 +1411,10 @@ function Overview() {
   const catTable = { headers: ['Category', 'Revenue', 'Share'], rows: cats.map(d => [d.n, fmtFull(d.rev), catsTotalRev > 0 ? (d.rev / catsTotalRev * 100).toFixed(1).replace('.', ',') + '%' : '—']) };
   const repTable = { headers: ['#', 'Verkoper', 'Revenue', 'Orders'], rows: repsCurrentMonth.map((d, i) => [i + 1, d.n, fmtFull(d.rev), fmtN(d.orders)]) };
 
-  /* ── Auto-generated insight lines (derived purely from data already loaded) ── */
+  const catSplitInsight = cats.length
+    ? `${cats[0].n} leads with ${catsTotalRev > 0 ? (cats[0].rev / catsTotalRev * 100).toFixed(0) : 0}% share${cats.length > 1 ? ` · ${cats.length} categories active over this window` : ''}`
+    : null;
+
   const momDelta = last3.length >= 2 && last3[last3.length - 2].rev
     ? ((last3[last3.length - 1].rev - last3[last3.length - 2].rev) / last3[last3.length - 2].rev) * 100
     : null;
@@ -1539,7 +1461,7 @@ function Overview() {
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Category Split" subtitle={`Last 3 months · through ${currentMonth || '—'}`} flex={1} tableHeaders={catTable.headers} tableRows={catTable.rows}>
+          <Panel title="Category Split" subtitle={`Last 3 months · through ${currentMonth || '—'}`} flex={1} tableHeaders={catTable.headers} tableRows={catTable.rows} insight={catSplitInsight}>
             <EC option={catBarOpt} />
           </Panel>
         </div>
@@ -1562,11 +1484,6 @@ function Revenue({ fm, label }) {
 
   const [selectedMonth, setSelectedMonth] = useState(null);
 
-  /* ── "This period vs Previous period" overlay ──────────────────
-     Previous period = the same number of months immediately preceding
-     the current selection, taken from the same `monthly` dataset — no
-     new data required. Aligned by position (index), not by calendar
-     label, since the two windows rarely share month names. */
   const [showPrevOverlay, setShowPrevOverlay] = useState(false);
   const prevPeriod = useMemo(() => {
     if (!fm.length) return [];
@@ -1672,7 +1589,7 @@ function Revenue({ fm, label }) {
     series:[{
       type:'line',
       data:fm.map(d => d.orders),
-      smooth:true,
+      step:'middle',
       symbol:'circle',
       symbolSize:(val,params)=>{
         const m = fm[params.dataIndex]?.m;
@@ -1784,17 +1701,12 @@ function SalesReps({ fm, label, highlightQuery }) {
     setSelRep(selRep === repName ? null : repName);
   };
 
-  // Click-to-drill: selecting a bar in "Omzet per Verkoper" filters the
-  // Leaderboard table below to that one rep.
   const leaderboardRows = selRep ? tbl.rows.filter(r => r[1] === selRep) : tbl.rows;
 
   const repsInsight = reps[0]
     ? `${reps[0].n} leads with ${fmtFull(reps[0].rev)}${totalRev > 0 ? ` (${(reps[0].rev/totalRev*100).toFixed(0)}% of shown revenue)` : ''}`
     : null;
 
-  /* ── Sales per Salesman by Category ──────────────────────────── */
-  // Period options are read off the monthly breakdown so they always match
-  // whatever months are actually present in the underlying data.
   const smPeriods = useMemo(() => {
     const seen = new Set();
     salesmanCategorySales.forEach(s => (s.monthly || []).forEach(mo => seen.add(mo.m)));
@@ -1802,8 +1714,6 @@ function SalesReps({ fm, label, highlightQuery }) {
   }, []);
   const [smPeriod, setSmPeriod] = useState('All');
 
-  // Resolve a salesman/category record's revenue/orders for the selected period —
-  // full total when 'All', otherwise that single month's figures (0 if absent).
   const smRevFor = (rec, period) => {
     if (!rec) return 0;
     if (period === 'All') return rec.rev;
@@ -1884,7 +1794,6 @@ function SalesReps({ fm, label, highlightQuery }) {
     </select>
   );
 
-  /* ── Veevoeder & Melkpoeder — revenue + tonnage, by category or by salesman ── */
   const vmPeriods = useMemo(() => {
     const seen = new Set();
     totalTonnageByCategory.forEach(c => (c.monthly || []).forEach(mo => seen.add(mo.m)));
@@ -1972,7 +1881,7 @@ function SalesReps({ fm, label, highlightQuery }) {
         <div className="kpi-card amber"><div className="kpi-lbl">Top 3 Share</div><div className="kpi-val sm">{totalRev>0?((top3.reduce((s,r)=>s+r.rev,0)/totalRev)*100).toFixed(0):0}%</div><div className="kpi-chg">of total revenue</div></div>
       </div>
       <div className="charts-row">
-        <div className="charts-col" style={{flex:2}}>
+        <div className="charts-col" style={{flex:1}}>
           <Panel title="Omzet per Verkoper" subtitle={label} flex={1} controls={<ExportExcelButton filename="omzet_per_verkoper.xlsx" headers={tbl.headers} rows={tbl.rows} />} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={repsInsight}>
             <EC option={barOpt} onEvents={{'click': handleRepClick}}/>
           </Panel>
@@ -2003,11 +1912,6 @@ function SalesReps({ fm, label, highlightQuery }) {
   );
 }
 
-/* ── CUSTOMERS ────────────────────────────────────────────────
-   Now "Customers by Revenue" (full ranked list, not capped at 15).
-   Bar click-to-isolate selection was removed since selecting a bar
-   didn't drive any other action — instead the chart gets the same
-   show more / show less / show full pagination as Products. */
 function Customers({ fm, label, highlightQuery }) {
   const months=fm.map(m=>m.m);
   const totalRevenue=fm.reduce((s,m)=>s+m.rev,0);
@@ -2145,12 +2049,14 @@ function Products({ fm, label, highlightQuery }) {
   }, [months]);
 
   const totalRev = prods.reduce((s, p) => s + p.rev, 0);
+  const top5Rev = prods.slice(0, 5).reduce((s, p) => s + p.rev, 0);
+  const productsInsight = prods.length
+    ? `Top product: ${prods[0].n}${totalRev > 0 ? ` (${(prods[0].rev / totalRev * 100).toFixed(0)}% of revenue)` : ''} · Top 5 lines make up ${totalRev > 0 ? (top5Rev / totalRev * 100).toFixed(0) : 0}% of total`
+    : null;
   const [selProd, setSelProd] = useState(null);
   
   const [itemsPerPage, setItemsPerPage] = useState(15);
   const [currentCount, setCurrentCount] = useState(15);
-  // Jumping in from the global search? Expand to the full list so the
-  // searched-for product is actually present in the table to find.
   useEffect(() => { if (highlightQuery) setCurrentCount(prods.length); }, [highlightQuery, prods.length]);
   const [donutItemsPerPage, setDonutItemsPerPage] = useState(10);
   const [donutCurrentCount, setDonutCurrentCount] = useState(10);
@@ -2437,7 +2343,7 @@ const handleDonutLegend = (params, echartsInstance) => {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{ flex: 2 }}>
-          <Panel title="Top Products by Revenue" subtitle={label} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows} defaultView={highlightQuery ? 'table' : 'chart'} searchableTable tableInitialQuery={highlightQuery}>
+          <Panel title="Top Products by Revenue" subtitle={label} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows} defaultView={highlightQuery ? 'table' : 'chart'} searchableTable tableInitialQuery={highlightQuery} insight={productsInsight}>
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               <div style={{ flex: 1, minHeight: 0 }}>
                 <EC option={barOpt} onEvents={{ 'click': handleBarClick }}/>
@@ -2467,9 +2373,6 @@ const handleDonutLegend = (params, echartsInstance) => {
   );
 }
 
-/* ── CATEGORIES ───────────────────────────────────────────────
-   "Category Revenue" panel now shows only the table (no chart/table
-   toggle) — the bar chart and its click handler were removed. */
 function Categories({ fm, label, highlightQuery }) {
   const months=fm.map(m=>m.m);
 
@@ -2507,9 +2410,6 @@ const donutOpt={
 
   const tbl={headers:['#','Category','Revenue','Orders','Share'],rows:cats.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),((d.rev/totalRev)*100).toFixed(1).replace('.',',')+'%'])};
 
-  // Click-to-drill: clicking a donut slice filters the Category Revenue
-  // table on the left down to that one category. Arriving here from the
-  // global search pre-selects the searched-for category the same way.
   const [selectedCat, setSelectedCat] = useState(highlightQuery || null);
   useEffect(() => { if (highlightQuery) setSelectedCat(highlightQuery); }, [highlightQuery]);
   const handleCatDonutClick = (p) => setSelectedCat(prev => prev === p.name ? null : p.name);
@@ -2620,6 +2520,14 @@ const donutOpt={
     }]
   });
 
+  const leadChannel = ch.dRev >= ch.wRev ? 'Direct Sales' : 'Webshop';
+  const leadShare = total > 0 ? (Math.max(ch.dRev, ch.wRev) / total * 100).toFixed(0) : 0;
+  const aovLeader = dAOV >= wAOV ? 'Direct Sales' : 'Webshop';
+  const aovGapPct = Math.min(dAOV, wAOV) > 0 ? (Math.abs(dAOV - wAOV) / Math.min(dAOV, wAOV) * 100).toFixed(0) : null;
+  const channelsInsight = total > 0
+    ? `${leadChannel} leads with ${leadShare}% of revenue${aovGapPct ? ` · ${aovLeader} orders run ${aovGapPct}% larger on average` : ''}`
+    : null;
+
   const handleChannelClick = (p) => {
     const channelName = p.name || (p.dataIndex === 0 ? 'Direct Sales' : 'Webshop');
     setSelChannel(selChannel === channelName ? null : channelName);
@@ -2646,7 +2554,7 @@ const handleDonutClick = (p) => {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:1.2}}>
-          <Panel title="Channel Revenue Share" subtitle={label} flex={1} tableHeaders={['Channel','Revenue','Share','Orders','AOV']} tableRows={[['Direct Sales',fmtFull(ch.dRev),total>0?((ch.dRev/total)*100).toFixed(1).replace('.',',')+'%':'—',fmtN(ch.dOrd),fmtFull(dAOV)],['Webshop',fmtFull(ch.wRev),total>0?((ch.wRev/total)*100).toFixed(1).replace('.',',')+'%':'—',fmtN(ch.wOrd),fmtFull(wAOV)]]}>
+          <Panel title="Channel Revenue Share" subtitle={label} flex={1} tableHeaders={['Channel','Revenue','Share','Orders','AOV']} tableRows={[['Direct Sales',fmtFull(ch.dRev),total>0?((ch.dRev/total)*100).toFixed(1).replace('.',',')+'%':'—',fmtN(ch.dOrd),fmtFull(dAOV)],['Webshop',fmtFull(ch.wRev),total>0?((ch.wRev/total)*100).toFixed(1).replace('.',',')+'%':'—',fmtN(ch.wOrd),fmtFull(wAOV)]]} insight={channelsInsight}>
             <EC 
               option={donutOpt} 
               onEvents={{
@@ -2697,9 +2605,6 @@ function YoyBadge({ cy, py, goodIfUp = true }) {
   return <span className={`fin-badge ${good ? 'good' : 'bad'}`}>{diff >= 0 ? '▲' : '▼'} {pct !== null ? pct.toFixed(1).replace('.',',') + '%' : '—'}</span>;
 }
 
-// Compact axis-only formatter (€300K / €1,2M) — EU decimal-comma version.
-// Used for finance value-axis ticks; tooltips and the table view still use
-// fmtFull for full precision.
 const fmtAxis = v => {
   const av = Math.abs(v), sign = v < 0 ? '-' : '';
   if (av >= 1e6) return sign + '€' + (av / 1e6).toLocaleString('de-DE', {minimumFractionDigits:0, maximumFractionDigits:1}) + 'M';
@@ -2734,10 +2639,6 @@ function PLSummary() {
   const opexPctCY = revCY ? (opexCY / revCY) * 100 : 0;
   const opexPctPY = revPY ? (opexPY / revPY) * 100 : 0;
 
-  // Net Margin after Tax — wired up and ready to render as soon as
-  // finSummary carries a `tax` field ({cy, py}, same shape as revenue/
-  // cogs/opex). Until then this renders as "Pending" rather than
-  // silently treating EBITDA as if it were the after-tax figure.
   const hasTaxData = finSummary.tax?.cy !== undefined && finSummary.tax?.cy !== null;
   const taxCY = hasTaxData ? finSummary.tax.cy : null;
   const taxPY = hasTaxData ? finSummary.tax.py : null;
@@ -2746,7 +2647,6 @@ function PLSummary() {
   const nmCY = hasTaxData && revCY ? (netCY / revCY) * 100 : null;
   const nmPY = hasTaxData && revPY ? (netPY / revPY) * 100 : null;
 
-  // Waterfall
   const wfCats = ['Revenue', 'COGS', 'Gross Profit', 'OpEx', 'EBITDA'];
   const wfDisplay = [revCY, -cogsCY, gpCY, -opexCY, ebitdaCY];
   const { base: wfBase, val: wfVal, colors: wfColors } = buildWaterfallSeries([
@@ -2763,9 +2663,6 @@ function PLSummary() {
       { type: 'bar', stack: 'wf', data: wfBase, itemStyle: { color: 'transparent' }, silent: true, tooltip: { show: false } },
       { type: 'bar', stack: 'wf', barWidth: '55%',
         data: wfVal.map((v, i) => ({ value: v, itemStyle: { color: wfColors[i], borderRadius: 3 } })),
-        // Labels sit in a small boxed tag ABOVE each bar (not inside it) so a
-        // very thin/near-zero bar (e.g. a tiny Gross Profit step) still shows
-        // its value clearly instead of the text being clipped by the bar.
         label: { show: true, position: 'top', distance: 4, color: '#1F3741', fontSize: 8, fontWeight: 700,
           backgroundColor: '#fff', borderColor: '#DDE6E9', borderWidth: 1, borderRadius: 3, padding: [3, 5],
           formatter: p => fmtAxis(wfDisplay[p.dataIndex]) } }
@@ -2774,7 +2671,6 @@ function PLSummary() {
   const wfTable = { headers: ['Step','2026 (Jan–Mar)','2025 (Jan–Jun)'],
     rows: [['Revenue',fmtFull(revCY),fmtFull(revPY)],['COGS',fmtFull(-cogsCY),fmtFull(-cogsPY)],['Gross Profit',fmtFull(gpCY),fmtFull(gpPY)],['OpEx',fmtFull(-opexCY),fmtFull(-opexPY)],['EBITDA',fmtFull(ebitdaCY),fmtFull(ebitdaPY)]] };
 
-  // Category tornado
   const tornCats = finCategories.map(c => c.cat);
   const tornVals = finCategories.map(c => c.cy - c.py);
   const tornColors = finCategories.map(c => {
@@ -2797,9 +2693,6 @@ function PLSummary() {
     rows: finCategories.map(c => [c.cat, fmtFull(c.cy), fmtFull(c.py), fmtFull(c.cy-c.py),
       c.py ? fmtPct((c.cy-c.py)/Math.abs(c.py)*100) : '—']) };
 
-  // Gauge — rendered as styled HTML, not ECharts (avoids all sizing issues).
-  // Sized to sit comfortably stacked vertically inside the 380px-tall
-  // Margin Health panel alongside P&L Bridge / Category YoY Change.
   const GaugeSVG = ({ value, label, py }) => {
   const clamp = v => Math.max(-30, Math.min(30, v));
   const angle = (clamp(value) + 30) / 60 * 180 - 90;
@@ -2839,6 +2732,22 @@ function PLSummary() {
   const gaugeTable = { headers: ['Metric','2026 (Jan–Mar)','2025 (Jan–Jun)'],
     rows: [['Gross Margin %', gmCY.toFixed(1).replace('.',',')+'%', gmPY.toFixed(1).replace('.',',')+'%'],
            ['EBITDA Margin %', emCY.toFixed(1).replace('.',',')+'%', emPY.toFixed(1).replace('.',',')+'%']] };
+
+  const bridgeSteps = [
+    { name: 'Revenue', delta: revCY - revPY },
+    { name: 'COGS', delta: -(cogsCY - cogsPY) },
+    { name: 'OpEx', delta: -(opexCY - opexPY) },
+  ];
+  const biggestBridgeMove = bridgeSteps.reduce((a, b) => Math.abs(b.delta) > Math.abs(a.delta) ? b : a);
+  const bridgeInsight = `EBITDA margin ${emCY >= emPY ? 'improved' : 'declined'} to ${emCY.toFixed(1).replace('.',',')}% (vs ${emPY.toFixed(1).replace('.',',')}% PY) · Largest driver: ${biggestBridgeMove.name} (${biggestBridgeMove.delta >= 0 ? '+' : ''}${fmtFull(biggestBridgeMove.delta)})`;
+
+  const tornSorted = [...finCategories].map(c => ({ cat: c.cat, delta: c.cy - c.py, bad: c.cat==='Revenue' ? (c.cy-c.py)<0 : (c.cy-c.py)>0 }));
+  const worstMover = tornSorted.filter(c => c.bad).sort((a,b) => Math.abs(b.delta)-Math.abs(a.delta))[0];
+  const bestMover = tornSorted.filter(c => !c.bad).sort((a,b) => Math.abs(b.delta)-Math.abs(a.delta))[0];
+  const tornadoInsight = [
+    bestMover ? `Best mover: ${bestMover.cat} (${bestMover.delta >= 0 ? '+' : ''}${fmtFull(bestMover.delta)})` : null,
+    worstMover ? `Watch: ${worstMover.cat} (${worstMover.delta >= 0 ? '+' : ''}${fmtFull(worstMover.delta)})` : null,
+  ].filter(Boolean).join(' · ') || null;
 
   return (
     <div className="page-area fin-scroll" key="plsummary">
@@ -2880,18 +2789,8 @@ function PLSummary() {
         </div>
       </div>
 
-      {/* Margin Health, P&L Bridge, and Category YoY Change all sit in a
-          single row, matching the requested side-by-side layout — Margin
-          Health is narrower (flex:0.8) since it only needs room for two
-          dials, while the two chart panels split the remaining width
-          evenly. All three use a fixed `height` (not flex-based sizing),
-          so toggling any one's chart/table view can never resize itself
-          or its siblings. Category YoY Change still defaults to the table
-          view (defaultView="table") per client request — the Chart/Table
-          toggle buttons in the Panel header let the user switch to the
-          bar chart if they want it. */}
       <div className="charts-row">
-        <Panel title="P&L Bridge" subtitle="2026 Jan–Mar" height={420} className="fin-fixed" style={{flex:1}} tableHeaders={wfTable.headers} tableRows={wfTable.rows}>
+        <Panel title="P&L Bridge" subtitle="2026 Jan–Mar" height={420} className="fin-fixed" style={{flex:1}} tableHeaders={wfTable.headers} tableRows={wfTable.rows} insight={bridgeInsight}>
           <EC option={wfOpt} />
         </Panel>
         <Panel title="Margin Health" subtitle="Gross & EBITDA margins" tag="Indicative" height={420} className="fin-fixed" style={{flex:0.8}} tableHeaders={gaugeTable.headers} tableRows={gaugeTable.rows}>
@@ -2901,7 +2800,7 @@ function PLSummary() {
             <GaugeSVG value={emCY} label="EBITDA Margin" py={emPY} />
           </div>
         </Panel>
-        <Panel title="Category YoY Change" subtitle="Green = favorable" height={420} className="fin-fixed" style={{flex:1}} defaultView="table" tableHeaders={tornTable.headers} tableRows={tornTable.rows}>
+        <Panel title="Category YoY Change" subtitle="Green = favorable" height={420} className="fin-fixed" style={{flex:1}} defaultView="table" tableHeaders={tornTable.headers} tableRows={tornTable.rows} insight={tornadoInsight}>
           <EC option={tornOpt} />
         </Panel>
       </div>
@@ -2918,11 +2817,9 @@ function FinRevCosts() {
   const topCost = costLines.slice(0,10);
   const topAnom = anomalies.slice(0,10);
 
-  // Three distinct blue shades from the theme palette — one per chart —
-  // instead of colouring individual bars by YoY direction.
-  const revOpt = mkBarOpt(topRev.map(l=>l.desc), topRev.map(l=>l.cy), () => '#40BCF3');   // --accent
-  const costOpt = mkBarOpt(topCost.map(l=>l.desc), topCost.map(l=>l.cy), () => '#35A9DE'); // --accent2
-  const anomOpt = mkBarOpt(topAnom.map(l=>l.desc), topAnom.map(l=>l.yoy), () => '#1F3741'); // --accent3
+  const revOpt = mkBarOpt(topRev.map(l=>l.desc), topRev.map(l=>l.cy), () => '#40BCF3');
+  const costOpt = mkBarOpt(topCost.map(l=>l.desc), topCost.map(l=>l.cy), () => '#35A9DE');
+  const anomOpt = mkBarOpt(topAnom.map(l=>l.desc), topAnom.map(l=>l.yoy), () => '#1F3741');
 
   const revCY = finSummary.revenue.cy, revPY = finSummary.revenue.py;
   const cogsCY = finSummary.cogs.cy, cogsPY = finSummary.cogs.py;
@@ -2936,9 +2833,6 @@ function FinRevCosts() {
     rows: anomalies.map(l=>[l.acct,l.cat,l.desc,fmtFull(l.cy),fmtFull(l.yoy),
       revCY?fmtPct(l.cy/revCY*100):'—', l.yoyPct!==null?fmtPct(l.yoyPct):'—']) };
 
-  // Cost categories as % of turnover, 2025 (Jan–Jun) vs 2026 (Jan–Mar) —
-  // one line per category so the mix shift between periods is visible at
-  // a glance, not just each category's absolute € change.
   const costCats = finCategories.filter(c => c.cat !== 'Revenue');
   const costPctPeriods = ['2025 (Jan–Jun)', '2026 (Jan–Mar)'];
   const costPctSeries = costCats.map((c, i) => ({
@@ -3024,11 +2918,6 @@ function FinLedger() {
   const rows = filtered.map(l=>[l.acct,l.cat,l.desc,fmtFull(l.cy),fmtFull(l.py),fmtFull(l.yoy),
     revCY?fmtPct(l.cy/revCY*100):'—', l.yoyPct!==null?fmtPct(l.yoyPct):'—']);
 
-  // The right column (New Costs + Revenue Lost) sizes itself to its own
-  // content (only a handful of rows). We measure its rendered height and
-  // pin the Full Account Ledger panel to that exact height, so the two
-  // columns line up and only the ledger table's rows scroll internally —
-  // not the whole page, and the small watch panels never look padded out.
   const sideColRef = useRef(null);
   const [sideH, setSideH] = useState(null);
   useLayoutEffect(() => {
@@ -3110,10 +2999,6 @@ const NAV = [
 ];
 const PAGE_NAMES = {overview:'Overview Dashboard',revenue:'Revenue Trends',salesreps:'Verkoper',customers:'Top Customers',products:'Product Analysis',categories:'Category Breakdown',channels:'Channel Mix',plsummary:'P&L Summary',finrevcosts:'Revenue & Costs',finledger:'Ledger'};
 
-// Suggested-question chips passed to ChatBot, per page, so people don't
-// have to type their first question. NOTE: ChatBot.jsx wasn't part of the
-// files provided for this change, so it needs its own update to actually
-// render `suggestedQuestions` / `context` — see the chat message for details.
 const SUGGESTED_QUESTIONS = {
   overview: ['How is revenue trending this month?', 'Which category is driving sales right now?', 'Who is this month\'s top verkoper?'],
   revenue: ['What was our best month on record?', 'How does this period compare to the previous one?', 'What\'s the average monthly revenue?'],
@@ -3128,27 +3013,11 @@ const SUGGESTED_QUESTIONS = {
   default: ['What can you tell me about this page?', 'Summarize the key numbers here'],
 };
 
-// Idle timeout: 30 minutes with NO user interaction. Any interaction
-// (mouse move/click, keypress, scroll, touch) resets the clock, so someone
-// actively viewing/using the app is never logged out — only true inactivity
-// counts. This is different from a fixed "45 min from login" timer, which
-// used to log people out mid-use.
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes of inactivity
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 const AUTH_KEY = 'dairytop_auth';
 const AUTH_ACTIVITY_KEY = 'dairytop_auth_activity';
-// How often an activity event is allowed to actually write to localStorage.
-// Mouse-move/scroll fire dozens of times a second — writing on every one
-// would be wasteful; this keeps the recorded "last active" time accurate
-// to within a few seconds, which is more than enough for a 30-minute window.
 const ACTIVITY_WRITE_THROTTLE_MS = 5000;
 
-/* Collapsible left navigation rail. Its hover-flyout state is kept
-   entirely local to this component (not lifted into App) on purpose:
-   the previous version stored it on the top-level App component, so
-   every mouseenter/mouseleave while hovering the collapsed icon rail
-   re-rendered the *entire* app — every chart on the current page along
-   with it — which is what caused the reported lag/hang. Scoping it here
-   means a hover only ever re-renders this small nav tree. */
 function Sidebar({ page, setPage, sideOpen, setSideOpen, collapsed, toggleCollapsed, setHighlightQuery, dateRange, totalTx, totalClients, handleLogout }) {
   const [navFlyout, setNavFlyout] = useState(null);
   const handleNavHover = (e, item) => {
@@ -3199,9 +3068,6 @@ function Sidebar({ page, setPage, sideOpen, setSideOpen, collapsed, toggleCollap
             </button>
           </div>
         </div>
-        {/* Deliberately outside .sidebar-inner's clipped/rounded box so it
-            can keep straddling the sidebar's edge (half in, half out) even
-            now that the collapsed capsule clips its own rounded corners. */}
         <button
           className="sb-collapse-btn"
           onClick={toggleCollapsed}
@@ -3228,10 +3094,13 @@ function Sidebar({ page, setPage, sideOpen, setSideOpen, collapsed, toggleCollap
   );
 }
 
+const AUTH_USER_KEY = 'dairytop_username';
+
 export default function App() {
+  const [userName, setUserName] = useState(() => {
+    try { return localStorage.getItem(AUTH_USER_KEY) || ''; } catch { return ''; }
+  });
   const [authed, setAuthed] = useState(() => {
-    // Check if the user was previously authenticated and is still within
-    // the idle window (covers the case of reopening a tab after being away).
     const savedAuth = localStorage.getItem(AUTH_KEY);
     const lastActivity = localStorage.getItem(AUTH_ACTIVITY_KEY);
 
@@ -3240,7 +3109,6 @@ export default function App() {
       if (elapsed < SESSION_TIMEOUT_MS) {
         return true;
       } else {
-        // Idle timeout already passed — clear the stale session.
         localStorage.removeItem(AUTH_KEY);
         localStorage.removeItem(AUTH_ACTIVITY_KEY);
         return false;
@@ -3249,10 +3117,6 @@ export default function App() {
     return false;
   });
   
-  // Remember the last-viewed page and date filter for this browser tab so a
-  // refresh (or coming back from the login idle-timeout) doesn't dump the
-  // user back at square one. Same sessionStorage pattern already used for
-  // the login lockout above — scoped to the tab, cleared when it closes.
   const SESSION_PAGE_KEY = 'dairytop_last_page';
   const SESSION_FILTER_KEY = 'dairytop_last_filter';
   const [page, setPage] = useState(() => sessionStorage.getItem(SESSION_PAGE_KEY) || 'overview');
@@ -3264,10 +3128,6 @@ export default function App() {
   });
   const [sideOpen, setSideOpen] = useState(false);
 
-  // Collapsible desktop sidebar (icon-only rail vs full labels). Persisted
-  // across visits like the chatbot's remembered position. Mobile ignores
-  // this entirely — see the max-width:900px overrides in the CSS above —
-  // the drawer there always opens fully expanded.
   const SIDEBAR_COLLAPSE_KEY = 'dairytop_sidebar_collapsed';
   const [collapsed, setCollapsed] = useState(() => {
     try { return JSON.parse(localStorage.getItem(SIDEBAR_COLLAPSE_KEY) || 'false'); } catch { return false; }
@@ -3279,19 +3139,8 @@ export default function App() {
       return next;
     });
   };
-  // ECharts only re-measures when told to — it has no idea its own
-  // container just changed size because the sidebar animated narrower/
-  // wider. The previous version broadcast a plain window "resize" event
-  // on every animation frame; each chart's internal listener would catch
-  // that and call its own resize(), but a DOM event dispatch also wakes
-  // every *other* resize listener on the page and forces a fresh
-  // getBoundingClientRect read each time, which is where the remaining
-  // stutter was coming from. Calling .resize() directly on each live
-  // chart instance (registered via EC above) skips that overhead
-  // entirely, so the bars keep pace with the sidebar's width transition
-  // far more smoothly.
   useEffect(() => {
-    const DURATION = 340; // a touch past the .26s sidebar width transition, to catch the settle
+    const DURATION = 340;
     const start = performance.now();
     let raf;
     const tick = (now) => {
@@ -3307,14 +3156,6 @@ export default function App() {
   useEffect(() => { sessionStorage.setItem(SESSION_PAGE_KEY, page); }, [page]);
   useEffect(() => { try { sessionStorage.setItem(SESSION_FILTER_KEY, JSON.stringify(filter)); } catch {} }, [filter]);
 
-  /* ── Global search (topbar) ─────────────────────────────────────
-     Looks up a typed name against every customer, product, and sales
-     rep already loaded (no new data), and jumps straight to the right
-     page with that name pre-filled into its table search box.
-     Results are grouped by type (Customer / Product / Verkoper), each
-     under its own heading naming the page it opens — so typing
-     something ambiguous like "Ver" doesn't dump 466 mixed rows on the
-     user with no indication of where each one leads. */
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [highlightQuery, setHighlightQuery] = useState(null);
@@ -3355,13 +3196,6 @@ export default function App() {
   const searchRef = useRef(null);
   const searchResultsRef = useRef(null);
   useEffect(() => {
-    // Now that the results dropdown is portaled to document.body (to escape
-    // .topbar's backdrop-filter containing block — see below), it's no
-    // longer a DOM descendant of `.tb-search`. The outside-click check must
-    // also look at the portaled results node, or a mousedown on a result
-    // (which fires before the click) gets treated as "outside" and closes
-    // the dropdown — unmounting the item before its own onClick ever runs.
-    // That was silently swallowing every navigation click.
     const handler = (e) => {
       if (searchRef.current?.contains(e.target)) return;
       if (searchResultsRef.current?.contains(e.target)) return;
@@ -3371,11 +3205,6 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Position the dropdown with `position:fixed`, measured directly off the
-  // search box's on-screen rect — the same pattern DateFilterBar's year
-  // popover already uses — so it always renders as a clean floating panel
-  // instead of being clipped by `.main{overflow:hidden}` or losing a
-  // stacking fight with chart panels / KPI cards further down the page.
   const [searchPos, setSearchPos] = useState(null);
   useLayoutEffect(() => {
     if (searchOpen && searchQuery.trim() && searchRef.current) {
@@ -3387,13 +3216,6 @@ export default function App() {
       });
     }
   }, [searchOpen, searchQuery, groupedResults.length]);
-  // Close on a scroll that moves the search box itself (page/window
-  // scrolling, which would leave the dropdown floating in the wrong spot) —
-  // but NOT on scrolling inside the results list, which is just the user
-  // reading further down a long, categorized result set. The previous
-  // version used capture-phase scroll on `window`, which also catches
-  // scroll events bubbling up from inside the dropdown's own scrollable
-  // list, closing it the instant the person tried to scroll it.
   useEffect(() => {
     if (!searchOpen) return;
     const close = (e) => {
@@ -3408,7 +3230,6 @@ export default function App() {
     };
   }, [searchOpen]);
 
-  // Track real user activity and reset the idle clock on every interaction.
   useEffect(() => {
     if (!authed) return;
 
@@ -3420,7 +3241,6 @@ export default function App() {
       localStorage.setItem(AUTH_ACTIVITY_KEY, now.toString());
     };
 
-    // Stamp activity immediately so a fresh login/page-load counts as active.
     markActive();
 
     const events = ['mousemove', 'mousedown', 'keydown', 'wheel', 'scroll', 'touchstart', 'click'];
@@ -3431,8 +3251,6 @@ export default function App() {
     };
   }, [authed]);
 
-  // Idle-timeout checker: logs out only when SESSION_TIMEOUT_MS has passed
-  // with no recorded activity — an actively-used app never hits this.
   useEffect(() => {
     if (!authed) return;
 
@@ -3448,8 +3266,6 @@ export default function App() {
       }
     };
 
-    // Check every 10 seconds — cheap, and keeps the actual logout close to
-    // the real 30-minute mark regardless of how long the tab sat idle.
     const interval = setInterval(checkSession, 10000);
     return () => clearInterval(interval);
   }, [authed]);
@@ -3459,18 +3275,20 @@ export default function App() {
     return ()=>clearInterval(t); 
   }, []);
 
-  // Handle login
-  const handleLogin = () => {
+  const handleLogin = (username) => {
     setAuthed(true);
     localStorage.setItem(AUTH_KEY, 'true');
     localStorage.setItem(AUTH_ACTIVITY_KEY, Date.now().toString());
+    setUserName(username || '');
+    try { localStorage.setItem(AUTH_USER_KEY, username || ''); } catch {}
   };
 
-  // Handle logout
   const handleLogout = () => {
     setAuthed(false);
     localStorage.removeItem(AUTH_KEY);
     localStorage.removeItem(AUTH_ACTIVITY_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
+    setUserName('');
   };
 
   const fm = useMemo(()=>{
@@ -3516,9 +3334,6 @@ export default function App() {
     }
   };
 
-  // Export the current page as a PDF/snapshot via the browser's native
-  // print dialog (choose "Save as PDF") — print CSS above hides the
-  // sidebar/topbar/filters so only the page content is captured.
   const handleExportPage = () => window.print();
 
   return (
@@ -3607,9 +3422,6 @@ export default function App() {
               <div className="live-badge"><span className="blink-dot"/>Live</div>
             </div>
           </div>
-          {/* Period selector applies to every page EXCEPT the Dashboard,
-              which always reflects "now" (current month / trailing 3
-              months) and has no period concept of its own. */}
           {page !== 'overview' && <DateFilterBar filter={filter} setFilter={setFilter}/>}
           {renderPage()}
           
@@ -3618,6 +3430,7 @@ export default function App() {
         <ChatBot
           context={{ page, pageName: PAGE_NAMES[page], filterLabel, dateRange }}
           suggestedQuestions={SUGGESTED_QUESTIONS[page] || SUGGESTED_QUESTIONS.default}
+          userName={formatDisplayName(userName)}
         />
       </div>
     </>

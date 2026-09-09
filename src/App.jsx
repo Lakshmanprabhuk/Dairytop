@@ -1339,15 +1339,28 @@ function Overview() {
   }, [last3Names.join(',')]);
   const catsTotalRev = cats.reduce((s, c) => s + c.rev, 0);
 
-  const repsCurrentMonth = useMemo(() => {
+  // Melkpoeder tonnage, last 3 months this year vs the same month last year
+  const melkTon3WithPY = useMemo(() => {
+    const melk = totalTonnageByCategory.find(c => c.category === 'Melkpoeder');
+    return last3.map(cur => {
+      const [name, yy] = cur.m.split(' ');
+      const pyYear = String(parseInt(yy, 10) - 1).padStart(2, '0');
+      const pyLabel = `${name} ${pyYear}`;
+      const curEntry = melk?.monthly.find(x => x.m === cur.m);
+      const pyEntry = melk?.monthly.find(x => x.m === pyLabel);
+      return { name, cyLabel: cur.m, cy: curEntry ? curEntry.tonnage : 0, py: pyEntry ? pyEntry.tonnage : null, pyLabel };
+    });
+  }, [last3Names.join(',')]);
+
+  const repsLast3Months = useMemo(() => {
     const g = {};
-    salesrepsRaw.filter(r => r.m === currentMonth).forEach(r => {
+    salesrepsRaw.filter(r => last3Names.includes(r.m)).forEach(r => {
       const k = r.n.trim();
       if (!g[k]) g[k] = { n: k, rev: 0, qty: 0, orders: 0 };
       g[k].rev += r.rev; g[k].qty += r.qty; g[k].orders += r.orders;
     });
     return Object.values(g).sort((a, b) => b.rev - a.rev);
-  }, [currentMonth]);
+  }, [last3Names.join(',')]);
 
   const cmpOpt = withDataZoom({
     tooltip: {
@@ -1373,46 +1386,52 @@ function Overview() {
     ]
   });
 
-  const catBarOpt = withDataZoom({
+  const fmtTon = v => (v === null || v === undefined || isNaN(v)) ? '—' : v.toLocaleString('de-DE', {maximumFractionDigits: 1}) + ' t';
+
+  const melkTonOpt = withDataZoom({
     tooltip: {
       ...TOOLTIP_STYLE,
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
-      formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)} (${catsTotalRev > 0 ? (p[0].value / catsTotalRev * 100).toFixed(1).replace('.', ',') : 0}%)`
+      formatter: function (params) {
+        let html = `<strong>${params[0].name}</strong><br/>`;
+        params.forEach(p => {
+          html += `${p.marker} ${p.seriesName}: ${p.value != null ? fmtTon(p.value) : '—'}<br/>`;
+        });
+        return html;
+      }
     },
-    grid: { left: '3%', right: '4%', bottom: '22%', top: '5%', containLabel: true },
-    xAxis: {
-      type: 'category',
-      data: cats.map(c => c.n.length > 12 ? c.n.slice(0, 12) + '…' : c.n),
-      axisLabel: { color: '#5F7078', fontSize: 8, interval: 0, rotate: 30 }
-    },
-    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
-    series: [{
-      type: 'bar',
-      data: cats.map((c, i) => ({ value: c.rev, itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: [3,3,0,0] } })),
-      barMaxWidth: 30
-    }]
+    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false },
+    grid: { left: '3%', right: '4%', bottom: '16%', top: '5%', containLabel: true },
+    xAxis: { type: 'category', data: melkTon3WithPY.map(d => d.name), axisLabel: { color: '#5F7078', fontSize: 9 } },
+    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmtTon(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: [
+      { name: 'Last Year', type: 'bar', data: melkTon3WithPY.map(d => d.py), itemStyle: { color: '#0891B2', borderRadius: [3,3,0,0] }, barGap: '0%', barCategoryGap: '30%' },
+      { name: 'This Year', type: 'bar', data: melkTon3WithPY.map(d => d.cy), itemStyle: { color: '#73D4F2', borderRadius: [3,3,0,0] }, barGap: '0%', barCategoryGap: '30%' },
+    ]
   });
 
   const repOpt = withDataZoom({
     tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}` },
     grid: { left: '2%', right: '6%', bottom: '12%', top: '5%', containLabel: true },
     xAxis: { type: 'value', min: 0, minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
-    yAxis: { type: 'category', data: repsCurrentMonth.map(d => d.n.split(' ')[0]), axisLabel: { color: '#5F7078', fontSize: 9 }, inverse: true },
+    yAxis: { type: 'category', data: repsLast3Months.map(d => d.n.split(' ')[0]), axisLabel: { color: '#5F7078', fontSize: 9 }, inverse: true },
     legend: { show: false },
     series: [{
       type: 'bar',
-      data: repsCurrentMonth.map((d, i) => ({ value: d.rev, itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: [0,3,3,0] } })),
+      data: repsLast3Months.map((d, i) => ({ value: d.rev, itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: [0,3,3,0] } })),
       barMaxWidth: 22
     }]
   });
 
   const cmpTable = { headers: ['Month', 'This Year', 'Last Year'], rows: last3WithPY.map(d => [d.cyLabel, fmtFull(d.cy), d.py != null ? fmtFull(d.py) : '—']) };
-  const catTable = { headers: ['Category', 'Revenue', 'Share'], rows: cats.map(d => [d.n, fmtFull(d.rev), catsTotalRev > 0 ? (d.rev / catsTotalRev * 100).toFixed(1).replace('.', ',') + '%' : '—']) };
-  const repTable = { headers: ['#', 'Verkoper', 'Revenue', 'Orders'], rows: repsCurrentMonth.map((d, i) => [i + 1, d.n, fmtFull(d.rev), fmtN(d.orders)]) };
+  const melkTonTable = { headers: ['Month', 'This Year', 'Last Year'], rows: melkTon3WithPY.map(d => [d.cyLabel, fmtTon(d.cy), d.py != null ? fmtTon(d.py) : '—']) };
+  const repTable = { headers: ['#', 'Verkoper', 'Revenue', 'Orders'], rows: repsLast3Months.map((d, i) => [i + 1, d.n, fmtFull(d.rev), fmtN(d.orders)]) };
 
-  const catSplitInsight = cats.length
-    ? `${cats[0].n} leads with ${catsTotalRev > 0 ? (cats[0].rev / catsTotalRev * 100).toFixed(0) : 0}% share${cats.length > 1 ? ` · ${cats.length} categories active over this window` : ''}`
+  const melkTonLastCY = melkTon3WithPY[melkTon3WithPY.length - 1];
+  const melkTonDelta = melkTonLastCY && melkTonLastCY.py ? ((melkTonLastCY.cy - melkTonLastCY.py) / melkTonLastCY.py) * 100 : null;
+  const melkTonInsight = melkTonLastCY
+    ? `Melkpoeder ${melkTonLastCY.cyLabel}: ${fmtTon(melkTonLastCY.cy)}${melkTonDelta != null ? ` · ${melkTonDelta >= 0 ? 'up' : 'down'} ${Math.abs(melkTonDelta).toFixed(1)}% vs ${melkTonLastCY.pyLabel}` : ' · no prior-year tonnage on file yet'}`
     : null;
 
   const momDelta = last3.length >= 2 && last3[last3.length - 2].rev
@@ -1421,8 +1440,9 @@ function Overview() {
   const turnoverInsight = momDelta != null
     ? `Revenue ${momDelta >= 0 ? 'up' : 'down'} ${Math.abs(momDelta).toFixed(1)}% vs last month${cats[0] ? ` · Top category: ${cats[0].n} (${catsTotalRev > 0 ? (cats[0].rev / catsTotalRev * 100).toFixed(0) : 0}% of last 3 months)` : ''}`
     : null;
-  const repInsight = repsCurrentMonth[0]
-    ? `Leading this month: ${repsCurrentMonth[0].n} with ${fmtFull(repsCurrentMonth[0].rev)}${repsCurrentMonth.length > 1 ? ` (${(repsCurrentMonth[0].rev / repsCurrentMonth.reduce((s,r)=>s+r.rev,0) * 100).toFixed(0)}% of this month's revenue)` : ''}`
+  const repTotalRev = repsLast3Months.reduce((s,r)=>s+r.rev,0);
+  const repInsight = repsLast3Months[0]
+    ? `Leading over last 3 months: ${repsLast3Months[0].n} with ${fmtFull(repsLast3Months[0].rev)}${repsLast3Months.length > 1 ? ` (${repTotalRev > 0 ? (repsLast3Months[0].rev / repTotalRev * 100).toFixed(0) : 0}% of last 3 months' revenue)` : ''}`
     : null;
 
   return (
@@ -1439,7 +1459,7 @@ function Overview() {
           <div className="kpi-chg">Open MTD + Revenue MTD</div>
         </div>
         <div className="kpi-card blue">
-          <div className="kpi-lbl">Open Orders (Future)</div>
+          <div className="kpi-lbl">Open Orders (Future) – Kalverhuisvesting</div>
           <div className="kpi-val sm">{fmtFull(openOrderValueFuture)}</div>
           <div className="kpi-chg">Due after today</div>
         </div>
@@ -1461,13 +1481,13 @@ function Overview() {
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Category Split" subtitle={`Last 3 months · through ${currentMonth || '—'}`} flex={1} tableHeaders={catTable.headers} tableRows={catTable.rows} insight={catSplitInsight}>
-            <EC option={catBarOpt} />
+          <Panel title="Melkpoeder Tonnage" subtitle={`Last 3 months · this year vs last year`} flex={1} tableHeaders={melkTonTable.headers} tableRows={melkTonTable.rows} insight={melkTonInsight}>
+            <EC option={melkTonOpt} />
           </Panel>
         </div>
       </div>
       <div className="charts-row" style={{flex:0.8}}>
-        <Panel title="Verkoper Prestaties" subtitle={`Actual month · ${currentMonth || '—'}`} flex={1} tableHeaders={repTable.headers} tableRows={repTable.rows} insight={repInsight}>
+        <Panel title="Verkoper Prestaties" subtitle={`Last 3 months · through ${currentMonth || '—'}`} flex={1} tableHeaders={repTable.headers} tableRows={repTable.rows} insight={repInsight}>
           <EC option={repOpt} />
         </Panel>
       </div>

@@ -431,12 +431,22 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
     setLoading(true);
 
     try {
-      // buildSystemPrompt(lang) already gives the model the full dashboard
-      // dataset; this appends a short, plain-text note about what the user
-      // is actually looking at right now (page + active date filter) so
-      // answers can be scoped to their current view when that's relevant,
-      // without needing to touch utils/chatContext.js itself.
-      const basePrompt = buildSystemPrompt(lang);
+      // buildSystemPrompt(lang, queryText) gives the model the dashboard
+      // dataset, sized to fit the Gemini free-tier token limit: it sends
+      // full month-level detail for the current year plus any customer or
+      // product actually named in queryText (see chatContext.js). We pass
+      // the current message together with the last couple of turns so a
+      // follow-up like "and what about last year?" still pulls in the
+      // right detail even though the entity name was only said earlier.
+      const recentTurnsText = nextHistory
+        .slice(-5)
+        .map(m => m.text)
+        .join(' ');
+      const basePrompt = buildSystemPrompt(lang, recentTurnsText);
+      // appends a short, plain-text note about what the user is actually
+      // looking at right now (page + active date filter) so answers can
+      // be scoped to their current view when that's relevant, without
+      // needing to touch utils/chatContext.js itself.
       const contextNote = context
         ? (lang === 'nl'
             ? `\n\nContext: de gebruiker bekijkt op dit moment de pagina "${context.pageName}"` +

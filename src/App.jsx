@@ -787,7 +787,7 @@ function Login({ onLogin }) {
     e.preventDefault();
     if (locked) return;
     
-    const valid = (u === 'knitworks' && p === 'knitworks') || 
+    const valid = (u === 'knitworks' && p === 'Knitworks@123') || 
                   (u === 'admin' && p === '1234') ||
                   (u === 'Jan.spiker' && p === 'Janspiker@123') || 
                   (u === 'Joahan.dairytop' && p === 'Johan@123');

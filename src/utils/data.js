@@ -9732,7 +9732,7 @@ export const categories = [
 
 export const totalClients = 1421;
 
-export const lastUpdated = '15/09/2026';
+export const lastUpdated = '16/09/2026';
 
 export const maxFactuurDatum = '14/09/2026';
 

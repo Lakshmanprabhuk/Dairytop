@@ -22,6 +22,7 @@ import {
   openOrderValueMTD,
   projectedMTD,
   turnoverMTD,
+  melkpoederTonnage2025,
   PALETTE,
   fmt,
   fmtFull,
@@ -1339,18 +1340,110 @@ function Overview() {
   }, [last3Names.join(',')]);
   const catsTotalRev = cats.reduce((s, c) => s + c.rev, 0);
 
-  // Melkpoeder tonnage, last 3 months this year vs the same month last year
-  const melkTon3WithPY = useMemo(() => {
-    const melk = totalTonnageByCategory.find(c => c.category === 'Melkpoeder');
-    return last3.map(cur => {
-      const [name, yy] = cur.m.split(' ');
-      const pyYear = String(parseInt(yy, 10) - 1).padStart(2, '0');
-      const pyLabel = `${name} ${pyYear}`;
-      const curEntry = melk?.monthly.find(x => x.m === cur.m);
-      const pyEntry = melk?.monthly.find(x => x.m === pyLabel);
-      return { name, cyLabel: cur.m, cy: curEntry ? curEntry.tonnage : 0, py: pyEntry ? pyEntry.tonnage : null, pyLabel };
+  // ── MELKPOEDER TONNAGE PANEL (dashboard) ───────────────────────
+  const melkSalesmen = useMemo(
+    () => [...new Set(melkpoederTonnage2025.map(t => t.salesman))].filter(n => n !== 'Unknown' && n !== 'Webshop').sort(),
+    []
+  );
+  const [melkSalesman, setMelkSalesman] = useState('All');
+
+  // CY months available from tonnagePerSalesman (2026 data)
+  const melkCYMonths = useMemo(() => {
+    const seen = new Set();
+    tonnagePerSalesman.filter(t => t.category === 'Melkpoeder').forEach(t =>
+      (t.monthly || []).forEach(mo => seen.add(mo.m))
+    );
+    const order = monthly.map(m => m.m);
+    return [...seen].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  }, []);
+
+  const melkPeriods = useMemo(() => ['Full period', ...melkCYMonths], [melkCYMonths]);
+  const [melkPeriod, setMelkPeriod] = useState('Full period');
+
+  const melkTonChartData = useMemo(() => {
+    const months = melkPeriod === 'Full period' ? melkCYMonths : [melkPeriod];
+    return months.map(cyM => {
+      const [name, yy] = cyM.split(' ');
+      const pyM = `${name} ${String(parseInt(yy, 10) - 1).padStart(2, '0')}`;
+
+      let cyTon = 0, pyTon = null, cyRev = null, pyRev = null;
+
+      if (melkSalesman === 'All') {
+        const melkTotal = totalTonnageByCategory.find(c => c.category === 'Melkpoeder');
+        const cyEntry = melkTotal?.monthly.find(x => x.m === cyM);
+        cyTon = cyEntry?.tonnage ?? 0;
+        cyRev = cyEntry?.revenue ?? null;
+        const pyEntry = melkTotal?.monthly.find(x => x.m === pyM);
+        pyTon = pyEntry?.tonnage ?? null;
+        // PY revenue: sum across all salesmen from melkpoederTonnage2025
+        const pyRevSum = melkpoederTonnage2025.reduce((s, rec) => {
+          const e = rec.monthly.find(x => x.m === pyM);
+          return s + (e?.revenue ?? 0);
+        }, 0);
+        pyRev = pyRevSum > 0 ? pyRevSum : null;
+      } else {
+        const cyRec = tonnagePerSalesman.find(t => t.salesman === melkSalesman && t.category === 'Melkpoeder');
+        const cyEntry = cyRec?.monthly.find(x => x.m === cyM);
+        cyTon = cyEntry?.tonnage ?? 0;
+        cyRev = cyEntry?.revenue ?? null;
+        const pyRec = melkpoederTonnage2025.find(t => t.salesman === melkSalesman);
+        const pyEntry = pyRec?.monthly.find(x => x.m === pyM);
+        pyTon = pyEntry?.tonnage ?? null;
+        pyRev = pyEntry?.revenue ?? null;
+      }
+
+      return { label: name, cyM, pyM, cy: cyTon, py: pyTon, cyRev, pyRev };
     });
-  }, [last3Names.join(',')]);
+  }, [melkSalesman, melkPeriod, melkCYMonths]);
+
+  const fmtTon = v => (v === null || v === undefined || isNaN(v)) ? '—' : v.toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' t';
+  const fmtRev = v => (v === null || v === undefined || isNaN(v)) ? '—' : '€' + v.toLocaleString('de-DE', { maximumFractionDigits: 0 });
+
+  const melkTonOpt = useMemo(() => withDataZoom({
+    tooltip: {
+      ...TOOLTIP_STYLE,
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: function (params) {
+        const idx = params[0].dataIndex;
+        const d = melkTonChartData[idx];
+        let html = `<strong>${params[0].axisValue}</strong><br/>`;
+        html += `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#73D4F2;margin-right:4px"></span>This Year &nbsp; ${fmtTon(d.cy)} &nbsp;·&nbsp; ${fmtRev(d.cyRev)}<br/>`;
+        html += `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0891B2;margin-right:4px"></span>Last Year &nbsp; ${d.py != null ? fmtTon(d.py) : '—'} &nbsp;·&nbsp; ${fmtRev(d.pyRev)}<br/>`;
+        return html;
+      }
+    },
+    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false },
+    grid: { left: '3%', right: '4%', bottom: '16%', top: '5%', containLabel: true },
+    xAxis: { type: 'category', data: melkTonChartData.map(d => d.label), axisLabel: { color: '#5F7078', fontSize: 9 } },
+    yAxis: { type: 'value', minInterval: 0.1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => v.toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' t' }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: [
+      { name: 'Last Year', type: 'bar', data: melkTonChartData.map(d => d.py), itemStyle: { color: '#0891B2', borderRadius: [3,3,0,0] }, barGap: '0%', barCategoryGap: '30%' },
+      { name: 'This Year', type: 'bar', data: melkTonChartData.map(d => d.cy), itemStyle: { color: '#73D4F2', borderRadius: [3,3,0,0] }, barGap: '0%', barCategoryGap: '30%' },
+    ]
+  }), [melkTonChartData]);
+
+  const melkTonTable = {
+    headers: ['Month', 'Ton TY', 'Rev TY', 'Ton LY', 'Rev LY'],
+    rows: melkTonChartData.map(d => [d.cyM, fmtTon(d.cy), fmtRev(d.cyRev), d.py != null ? fmtTon(d.py) : '—', fmtRev(d.pyRev)])
+  };
+
+  const melkTonControls = (
+    <>
+      <select className="panel-select" value={melkSalesman} onChange={e => setMelkSalesman(e.target.value)} aria-label="Salesman">
+        <option value="All">All salesmen</option>
+        {melkSalesmen.map(n => <option key={n} value={n}>{n}</option>)}
+      </select>
+      <select className="panel-select" value={melkPeriod} onChange={e => setMelkPeriod(e.target.value)} aria-label="Period">
+        {melkPeriods.map(p => <option key={p} value={p}>{p}</option>)}
+      </select>
+    </>
+  );
+
+  const melkTotCY = melkTonChartData.reduce((s, d) => s + (d.cy || 0), 0);
+  const melkTotPY = melkTonChartData.some(d => d.py != null) ? melkTonChartData.reduce((s, d) => s + (d.py || 0), 0) : null;
+  const melkDeltaPct = melkTotPY ? ((melkTotCY - melkTotPY) / melkTotPY * 100) : null;
+  const melkTonInsight = `Melkpoeder${melkSalesman !== 'All' ? ` · ${melkSalesman.split(' ')[0]}` : ''} — ${melkPeriod}: ${fmtTon(melkTotCY)}${melkDeltaPct != null ? ` · ${melkDeltaPct >= 0 ? '▲' : '▼'} ${Math.abs(melkDeltaPct).toFixed(1)}% vs last year` : ''}`;
 
   const repsLast3Months = useMemo(() => {
     const g = {};
@@ -1386,31 +1479,6 @@ function Overview() {
     ]
   });
 
-  const fmtTon = v => (v === null || v === undefined || isNaN(v)) ? '—' : v.toLocaleString('de-DE', {maximumFractionDigits: 1}) + ' t';
-
-  const melkTonOpt = withDataZoom({
-    tooltip: {
-      ...TOOLTIP_STYLE,
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      formatter: function (params) {
-        let html = `<strong>${params[0].name}</strong><br/>`;
-        params.forEach(p => {
-          html += `${p.marker} ${p.seriesName}: ${p.value != null ? fmtTon(p.value) : '—'}<br/>`;
-        });
-        return html;
-      }
-    },
-    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false },
-    grid: { left: '3%', right: '4%', bottom: '16%', top: '5%', containLabel: true },
-    xAxis: { type: 'category', data: melkTon3WithPY.map(d => d.name), axisLabel: { color: '#5F7078', fontSize: 9 } },
-    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmtTon(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
-    series: [
-      { name: 'Last Year', type: 'bar', data: melkTon3WithPY.map(d => d.py), itemStyle: { color: '#0891B2', borderRadius: [3,3,0,0] }, barGap: '0%', barCategoryGap: '30%' },
-      { name: 'This Year', type: 'bar', data: melkTon3WithPY.map(d => d.cy), itemStyle: { color: '#73D4F2', borderRadius: [3,3,0,0] }, barGap: '0%', barCategoryGap: '30%' },
-    ]
-  });
-
   const repOpt = withDataZoom({
     tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}` },
     grid: { left: '2%', right: '6%', bottom: '12%', top: '5%', containLabel: true },
@@ -1425,14 +1493,7 @@ function Overview() {
   });
 
   const cmpTable = { headers: ['Month', 'This Year', 'Last Year'], rows: last3WithPY.map(d => [d.cyLabel, fmtFull(d.cy), d.py != null ? fmtFull(d.py) : '—']) };
-  const melkTonTable = { headers: ['Month', 'This Year', 'Last Year'], rows: melkTon3WithPY.map(d => [d.cyLabel, fmtTon(d.cy), d.py != null ? fmtTon(d.py) : '—']) };
   const repTable = { headers: ['#', 'Verkoper', 'Revenue', 'Orders'], rows: repsLast3Months.map((d, i) => [i + 1, d.n, fmtFull(d.rev), fmtN(d.orders)]) };
-
-  const melkTonLastCY = melkTon3WithPY[melkTon3WithPY.length - 1];
-  const melkTonDelta = melkTonLastCY && melkTonLastCY.py ? ((melkTonLastCY.cy - melkTonLastCY.py) / melkTonLastCY.py) * 100 : null;
-  const melkTonInsight = melkTonLastCY
-    ? `Melkpoeder ${melkTonLastCY.cyLabel}: ${fmtTon(melkTonLastCY.cy)}${melkTonDelta != null ? ` · ${melkTonDelta >= 0 ? 'up' : 'down'} ${Math.abs(melkTonDelta).toFixed(1)}% vs ${melkTonLastCY.pyLabel}` : ' · no prior-year tonnage on file yet'}`
-    : null;
 
   const momDelta = last3.length >= 2 && last3[last3.length - 2].rev
     ? ((last3[last3.length - 1].rev - last3[last3.length - 2].rev) / last3[last3.length - 2].rev) * 100
@@ -1481,7 +1542,7 @@ function Overview() {
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Melkpoeder Tonnage" subtitle={`Last 3 months · this year vs last year`} flex={1} tableHeaders={melkTonTable.headers} tableRows={melkTonTable.rows} insight={melkTonInsight}>
+          <Panel title="Melkpoeder Tonnage" subtitle={melkSalesman === 'All' ? 'Per month · this year vs last year' : `${melkSalesman.split(' ')[0]} · this year vs last year`} flex={1} controls={melkTonControls} tableHeaders={melkTonTable.headers} tableRows={melkTonTable.rows} insight={melkTonInsight}>
             <EC option={melkTonOpt} />
           </Panel>
         </div>

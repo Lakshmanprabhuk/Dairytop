@@ -1408,8 +1408,8 @@ function Overview() {
         const idx = params[0].dataIndex;
         const d = melkTonChartData[idx];
         let html = `<strong>${params[0].axisValue}</strong><br/>`;
-        html += `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#73D4F2;margin-right:4px"></span>This Year &nbsp; ${fmtTon(d.cy)} &nbsp;·&nbsp; ${fmtRev(d.cyRev)}<br/>`;
-        html += `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0891B2;margin-right:4px"></span>Last Year &nbsp; ${d.py != null ? fmtTon(d.py) : '—'} &nbsp;·&nbsp; ${fmtRev(d.pyRev)}<br/>`;
+        html += `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#73D4F2;margin-right:4px"></span>This Year &nbsp; ${fmtTon(d.cy)} &nbsp;|&nbsp; ${fmtRev(d.cyRev)}<br/>`;
+        html += `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0891B2;margin-right:4px"></span>Last Year &nbsp; ${d.py != null ? fmtTon(d.py) : '—'} &nbsp;|&nbsp; ${fmtRev(d.pyRev)}<br/>`;
         return html;
       }
     },

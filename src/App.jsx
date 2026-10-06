@@ -4,9 +4,8 @@ import ReactECharts from "echarts-for-react";
 import * as XLSX from 'xlsx';
 import ChatBot from './ChatBot.jsx';
 
-// Import all data from data.js
-import { 
-  monthly, 
+import {
+  monthly,
   salesreps as salesrepsRaw,
   categories as categoriesRaw,
   customers as customersRaw,
@@ -35,14 +34,17 @@ import {
   fmtPct
 } from './utils/data.js';
 
-/* Turns a login username like "Jan.spiker" or "Joahan.dairytop" into a
-   friendly first name ("Jan", "Joahan") for greetings in the topbar and
-   chatbot. Falls back gracefully for the generic/shared accounts. */
 function formatDisplayName(username) {
   if (!username) return '';
   const first = username.split(/[.\s_-]+/)[0];
   if (!first) return '';
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+}
+
+/* ── MOBILE HELPER ───────────────────────────────────────────── */
+function isMobileViewport() {
+  return typeof window !== 'undefined' && window.matchMedia &&
+    window.matchMedia('(max-width: 900px)').matches;
 }
 
 /* ── SHARED ECHARTS DEFAULTS ──────────────────────────────────── */
@@ -56,7 +58,6 @@ const TOOLTIP_STYLE = {
   confine: true,
 };
 
-/* Crosshair + axis marker option builder */
 function withCrosshair(option, yFormatter = fmt) {
   return {
     ...option,
@@ -74,9 +75,7 @@ function withCrosshair(option, yFormatter = fmt) {
           padding: [4, 8],
           borderRadius: 4,
           formatter: (p) => {
-            if (p.axisDimension === 'y') {
-              return yFormatter(p.value);
-            }
+            if (p.axisDimension === 'y') return yFormatter(p.value);
             return p.value;
           }
         },
@@ -85,8 +84,9 @@ function withCrosshair(option, yFormatter = fmt) {
   };
 }
 
-/* DataZoom for touchpad zoom (no visual controls) */
+/* DataZoom disabled on mobile so touch-drag scrolls the page */
 function withDataZoom(option) {
+  if (isMobileViewport()) return option;
   return {
     ...option,
     dataZoom: [{
@@ -131,7 +131,6 @@ const css = `
 html,body,#root{height:100%;overflow:hidden;}
 body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;}
 
-/* ── APP SHELL ── */
 .app{
   display:flex;height:100vh;height:100dvh;overflow:hidden;
   padding-top:env(safe-area-inset-top);
@@ -156,10 +155,8 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   box-shadow:0 18px 40px rgba(15,23,28,.32),0 6px 16px rgba(15,23,28,.2),inset 0 1px 0 rgba(255,255,255,.05);
 }
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0;}
-
 .sidebar-inner{height:100%;display:flex;flex-direction:column;overflow:hidden;border-radius:inherit;}
 
-/* ── SIDEBAR ── */
 .sb-logo{padding:20px 18px 16px;border-bottom:1px solid rgba(255,255,255,0.08);position:relative;}
 .sidebar.collapsed .sb-logo{padding:12px 0 8px;display:flex;justify-content:center;}
 .sb-brand{font-size:14px;font-weight:800;letter-spacing:.07em;color:#fff;text-transform:uppercase;display:flex;align-items:center;gap:7px;}
@@ -220,6 +217,7 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   will-change:clip-path,opacity;
   animation:navFlyoutPull .2s cubic-bezier(.22,.9,.36,1) both;
 }
+@media(max-width:900px){.nav-flyout{display:none !important;}}
 @keyframes navFlyoutPull{
   from{opacity:0;clip-path:inset(0 100% 0 0 round 14px);}
   to{opacity:1;clip-path:inset(0 0 0 0 round 14px);}
@@ -234,7 +232,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 .nav-flyout-desc{font-size:9px;color:rgba(255,255,255,.55);margin-top:1px;}
 .nav-flyout-chevron{font-size:12px;color:rgba(255,255,255,.35);}
 
-/* ── TOPBAR ── */
 .topbar{
   height:var(--topbar-h);background:var(--surface);
   border-bottom:var(--hairline);padding:0 20px;
@@ -244,6 +241,8 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   box-shadow:none;
   transition:margin .32s cubic-bezier(.34,1.3,.44,1),border-radius .32s cubic-bezier(.34,1.3,.44,1);
 }
+.tb-row1{display:contents;}/* on desktop, children flow normally in the flex topbar */
+.tb-titlewrap{}/* no special styles on desktop */
 .tb-title{font-size:14.5px;font-weight:700;color:var(--text);letter-spacing:-.1px;}
 .tb-sub{font-size:10.5px;color:var(--muted);margin-top:1px;display:flex;align-items:center;gap:5px;}
 .tb-sep{color:var(--border2);}
@@ -257,9 +256,8 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 .blink-dot{width:6px;height:6px;background:var(--red);border-radius:50%;animation:blink 1.4s ease-in-out infinite;}
 @keyframes blink{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.2;transform:scale(.85);}}
 
-/* ── DATE FILTER BAR ── */
 .filter-bar{
-  height:var(--filter-h);background:var(--surface);border-bottom:1px solid var(--border);
+  min-height:var(--filter-h);background:var(--surface);border-bottom:1px solid var(--border);
   padding:0 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;
   margin:0;border-radius:0;
   overflow:visible;position:relative;z-index:100;
@@ -284,7 +282,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 }
 .filter-clear:hover{background:var(--red);color:#fff;}
 
-/* ── PAGE CONTENT AREA ── */
 .page-area{
   flex:1;overflow:hidden;padding:12px 16px;
   display:flex;flex-direction:column;gap:10px;
@@ -302,7 +299,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 }
 .sidebar.collapsed ~ .main .page-area{padding-left:14px;padding-right:14px;}
 
-/* ── KPI STRIP ── */
 .kpi-strip{display:flex;gap:10px;flex-shrink:0;}
 .kpi-card{
   flex:1;min-width:0;background:var(--surface);
@@ -328,10 +324,8 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 .kpi-trend.down{color:#B23D3D;background:rgba(217,92,92,0.12);}
 .kpi-spark{position:absolute;right:12px;bottom:10px;opacity:.85;pointer-events:none;}
 
-/* ── CHART AREA ── */
 .charts-row{display:flex;gap:10px;flex:1;min-height:0;min-width:0;}
 .charts-col{display:flex;flex-direction:column;gap:10px;flex:1;min-height:0;min-width:0;}
-
 .kpi-rail{display:flex;gap:10px;min-height:0;min-width:0;}
 .kpi-rail-col{display:flex;flex-direction:column;gap:8px;flex:0 0 152px;min-height:0;}
 .kpi-mini{padding:10px 12px;justify-content:center;}
@@ -397,7 +391,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 .r3{background:rgba(217,92,92,.10);color:#B94A4A;}
 .rn{background:var(--surface2);color:var(--muted);}
 
-/* ── LOGIN ── */
 .login-screen{
   position:fixed;inset:0;background:var(--bg);
   background-image:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(64,188,243,.12) 0%,transparent 70%);
@@ -420,25 +413,20 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 .login-err{color:var(--red);font-size:11px;margin-top:8px;font-weight:500;}
 .login-err::before{content:'⚠ ';}
 
-/* ── SECTION TITLE ── */
 .sec-title{font-size:10px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:7px;text-transform:uppercase;letter-spacing:.09em;flex-shrink:0;margin-bottom:4px;}
 .sec-dot{width:6px;height:6px;border-radius:50%;background:#8FD5F5;border:2px solid var(--accent);flex-shrink:0;}
 
-/* ── SCROLLBAR ── */
 ::-webkit-scrollbar{width:4px;height:4px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:#C7D5D9;border-radius:2px;}
 
-/* ── PAGE TRANSITION ── */
 .page-area{animation:fadeIn .22s cubic-bezier(.4,0,.2,1);}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
 
-/* ── DONUT LEGEND ── */
 .donut-legend-wrapper{overflow-x:auto;overflow-y:hidden;white-space:nowrap;padding:4px 0;margin-top:4px;scrollbar-width:thin;}
 .donut-legend-wrapper::-webkit-scrollbar{height:3px;}
 .donut-legend-wrapper::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
 
-/* ── FINANCE PAGES ── */
 .page-area.fin-scroll{overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}
 .page-area.fin-scroll .charts-row{flex:none;}
 .page-area.fin-scroll .chart-panel{min-height:300px !important;}
@@ -448,7 +436,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 .page-area.fin-scroll .chart-panel.ledger-fixed{min-height:0 !important;}
 .page-area.fin-scroll .chart-panel.fin-fixed{min-height:0 !important;height:var(--fin-fixed-h) !important;}
 
-/* ── FINANCE COMPONENTS ── */
 .fin-note{
   flex-shrink:0;padding:5px 12px;border-radius:var(--r-sm);
   background:rgba(229,169,61,0.08);border:1px solid rgba(229,169,61,0.25);
@@ -479,11 +466,9 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 .watch-row-amt{font-size:9px;font-family:'JetBrains Mono',monospace;color:var(--muted2);margin-top:1px;}
 .watch-empty{font-size:10px;color:var(--muted);padding:8px;text-align:center;font-style:italic;}
 
-/* ── MOBILE TOGGLE ── */
 .mob-toggle{display:none;position:fixed;top:12px;left:12px;z-index:300;width:38px;height:38px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);cursor:pointer;font-size:15px;color:var(--accent3);box-shadow:var(--shadow-md);align-items:center;justify-content:center;}
 .mob-overlay{display:none;position:fixed;inset:0;background:rgba(31,55,65,.5);z-index:200;backdrop-filter:blur(2px);}
 
-/* ── TABLET 901-1200 ── */
 @media(max-width:1200px) and (min-width:901px){
   :root{--sidebar-w:190px;}
   .page-area{padding:10px 12px;gap:8px;}
@@ -493,7 +478,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   .cp-title{font-size:11px;}
 }
 
-/* ── MOBILE ≤900px: sidebar becomes drawer, everything stacks ── */
 @media(max-width:900px){
   html,body,#root{height:auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}
   .app{height:auto;min-height:100vh;min-height:100dvh;overflow:visible;}
@@ -510,6 +494,14 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   .sidebar.collapsed .nav-label,
   .sidebar.collapsed .sb-footer-stats,
   .sidebar.collapsed .logout-btn-label{display:block !important;}
+  /* On mobile the sidebar is always a full drawer — push logo content
+     right so it never hides behind the mob-toggle (☰/✕) button */
+  .sidebar .sb-logo,
+  .sidebar.collapsed .sb-logo{
+    padding-left:54px !important;
+    padding-top:16px !important;
+    padding-bottom:14px !important;
+  }
   .sidebar.collapsed .nav-divider{display:none !important;}
   .sidebar.collapsed .nav-item{justify-content:flex-start;padding:8px 18px;gap:9px;}
   .sidebar.collapsed .nav-pip{position:static;transform:none;margin-left:auto;}
@@ -520,25 +512,117 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   .mob-overlay{z-index:200;}
   .mob-overlay.open{display:block;}
 
+  /* ── TOPBAR: flex-column, two rows max ── */
   .topbar,
-  .sidebar.collapsed ~ .main .topbar{position:sticky;top:0;z-index:60;margin:0;border-radius:0;border:none;border-bottom:1px solid var(--border);padding-left:56px;padding-right:12px;height:auto;min-height:var(--topbar-h);flex-wrap:wrap;box-shadow:none;background:var(--surface);}
-  .tb-title{font-size:13px;}
-  .tb-sub{font-size:9px;flex-wrap:wrap;}
-  .tb-right .tb-time{font-size:9px;}
-  .tb-right .live-badge{font-size:8px;padding:2px 6px;}
-  .tb-right{flex-wrap:wrap;gap:6px;row-gap:6px;}
-  .tb-search input{width:120px;font-size:10px;}
-  .tb-search input:focus{width:150px;}
-  .tb-refresh{display:none;}
-  .tb-print-btn{padding:5px 8px;font-size:9px;}
+  .sidebar.collapsed ~ .main .topbar{
+    position:relative;   /* not sticky on mobile — avoids stacking/overlap glitches */
+    top:auto;z-index:60;
+    margin:0;border-radius:0;border:none;
+    border-bottom:1px solid var(--border);
+    display:flex;flex-direction:column;
+    /* left pad clears the ☰ hamburger (38px wide + 12px left + 4px gap = 54px) */
+    padding:6px 10px 6px 54px;
+    height:auto;gap:4px;
+    box-shadow:none;background:var(--surface);
+    align-items:stretch;
+  }
 
+  /* ── ROW 1: page title (left) + action pills (right) ── */
+  .tb-row1{
+    display:flex;align-items:center;
+    justify-content:space-between;
+    gap:6px;width:100%;min-width:0;
+  }
+  .tb-titlewrap{flex:1;min-width:0;overflow:hidden;}
+
+  /* Title: single line, truncates if very long */
+  .tb-title{
+    font-size:13px;font-weight:700;color:var(--text);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    letter-spacing:-.1px;
+  }
+  /* Subtitle: wrap allowed, small text */
+  .tb-sub{
+    font-size:9px;color:var(--muted);
+    display:flex;align-items:center;flex-wrap:wrap;
+    gap:3px;margin-top:1px;line-height:1.3;
+  }
+  /* Hide · separators on mobile — space is tight */
+  .tb-sep{display:none;}
+
+  /* Action pills row — always single line */
+  .tb-right{
+    display:flex;align-items:center;
+    gap:4px;flex-shrink:0;flex-wrap:nowrap;
+  }
+  .tb-refresh{display:none !important;}
+  .tb-print-btn{
+    font-size:9px !important;padding:4px 8px !important;
+    border-radius:14px !important;white-space:nowrap;
+  }
+  .tb-time{
+    font-size:9px !important;
+    font-family:'JetBrains Mono',monospace;
+    color:var(--muted);white-space:nowrap;
+    display:block !important;
+  }
+  .live-badge{
+    display:flex !important;
+    font-size:8px !important;padding:2px 5px !important;gap:3px !important;
+  }
+
+  /* ── ROW 2: search bar — only on non-overview pages ── */
+  .tb-search{width:100%;}
+  .tb-search input{
+    width:100% !important;
+    font-size:16px; /* 16px prevents iOS auto-zoom */
+    padding:6px 10px 6px 28px;
+    border-radius:8px;height:34px;
+  }
+  .tb-search input:focus{width:100% !important;}
+
+  /* Overview has no search row → no bottom gap needed */
+  .topbar-overview{padding-bottom:6px;}
+
+  /* ── FILTER BAR: flows directly after topbar in document order ── */
   .filter-bar,
-  .sidebar.collapsed ~ .main .filter-bar{position:sticky;top:var(--topbar-h);z-index:55;height:auto;padding:6px 12px;flex-wrap:nowrap;gap:6px;margin:0;border-radius:0;box-shadow:none;background:var(--surface);}
-  .filter-chips{gap:5px;}
-  .filter-chip{font-size:9px;padding:3px 8px;min-height:auto;}
-  .filter-label{font-size:9px;}
-  .filter-meta{display:none;}
-  .filter-clear{padding:4px 8px;font-size:8px;}
+  .sidebar.collapsed ~ .main .filter-bar{
+    position:relative !important;
+    top:auto !important;
+    z-index:50;
+    height:auto;
+    display:flex;flex-direction:column;
+    padding:5px 10px;
+    gap:3px;margin:0;border-radius:0;
+    box-shadow:none;
+    background:var(--surface);
+    border-bottom:1px solid var(--border);
+    overflow:visible;
+  }
+  /* Row 1: label + year chips + clear button */
+  .filter-chips{
+    display:flex;gap:5px;align-items:center;
+    overflow-x:auto;flex-wrap:nowrap;
+    padding:0;flex:none;width:100%;
+    -webkit-overflow-scrolling:touch;
+  }
+  .filter-chip{font-size:9px;padding:3px 8px;min-height:auto;flex-shrink:0;}
+  .filter-label{font-size:9px;flex-shrink:0;}
+  .filter-clear{padding:3px 7px;font-size:8px;flex-shrink:0;}
+  /* Row 2: last update + last invoice — shown on mobile */
+  .filter-meta{
+    display:flex !important;
+    flex-direction:row;
+    align-items:center;
+    gap:8px;
+    margin-left:0;
+    flex-shrink:0;
+    flex-wrap:wrap;
+  }
+  .filter-meta-row{
+    font-size:8px;color:var(--muted);
+    white-space:nowrap;
+  }
 
   .page-area,
   .page-area.fin-scroll,
@@ -577,50 +661,22 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   .ledger-search{font-size:10px;}
   .ledger-count{font-size:8px;}
 
-.tb-print-btn,
-.tb-time,
-.live-badge {
-  display: none !important;
-}
+  /* tb-print-btn, tb-time, live-badge are intentionally SHOWN on mobile — see topbar spec */
 
-.tb-search input {
-  width: 100px !important;
-}
-.tb-search input:focus {
-  width: 130px !important;
-}
+  /* filter-bar: position:relative — handled in mobile block above */
 
-.filter-bar,
-.sidebar.collapsed ~ .main .filter-bar {
-  position: relative !important;
-  top: auto !important;
-  z-index: 50;
-  padding: 6px 12px;
-}
+  .page-area,
+  .sidebar.collapsed ~ .main .page-area{padding:12px !important;}
 
-.page-area,
-.sidebar.collapsed ~ .main .page-area {
-  padding: 12px !important;
-}
-
-.kpi-strip {
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
-}
-.kpi-card {
-  padding: 8px 10px;
-}
-.kpi-val.sm {
-  font-size: 12px;
-}
-.kpi-chg {
-  font-size: 8px;
-}
+  .kpi-strip{grid-template-columns:repeat(2,1fr);gap:6px;}
+  .kpi-card{padding:8px 10px;}
+  .kpi-val.sm{font-size:12px;}
+  .kpi-chg{font-size:8px;}
 }
 
 @media(max-width:480px){
   .kpi-strip{grid-template-columns:repeat(2,1fr);gap:5px;}
-  .topbar{padding-left:50px;}
+  .topbar,.sidebar.collapsed ~ .main .topbar{padding-left:50px !important;}
   .sidebar{width:240px;}
   .chart-panel{min-height:200px;}
   .cp-body{min-height:140px;}
@@ -634,7 +690,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   .chart-panel{min-height:160px;}
 }
 
-/* ── ADDITIVE ENHANCEMENTS ── */
 .itbl thead th{position:sticky;top:0;z-index:2;box-shadow:0 1px 0 var(--border);}
 
 .cp-insight{
@@ -743,6 +798,68 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   .kpi-card{flex:1 1 30% !important;min-width:140px;margin-bottom:8px;}
   .cp-skeleton{display:none !important;}
 }
+
+/* ── MOBILE RESPONSIVENESS FIXES (appended last) ── */
+.scroll-hint,.scroll-fade{display:none;}
+
+@media(max-width:900px){
+  html{height:auto;overflow-x:hidden;overflow-y:auto;}
+  html.no-scroll{overflow:hidden;}
+  body,#root{height:auto;min-height:100%;overflow:visible;}
+
+  .charts-row{flex:none !important;flex-direction:column;}
+  .charts-col{flex:none !important;width:100%;}
+  .chart-panel{flex:none !important;height:auto;min-height:0 !important;}
+
+  .cp-body{flex:none;height:320px;min-height:320px;touch-action:pan-y;}
+  .chart-panel svg,.chart-panel canvas{touch-action:pan-y;}
+
+  .page-area.fin-scroll .chart-panel.fin-fixed{height:auto !important;}
+  .page-area.fin-scroll .chart-panel.ledger-fixed{height:auto !important;}
+  .chart-panel.ledger-fixed .cp-body{height:520px;min-height:520px;}
+  .page-area.fin-scroll .chart-panel.hug .cp-body{height:auto !important;min-height:0 !important;}
+
+  .kpi-strip>*:last-child:nth-child(odd){grid-column:1/-1;}
+
+  .filter-bar{overflow:visible;}
+  .filter-chips{overflow-x:auto !important;overflow-y:hidden !important;-webkit-overflow-scrolling:touch;}
+
+  /* tb-right / tb-search layout is handled by the grid topbar rules above */
+
+  .page-area,.page-area.fin-scroll,
+  .sidebar.collapsed ~ .main .page-area{padding-bottom:100px !important;}
+
+  .login-screen{overflow-y:auto;align-items:flex-start;}
+  .login-box{margin:auto;}
+  .login-logo-img{width:44px !important;height:44px !important;top:28px !important;right:16px !important;}
+
+  .scroll-fade{
+    display:block;position:fixed;left:0;right:0;bottom:0;height:70px;
+    z-index:140;pointer-events:none;
+    background:linear-gradient(to top,rgba(239,243,245,.95),rgba(239,243,245,0));
+    transition:opacity .25s;
+  }
+  .scroll-hint{
+    display:flex;position:fixed;
+    left:50%;
+    bottom:calc(14px + env(safe-area-inset-bottom));
+    transform:translateX(-50%);z-index:150;
+    width:40px;height:40px;border-radius:50%;
+    background:var(--accent3);color:#fff;
+    border:2px solid var(--accent);
+    align-items:center;justify-content:center;
+    font-size:15px;cursor:pointer;
+    box-shadow:0 6px 18px rgba(15,23,28,.3);
+    animation:hintBounce 1.4s ease-in-out infinite;
+    transition:opacity .25s;
+  }
+  .scroll-hint.hidden,.scroll-fade.hidden{opacity:0;pointer-events:none;animation:none;}
+}
+@keyframes hintBounce{
+  0%,100%{transform:translateX(-50%) translateY(0);}
+  50%{transform:translateX(-50%) translateY(7px);}
+}
+@media print{.scroll-hint,.scroll-fade{display:none !important;}}
 `;
 
 /* ── COMPONENTS ─────────────────────────────────────────────────── */
@@ -767,15 +884,15 @@ function Login({ onLogin }) {
   useEffect(() => {
     if (!locked || timeLeft <= 0) return;
     const t = setInterval(() => setTimeLeft(v => {
-      if (v <= 1) { 
-        clearInterval(t); 
-        setLocked(false); 
-        setAttempts(0); 
+      if (v <= 1) {
+        clearInterval(t);
+        setLocked(false);
+        setAttempts(0);
         setErr(false);
         sessionStorage.removeItem('login_locked');
         sessionStorage.removeItem('login_attempts');
         sessionStorage.removeItem('login_timeleft');
-        return 0; 
+        return 0;
       }
       const newVal = v - 1;
       sessionStorage.setItem('login_timeleft', newVal.toString());
@@ -787,25 +904,22 @@ function Login({ onLogin }) {
   const handle = (e) => {
     e.preventDefault();
     if (locked) return;
-    
-    const valid = (u === 'knitworks' && p === 'Knitworks@123') || 
+    const valid = (u === 'knitworks' && p === 'Knitworks@123') ||
                   (u === 'admin' && p === '1234') ||
-                  (u === 'Jan.spiker' && p === 'Janspiker@123') || 
+                  (u === 'Jan.spiker' && p === 'Janspiker@123') ||
                   (u === 'Joahan.dairytop' && p === 'Johan@123');
-    
-    if (valid) { 
+    if (valid) {
       sessionStorage.removeItem('login_attempts');
       sessionStorage.removeItem('login_locked');
       sessionStorage.removeItem('login_timeleft');
-      onLogin(u); 
+      onLogin(u);
     } else {
-      const a = attempts + 1; 
+      const a = attempts + 1;
       setAttempts(a);
       sessionStorage.setItem('login_attempts', a.toString());
       setErr(true);
-      
-      if (a >= 5) { 
-        setLocked(true); 
+      if (a >= 5) {
+        setLocked(true);
         setTimeLeft(1800);
         sessionStorage.setItem('login_locked', 'true');
         sessionStorage.setItem('login_timeleft', '1800');
@@ -828,72 +942,29 @@ function Login({ onLogin }) {
   return (
     <div className="login-screen">
       <div className="login-box" style={{ position: 'relative' }}>
-        <img 
-          src="/favicon.png" 
-          alt="DairyTop Logo" 
-          style={{
-            position: 'absolute',
-            top: '45px',
-            right: '24px',
-            width: '62px',
-            height: '62px',
-          }}
+        <img
+          className="login-logo-img"
+          src="/favicon.png"
+          alt="DairyTop Logo"
+          style={{ position: 'absolute', top: '45px', right: '24px', width: '62px', height: '62px' }}
         />
-        
         <div className="login-logo">▸ Business Intelligence</div>
         <div className="login-title">Dashboard</div>
         <div className="login-sub">Sign in to access your analytics</div>
-        
         {locked && (
-          <div style={{ 
-            background: '#ffebee', 
-            padding: '8px 12px', 
-            borderRadius: '4px', 
-            marginBottom: '16px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}>
-            <span style={{ color: '#c62828', fontSize: '12px' }}>
-              🔒 Locked for {fmt_t(timeLeft)}
-            </span>
-            <button 
-              onClick={clearLockout}
-              style={{
-                padding: '4px 12px',
-                background: '#d32f2f',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '11px'
-              }}
-            >
-              Clear Lockout (Dev)
-            </button>
+          <div style={{ background:'#ffebee',padding:'8px 12px',borderRadius:'4px',marginBottom:'16px',display:'flex',justifyContent:'space-between',alignItems:'center' }}>
+            <span style={{ color:'#c62828',fontSize:'12px' }}>🔒 Locked for {fmt_t(timeLeft)}</span>
+            <button onClick={clearLockout} style={{ padding:'4px 12px',background:'#d32f2f',color:'white',border:'none',borderRadius:'4px',cursor:'pointer',fontSize:'11px' }}>Clear Lockout (Dev)</button>
           </div>
         )}
-        
         <form onSubmit={handle}>
           <div className="field">
             <label>Username</label>
-            <input 
-              type="text" 
-              value={u} 
-              onChange={e=>{setU(e.target.value);setErr(false);}} 
-              placeholder="Enter username" 
-              disabled={locked}
-            />
+            <input type="text" value={u} onChange={e=>{setU(e.target.value);setErr(false);}} placeholder="Enter username" disabled={locked} />
           </div>
           <div className="field">
             <label>Password</label>
-            <input 
-              type="password" 
-              value={p} 
-              onChange={e=>{setP(e.target.value);setErr(false);}} 
-              placeholder="Enter password" 
-              disabled={locked}
-            />
+            <input type="password" value={p} onChange={e=>{setP(e.target.value);setErr(false);}} placeholder="Enter password" disabled={locked} />
           </div>
           <button type="submit" className="login-btn" disabled={locked}>
             {locked ? `Locked — wait ${fmt_t(timeLeft)}` : 'Sign In →'}
@@ -906,7 +977,6 @@ function Login({ onLogin }) {
   );
 }
 
-/* Inline sortable table. */
 function InlineTable({ headers, rows, height, searchable, initialQuery }) {
   const [sc, setSc] = useState(null);
   const [sd, setSd] = useState('asc');
@@ -927,54 +997,36 @@ function InlineTable({ headers, rows, height, searchable, initialQuery }) {
     <div className="tbl-wrap" style={{height, display:'flex', flexDirection:'column'}}>
       {searchable && (
         <div className="tbl-search-wrap">
-          <input
-            type="text"
-            placeholder="Search this table…"
-            value={q}
-            onChange={e => setQ(e.target.value)}
-            aria-label="Search table"
-          />
+          <input type="text" placeholder="Search this table…" value={q} onChange={e => setQ(e.target.value)} aria-label="Search table" />
           {q.trim() && <span className="tbl-search-count">{sorted.length}/{rows.length}</span>}
         </div>
       )}
       <div style={{flex:1, minHeight:0, overflow:'auto'}}>
-      <table className="itbl">
-        <thead><tr>{headers.map((h,i) => <th key={i} onClick={()=>handleSort(i)}>{h} <span style={{opacity:.5,fontSize:8}}>{sc===i?(sd==='asc'?'↑':'↓'):'⇅'}</span></th>)}</tr></thead>
-        <tbody>{sorted.map((row,ri) => {
-          return (
-            <tr key={ri}>
-              {row.map((cell,ci) => {
-                if (ci === 0 && (headers[0] === '#' || typeof cell === 'number' || /^\d+$/.test(String(cell)))) {
-                  return <td key={ci}><span className={`rank ${ri===0?'r1':ri===1?'r2':ri===2?'r3':'rn'}`}>{cell}</span></td>;
-                }
-                return <td key={ci}>{cell}</td>;
-              })}
-            </tr>
-          );
-        })}</tbody>
-      </table>
+        <table className="itbl">
+          <thead><tr>{headers.map((h,i) => <th key={i} onClick={()=>handleSort(i)}>{h} <span style={{opacity:.5,fontSize:8}}>{sc===i?(sd==='asc'?'↑':'↓'):'⇅'}</span></th>)}</tr></thead>
+          <tbody>{sorted.map((row,ri) => (
+            <tr key={ri}>{row.map((cell,ci) => {
+              if (ci === 0 && (headers[0] === '#' || typeof cell === 'number' || /^\d+$/.test(String(cell)))) {
+                return <td key={ci}><span className={`rank ${ri===0?'r1':ri===1?'r2':ri===2?'r3':'rn'}`}>{cell}</span></td>;
+              }
+              return <td key={ci}>{cell}</td>;
+            })}</tr>
+          ))}</tbody>
+        </table>
       </div>
     </div>
   );
 }
 
-/* Chart panel wrapper. */
 function Panel({ title, subtitle, tag, controls, flex, height, style, className, children, defaultView = 'chart', tableHeaders, tableRows, insight, searchableTable, tableInitialQuery }) {
   const [view, setView] = useState(defaultView);
   const [ready, setReady] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setReady(true), 260);
-    return () => clearTimeout(t);
-  }, []);
+  useEffect(() => { const t = setTimeout(() => setReady(true), 260); return () => clearTimeout(t); }, []);
   const hasToggle = tableHeaders && tableRows;
   const panelStyle = { ...(height != null ? { flex: '0 0 auto', height } : flex ? { flex } : {}), ...style };
   const fixedVars = height != null ? { '--fin-fixed-h': typeof height === 'number' ? `${height}px` : height } : undefined;
-
   return (
-    <div
-      className={`chart-panel${className ? ' ' + className : ''}`}
-      style={{ ...panelStyle, ...(fixedVars || {}) }}
-    >
+    <div className={`chart-panel${className ? ' ' + className : ''}`} style={{ ...panelStyle, ...(fixedVars || {}) }}>
       <div className="cp-head">
         <div>
           <div className="cp-title">{title}</div>
@@ -1015,13 +1067,9 @@ function Panel({ title, subtitle, tag, controls, flex, height, style, className,
 }
 
 const liveChartInstances = new Set();
-
 function EC({ option, onEvents }) {
   const instRef = useRef(null);
-  const handleReady = (inst) => {
-    instRef.current = inst;
-    liveChartInstances.add(inst);
-  };
+  const handleReady = (inst) => { instRef.current = inst; liveChartInstances.add(inst); };
   useEffect(() => () => { if (instRef.current) liveChartInstances.delete(instRef.current); }, []);
   return (
     <ReactECharts
@@ -1044,11 +1092,8 @@ function downloadCSV(filename, headers, rows) {
   const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = filename.replace(/\.xlsx$/i, '.csv');
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  a.href = url; a.download = filename.replace(/\.xlsx$/i, '.csv');
+  document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
 function ExportExcelButton({ filename, headers, rows }) {
@@ -1060,17 +1105,8 @@ function ExportExcelButton({ filename, headers, rows }) {
   };
   return (
     <span style={{display:'inline-flex',gap:5}}>
-      <button className="panel-btn" onClick={handleExport} title="Export to Excel">
-        ⬇ Excel
-      </button>
-      <button
-        className="panel-btn"
-        style={{color:'var(--accent2)',background:'rgba(64,188,243,0.08)',borderColor:'rgba(64,188,243,0.25)'}}
-        onClick={() => downloadCSV(filename, headers, rows)}
-        title="Export to CSV"
-      >
-        ⬇ CSV
-      </button>
+      <button className="panel-btn" onClick={handleExport} title="Export to Excel">⬇ Excel</button>
+      <button className="panel-btn" style={{color:'var(--accent2)',background:'rgba(64,188,243,0.08)',borderColor:'rgba(64,188,243,0.25)'}} onClick={() => downloadCSV(filename, headers, rows)} title="Export to CSV">⬇ CSV</button>
     </span>
   );
 }
@@ -1082,13 +1118,18 @@ function DateFilterBar({ filter, setFilter }) {
   const popRef = useRef(null);
 
   useEffect(() => {
-    const handler = (e) => { 
-      if (popRef.current && !popRef.current.contains(e.target)) {
-        setExpandedYear(null); 
-      }
+    const handler = (e) => {
+      if (popRef.current && !popRef.current.contains(e.target)) setExpandedYear(null);
     };
+    const closeOnScroll = () => setExpandedYear(null);
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('touchstart', handler, { passive: true });
+    window.addEventListener('scroll', closeOnScroll, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('touchstart', handler);
+      window.removeEventListener('scroll', closeOnScroll);
+    };
   }, []);
 
   const toggleYear = (yr) => {
@@ -1114,174 +1155,50 @@ function DateFilterBar({ filter, setFilter }) {
   };
 
   return (
-    <div 
-      className="filter-bar" 
-      ref={popRef}
-      style={{ 
-        position: 'relative',
-        overflow: 'visible',
-        zIndex: 100
-      }}
-    >
+    <div className="filter-bar" ref={popRef} style={{ position:'relative', overflow:'visible', zIndex:100 }}>
       <span className="filter-label">🔍 Filter</span>
-      <div 
-        className="filter-chips" 
-        style={{ 
-          display: 'flex', 
-          gap: '6px', 
-          flexWrap: 'nowrap', 
-          alignItems: 'center', 
-          overflow: 'visible',
-          padding: '4px 0',
-          flex: 1,
-          minWidth: 0,
-          position: 'relative'
-        }}
-      >
+      <div className="filter-chips" style={{ display:'flex', gap:'6px', flexWrap:'nowrap', alignItems:'center', overflow:'visible', padding:'4px 0', flex:1, minWidth:0, position:'relative' }}>
         {years.map(yr => {
           const active = filter.years.includes(yr);
           const mc = (filter.months[yr]||[]).length;
           const isExpanded = expandedYear === yr;
-          
           return (
-            <div 
-              key={yr} 
-              style={{ 
-                position: 'relative', 
-                display: 'inline-flex', 
-                alignItems: 'center', 
-                gap: 3,
-                zIndex: isExpanded ? 9999 : 1
-              }}
-            >
-              <button
-                className={`filter-chip${active?' active':''}`}
-                onClick={() => toggleYear(yr)}
-                style={{ whiteSpace: 'nowrap' }}
-              >
+            <div key={yr} style={{ position:'relative', display:'inline-flex', alignItems:'center', gap:3, zIndex: isExpanded ? 9999 : 1 }}>
+              <button className={`filter-chip${active?' active':''}`} onClick={() => toggleYear(yr)} style={{ whiteSpace:'nowrap' }}>
                 {active ? '☑' : '☐'} 20{yr}{active && mc > 0 ? ` (${mc}m)` : ''}
               </button>
               {active && (
-                <button
-                  style={{
-                    padding: '2px 5px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 4,
-                    background: 'var(--surface3)',
-                    cursor: 'pointer',
-                    fontSize: 9,
-                    color: 'var(--muted)',
-                    flexShrink: 0
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setExpandedYear(isExpanded ? null : yr);
-                  }}
-                >
+                <button style={{ padding:'2px 5px', border:'1px solid var(--border)', borderRadius:4, background:'var(--surface3)', cursor:'pointer', fontSize:9, color:'var(--muted)', flexShrink:0 }}
+                  onClick={(e) => { e.stopPropagation(); setExpandedYear(isExpanded ? null : yr); }}>
                   {isExpanded ? '▲' : '▼'}
                 </button>
               )}
               {isExpanded && (
-                <div 
-                  style={{
-                    position: 'fixed',
-                    top: 'auto',
-                    left: 'auto',
-                    marginTop: '4px',
-                    background: 'var(--surface)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 10,
-                    padding: 10,
-                    zIndex: 99999,
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
-                    minWidth: 220,
-                    maxWidth: 320,
-                    maxHeight: 350,
-                    overflowY: 'auto',
-                    transform: 'translateY(4px)'
-                  }}
+                <div
+                  style={{ position:'fixed', marginTop:'4px', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:10, zIndex:99999, boxShadow:'0 8px 32px rgba(0,0,0,0.25)', minWidth:220, maxWidth:320, maxHeight:350, overflowY:'auto', transform:'translateY(4px)' }}
                   onClick={(e) => e.stopPropagation()}
                   ref={(el) => {
                     if (el) {
                       const rect = el.parentElement.getBoundingClientRect();
-                      el.style.top = (rect.bottom + window.scrollY + 4) + 'px';
-                      el.style.left = (rect.left + window.scrollX) + 'px';
+                      const w = el.offsetWidth || 260;
+                      el.style.top = (rect.bottom + 4) + 'px';
+                      el.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8)) + 'px';
                     }
                   }}
                 >
-                  <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-                    <button 
-                      onClick={() => selectAllMonths(yr)} 
-                      style={{
-                        padding: '3px 10px',
-                        border: '1px solid var(--accent)',
-                        borderRadius: 4,
-                        background: 'rgba(64,188,243,0.08)',
-                        color: 'var(--accent2)',
-                        cursor: 'pointer',
-                        fontSize: 10,
-                        fontWeight: 600,
-                        fontFamily: 'inherit'
-                      }}
-                    >
-                      Select All
-                    </button>
-                    <button 
-                      onClick={() => clearMonths(yr)} 
-                      style={{
-                        padding: '3px 10px',
-                        border: '1px solid var(--muted)',
-                        borderRadius: 4,
-                        background: 'transparent',
-                        color: 'var(--muted)',
-                        cursor: 'pointer',
-                        fontSize: 10,
-                        fontFamily: 'inherit'
-                      }}
-                    >
-                      Clear
-                    </button>
+                  <div style={{ display:'flex', gap:4, marginBottom:8, flexWrap:'wrap' }}>
+                    <button onClick={() => selectAllMonths(yr)} style={{ padding:'3px 10px', border:'1px solid var(--accent)', borderRadius:4, background:'rgba(64,188,243,0.08)', color:'var(--accent2)', cursor:'pointer', fontSize:10, fontWeight:600, fontFamily:'inherit' }}>Select All</button>
+                    <button onClick={() => clearMonths(yr)} style={{ padding:'3px 10px', border:'1px solid var(--muted)', borderRadius:4, background:'transparent', color:'var(--muted)', cursor:'pointer', fontSize:10, fontFamily:'inherit' }}>Clear</button>
                   </div>
-                  <div style={{ 
-                    display: 'grid', 
-                    gridTemplateColumns: '1fr 1fr', 
-                    gap: 2,
-                    maxHeight: 200,
-                    overflowY: 'auto'
-                  }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:2, maxHeight:200, overflowY:'auto' }}>
                     {monthly.filter(m => m.m.includes(yr)).map(({m}) => {
                       const sel = (filter.months[yr]||[]).includes(m);
                       return (
-                        <label 
-                          key={m} 
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            padding: '4px 6px',
-                            borderRadius: 4,
-                            cursor: 'pointer',
-                            background: sel ? 'rgba(64,188,243,.08)' : 'transparent',
-                            fontSize: 10,
-                            fontFamily: 'inherit',
-                            transition: 'background .14s'
-                          }}
+                        <label key={m} style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 6px', borderRadius:4, cursor:'pointer', background: sel ? 'rgba(64,188,243,.08)' : 'transparent', fontSize:10, fontFamily:'inherit', transition:'background .14s' }}
                           onMouseEnter={(e) => e.currentTarget.style.background = sel ? 'rgba(64,188,243,.15)' : 'rgba(64,188,243,.05)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = sel ? 'rgba(64,188,243,.08)' : 'transparent'}
-                        >
-                          <input 
-                            type="checkbox" 
-                            checked={sel} 
-                            onChange={() => toggleMonth(yr, m)} 
-                            style={{
-                              width: 12,
-                              height: 12,
-                              cursor: 'pointer',
-                              accentColor: 'var(--accent)',
-                              flexShrink: 0
-                            }}
-                          />
-                          <span style={{ whiteSpace: 'nowrap' }}>{m}</span>
+                          onMouseLeave={(e) => e.currentTarget.style.background = sel ? 'rgba(64,188,243,.08)' : 'transparent'}>
+                          <input type="checkbox" checked={sel} onChange={() => toggleMonth(yr, m)} style={{ width:12, height:12, cursor:'pointer', accentColor:'var(--accent)', flexShrink:0 }} />
+                          <span style={{ whiteSpace:'nowrap' }}>{m}</span>
                         </label>
                       );
                     })}
@@ -1294,13 +1211,7 @@ function DateFilterBar({ filter, setFilter }) {
         {filter.years.length > 0 && (
           <>
             <div className="filter-divider"/>
-            <button 
-              className="filter-clear" 
-              onClick={() => setFilter({years:[],months:{}})}
-              style={{ flexShrink: 0 }}
-            >
-              ✕ Clear
-            </button>
+            <button className="filter-clear" onClick={() => setFilter({years:[],months:{}})} style={{ flexShrink:0 }}>✕ Clear</button>
           </>
         )}
       </div>
@@ -1315,11 +1226,8 @@ function DateFilterBar({ filter, setFilter }) {
 /* ── PAGES ───────────────────────────────────────────────────── */
 
 function Overview() {
-  const orderIdx = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
   const currentMonthEntry = monthly[monthly.length - 1];
   const currentMonth = currentMonthEntry?.m;
-
   const last3 = monthly.slice(-3);
   const last3WithPY = last3.map(cur => {
     const [name, yy] = cur.m.split(' ');
@@ -1327,7 +1235,6 @@ function Overview() {
     const py = monthly.find(x => x.m === `${name} ${pyYear}`);
     return { name, cyLabel: cur.m, cy: cur.rev, py: py ? py.rev : null, pyLabel: py ? py.m : null };
   });
-
   const last3Names = last3.map(m => m.m);
   const cats = useMemo(() => {
     const g = {};
@@ -1340,58 +1247,38 @@ function Overview() {
   }, [last3Names.join(',')]);
   const catsTotalRev = cats.reduce((s, c) => s + c.rev, 0);
 
-  // ── MELKPOEDER TONNAGE PANEL (dashboard) ───────────────────────
-  const melkSalesmen = useMemo(
-    () => [...new Set(melkpoederTonnage2025.map(t => t.salesman))].filter(n => n !== 'Unknown' && n !== 'Webshop').sort(),
-    []
-  );
+  const melkSalesmen = useMemo(() => [...new Set(melkpoederTonnage2025.map(t => t.salesman))].filter(n => n !== 'Unknown' && n !== 'Webshop').sort(), []);
   const [melkSalesman, setMelkSalesman] = useState('All');
-
-  // CY months available from tonnagePerSalesman (2026 data)
   const melkCYMonths = useMemo(() => {
     const seen = new Set();
-    tonnagePerSalesman.filter(t => t.category === 'Melkpoeder').forEach(t =>
-      (t.monthly || []).forEach(mo => seen.add(mo.m))
-    );
+    tonnagePerSalesman.filter(t => t.category === 'Melkpoeder').forEach(t => (t.monthly || []).forEach(mo => seen.add(mo.m)));
     const order = monthly.map(m => m.m);
     return [...seen].sort((a, b) => order.indexOf(a) - order.indexOf(b));
   }, []);
-
   const melkPeriods = useMemo(() => ['Full period', ...melkCYMonths], [melkCYMonths]);
   const [melkPeriod, setMelkPeriod] = useState('Full period');
-
   const melkTonChartData = useMemo(() => {
     const months = melkPeriod === 'Full period' ? melkCYMonths : [melkPeriod];
     return months.map(cyM => {
       const [name, yy] = cyM.split(' ');
       const pyM = `${name} ${String(parseInt(yy, 10) - 1).padStart(2, '0')}`;
-
       let cyTon = 0, pyTon = null, cyRev = null, pyRev = null;
-
       if (melkSalesman === 'All') {
         const melkTotal = totalTonnageByCategory.find(c => c.category === 'Melkpoeder');
         const cyEntry = melkTotal?.monthly.find(x => x.m === cyM);
-        cyTon = cyEntry?.tonnage ?? 0;
-        cyRev = cyEntry?.revenue ?? null;
+        cyTon = cyEntry?.tonnage ?? 0; cyRev = cyEntry?.revenue ?? null;
         const pyEntry = melkTotal?.monthly.find(x => x.m === pyM);
         pyTon = pyEntry?.tonnage ?? null;
-        // PY revenue: sum across all salesmen from melkpoederTonnage2025
-        const pyRevSum = melkpoederTonnage2025.reduce((s, rec) => {
-          const e = rec.monthly.find(x => x.m === pyM);
-          return s + (e?.revenue ?? 0);
-        }, 0);
+        const pyRevSum = melkpoederTonnage2025.reduce((s, rec) => { const e = rec.monthly.find(x => x.m === pyM); return s + (e?.revenue ?? 0); }, 0);
         pyRev = pyRevSum > 0 ? pyRevSum : null;
       } else {
         const cyRec = tonnagePerSalesman.find(t => t.salesman === melkSalesman && t.category === 'Melkpoeder');
         const cyEntry = cyRec?.monthly.find(x => x.m === cyM);
-        cyTon = cyEntry?.tonnage ?? 0;
-        cyRev = cyEntry?.revenue ?? null;
+        cyTon = cyEntry?.tonnage ?? 0; cyRev = cyEntry?.revenue ?? null;
         const pyRec = melkpoederTonnage2025.find(t => t.salesman === melkSalesman);
         const pyEntry = pyRec?.monthly.find(x => x.m === pyM);
-        pyTon = pyEntry?.tonnage ?? null;
-        pyRev = pyEntry?.revenue ?? null;
+        pyTon = pyEntry?.tonnage ?? null; pyRev = pyEntry?.revenue ?? null;
       }
-
       return { label: name, cyM, pyM, cy: cyTon, py: pyTon, cyRev, pyRev };
     });
   }, [melkSalesman, melkPeriod, melkCYMonths]);
@@ -1400,300 +1287,160 @@ function Overview() {
   const fmtRev = v => (v === null || v === undefined || isNaN(v)) ? '—' : '€' + v.toLocaleString('de-DE', { maximumFractionDigits: 0 });
 
   const melkTonOpt = useMemo(() => withDataZoom({
-    tooltip: {
-      ...TOOLTIP_STYLE,
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
+    tooltip: { ...TOOLTIP_STYLE, trigger:'axis', axisPointer:{ type:'shadow' },
       formatter: function (params) {
-        const idx = params[0].dataIndex;
-        const d = melkTonChartData[idx];
+        const idx = params[0].dataIndex; const d = melkTonChartData[idx];
         let html = `<strong>${params[0].axisValue}</strong><br/>`;
         html += `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#73D4F2;margin-right:4px"></span>This Year &nbsp; ${fmtTon(d.cy)} &nbsp;|&nbsp; ${fmtRev(d.cyRev)}<br/>`;
         html += `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0891B2;margin-right:4px"></span>Last Year &nbsp; ${d.py != null ? fmtTon(d.py) : '—'} &nbsp;|&nbsp; ${fmtRev(d.pyRev)}<br/>`;
         return html;
       }
     },
-    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false },
-    grid: { left: '3%', right: '4%', bottom: '16%', top: '5%', containLabel: true },
-    xAxis: { type: 'category', data: melkTonChartData.map(d => d.label), axisLabel: { color: '#5F7078', fontSize: 9 } },
-    yAxis: { type: 'value', minInterval: 0.1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => v.toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' t' }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    legend: { bottom:0, textStyle:{ color:'#5F7078', fontSize:10 }, icon:'roundRect', selectedMode:false },
+    grid: { left:'3%', right:'4%', bottom:'16%', top:'5%', containLabel:true },
+    xAxis: { type:'category', data:melkTonChartData.map(d=>d.label), axisLabel:{ color:'#5F7078', fontSize:9 } },
+    yAxis: { type:'value', minInterval:0.1, axisLabel:{ color:'#5F7078', fontSize:9, formatter: v => v.toLocaleString('de-DE',{maximumFractionDigits:0})+' t' }, splitLine:{ lineStyle:{ color:'#F0F3F4' } } },
     series: [
-      { name: 'Last Year', type: 'bar', data: melkTonChartData.map(d => d.py), itemStyle: { color: '#0891B2', borderRadius: [3,3,0,0] }, barGap: '0%', barCategoryGap: '30%' },
-      { name: 'This Year', type: 'bar', data: melkTonChartData.map(d => d.cy), itemStyle: { color: '#73D4F2', borderRadius: [3,3,0,0] }, barGap: '0%', barCategoryGap: '30%' },
+      { name:'Last Year', type:'bar', data:melkTonChartData.map(d=>d.py), itemStyle:{ color:'#0891B2', borderRadius:[3,3,0,0] }, barGap:'0%', barCategoryGap:'30%' },
+      { name:'This Year', type:'bar', data:melkTonChartData.map(d=>d.cy), itemStyle:{ color:'#73D4F2', borderRadius:[3,3,0,0] }, barGap:'0%', barCategoryGap:'30%' },
     ]
   }), [melkTonChartData]);
 
-  const melkTonTable = {
-    headers: ['Month', 'Ton TY', 'Rev TY', 'Ton LY', 'Rev LY'],
-    rows: melkTonChartData.map(d => [d.cyM, fmtTon(d.cy), fmtRev(d.cyRev), d.py != null ? fmtTon(d.py) : '—', fmtRev(d.pyRev)])
-  };
-
+  const melkTonTable = { headers:['Month','Ton TY','Rev TY','Ton LY','Rev LY'], rows:melkTonChartData.map(d=>[d.cyM,fmtTon(d.cy),fmtRev(d.cyRev),d.py!=null?fmtTon(d.py):'—',fmtRev(d.pyRev)]) };
   const melkTonControls = (
     <>
-      <select className="panel-select" value={melkSalesman} onChange={e => setMelkSalesman(e.target.value)} aria-label="Salesman">
-        <option value="All">All salesmen</option>
-        {melkSalesmen.map(n => <option key={n} value={n}>{n}</option>)}
-      </select>
-      <select className="panel-select" value={melkPeriod} onChange={e => setMelkPeriod(e.target.value)} aria-label="Period">
-        {melkPeriods.map(p => <option key={p} value={p}>{p}</option>)}
-      </select>
+      <select className="panel-select" value={melkSalesman} onChange={e=>setMelkSalesman(e.target.value)}><option value="All">All salesmen</option>{melkSalesmen.map(n=><option key={n} value={n}>{n}</option>)}</select>
+      <select className="panel-select" value={melkPeriod} onChange={e=>setMelkPeriod(e.target.value)}>{melkPeriods.map(p=><option key={p} value={p}>{p}</option>)}</select>
     </>
   );
-
-  const melkTotCY = melkTonChartData.reduce((s, d) => s + (d.cy || 0), 0);
-  const melkTotPY = melkTonChartData.some(d => d.py != null) ? melkTonChartData.reduce((s, d) => s + (d.py || 0), 0) : null;
-  const melkDeltaPct = melkTotPY ? ((melkTotCY - melkTotPY) / melkTotPY * 100) : null;
-  const melkTonInsight = `Melkpoeder${melkSalesman !== 'All' ? ` · ${melkSalesman.split(' ')[0]}` : ''} — ${melkPeriod}: ${fmtTon(melkTotCY)}${melkDeltaPct != null ? ` · ${melkDeltaPct >= 0 ? '▲' : '▼'} ${Math.abs(melkDeltaPct).toFixed(1)}% vs last year` : ''}`;
+  const melkTotCY = melkTonChartData.reduce((s,d)=>s+(d.cy||0),0);
+  const melkTotPY = melkTonChartData.some(d=>d.py!=null) ? melkTonChartData.reduce((s,d)=>s+(d.py||0),0) : null;
+  const melkDeltaPct = melkTotPY ? ((melkTotCY-melkTotPY)/melkTotPY*100) : null;
+  const melkTonInsight = `Melkpoeder${melkSalesman!=='All'?` · ${melkSalesman.split(' ')[0]}`:''}  — ${melkPeriod}: ${fmtTon(melkTotCY)}${melkDeltaPct!=null?` · ${melkDeltaPct>=0?'▲':'▼'} ${Math.abs(melkDeltaPct).toFixed(1)}% vs last year`:''}`;
 
   const repsLast3Months = useMemo(() => {
     const g = {};
-    salesrepsRaw.filter(r => last3Names.includes(r.m)).forEach(r => {
-      const k = r.n.trim();
-      if (!g[k]) g[k] = { n: k, rev: 0, qty: 0, orders: 0 };
-      g[k].rev += r.rev; g[k].qty += r.qty; g[k].orders += r.orders;
-    });
-    return Object.values(g).sort((a, b) => b.rev - a.rev);
+    salesrepsRaw.filter(r=>last3Names.includes(r.m)).forEach(r=>{const k=r.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};g[k].rev+=r.rev;g[k].qty+=r.qty;g[k].orders+=r.orders;});
+    return Object.values(g).sort((a,b)=>b.rev-a.rev);
   }, [last3Names.join(',')]);
 
   const cmpOpt = withDataZoom({
-    tooltip: {
-      ...TOOLTIP_STYLE,
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      formatter: function (params) {
-        let html = `<strong>${params[0].name}</strong><br/>`;
-        params.forEach(p => {
-          const val = p.value;
-          html += `${p.marker} ${p.seriesName}: ${val != null ? fmtFull(val) : '—'}<br/>`;
-        });
-        return html;
-      }
-    },
-    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false },
-    grid: { left: '3%', right: '4%', bottom: '16%', top: '5%', containLabel: true },
-    xAxis: { type: 'category', data: last3WithPY.map(d => d.name), axisLabel: { color: '#5F7078', fontSize: 9 } },
-    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
-    series: [
-      { name: 'Last Year', type: 'bar', data: last3WithPY.map(d => d.py), itemStyle: { color: '#0891B2', borderRadius: [3,3,0,0] }, barGap: '0%', barCategoryGap: '30%' },
-      { name: 'This Year', type: 'bar', data: last3WithPY.map(d => d.cy), itemStyle: { color: '#73D4F2', borderRadius: [3,3,0,0] }, barGap: '0%', barCategoryGap: '30%' },
+    tooltip:{ ...TOOLTIP_STYLE, trigger:'axis', axisPointer:{type:'shadow'}, formatter:function(params){let html=`<strong>${params[0].name}</strong><br/>`;params.forEach(p=>{const val=p.value;html+=`${p.marker} ${p.seriesName}: ${val!=null?fmtFull(val):'—'}<br/>`;});return html;}},
+    legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false},
+    grid:{left:'3%',right:'4%',bottom:'16%',top:'5%',containLabel:true},
+    xAxis:{type:'category',data:last3WithPY.map(d=>d.name),axisLabel:{color:'#5F7078',fontSize:9}},
+    yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
+    series:[
+      {name:'Last Year',type:'bar',data:last3WithPY.map(d=>d.py),itemStyle:{color:'#0891B2',borderRadius:[3,3,0,0]},barGap:'0%',barCategoryGap:'30%'},
+      {name:'This Year',type:'bar',data:last3WithPY.map(d=>d.cy),itemStyle:{color:'#73D4F2',borderRadius:[3,3,0,0]},barGap:'0%',barCategoryGap:'30%'},
     ]
   });
 
   const repOpt = withDataZoom({
-    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}` },
-    grid: { left: '2%', right: '6%', bottom: '12%', top: '5%', containLabel: true },
-    xAxis: { type: 'value', min: 0, minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
-    yAxis: { type: 'category', data: repsLast3Months.map(d => d.n.split(' ')[0]), axisLabel: { color: '#5F7078', fontSize: 9 }, inverse: true },
-    legend: { show: false },
-    series: [{
-      type: 'bar',
-      data: repsLast3Months.map((d, i) => ({ value: d.rev, itemStyle: { color: PALETTE[i % PALETTE.length], borderRadius: [0,3,3,0] } })),
-      barMaxWidth: 22
-    }]
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},
+    grid:{left:'2%',right:'6%',bottom:'12%',top:'5%',containLabel:true},
+    xAxis:{type:'value',min:0,minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
+    yAxis:{type:'category',data:repsLast3Months.map(d=>d.n.split(' ')[0]),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
+    legend:{show:false},
+    series:[{type:'bar',data:repsLast3Months.map((d,i)=>({value:d.rev,itemStyle:{color:PALETTE[i%PALETTE.length],borderRadius:[0,3,3,0]}})),barMaxWidth:22}]
   });
 
-  const cmpTable = { headers: ['Month', 'This Year', 'Last Year'], rows: last3WithPY.map(d => [d.cyLabel, fmtFull(d.cy), d.py != null ? fmtFull(d.py) : '—']) };
-  const repTable = { headers: ['#', 'Verkoper', 'Revenue', 'Orders'], rows: repsLast3Months.map((d, i) => [i + 1, d.n, fmtFull(d.rev), fmtN(d.orders)]) };
+  const cmpTable={headers:['Month','This Year','Last Year'],rows:last3WithPY.map(d=>[d.cyLabel,fmtFull(d.cy),d.py!=null?fmtFull(d.py):'—'])};
+  const repTable={headers:['#','Verkoper','Revenue','Orders'],rows:repsLast3Months.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders)])};
 
-  const momDelta = last3.length >= 2 && last3[last3.length - 2].rev
-    ? ((last3[last3.length - 1].rev - last3[last3.length - 2].rev) / last3[last3.length - 2].rev) * 100
-    : null;
-  const turnoverInsight = momDelta != null
-    ? `Revenue ${momDelta >= 0 ? 'up' : 'down'} ${Math.abs(momDelta).toFixed(1)}% vs last month${cats[0] ? ` · Top category: ${cats[0].n} (${catsTotalRev > 0 ? (cats[0].rev / catsTotalRev * 100).toFixed(0) : 0}% of last 3 months)` : ''}`
-    : null;
+  const momDelta = last3.length>=2 && last3[last3.length-2].rev ? ((last3[last3.length-1].rev-last3[last3.length-2].rev)/last3[last3.length-2].rev)*100 : null;
+  const turnoverInsight = momDelta!=null ? `Revenue ${momDelta>=0?'up':'down'} ${Math.abs(momDelta).toFixed(1)}% vs last month${cats[0]?` · Top category: ${cats[0].n} (${catsTotalRev>0?(cats[0].rev/catsTotalRev*100).toFixed(0):0}% of last 3 months)`:''}` : null;
   const repTotalRev = repsLast3Months.reduce((s,r)=>s+r.rev,0);
-  const repInsight = repsLast3Months[0]
-    ? `Leading over last 3 months: ${repsLast3Months[0].n} with ${fmtFull(repsLast3Months[0].rev)}${repsLast3Months.length > 1 ? ` (${repTotalRev > 0 ? (repsLast3Months[0].rev / repTotalRev * 100).toFixed(0) : 0}% of last 3 months' revenue)` : ''}`
-    : null;
+  const repInsight = repsLast3Months[0] ? `Leading over last 3 months: ${repsLast3Months[0].n} with ${fmtFull(repsLast3Months[0].rev)}${repsLast3Months.length>1?` (${repTotalRev>0?(repsLast3Months[0].rev/repTotalRev*100).toFixed(0):0}% of last 3 months' revenue)`:''}` : null;
 
   return (
     <div className="page-area" key="overview">
       <div className="kpi-strip">
-        <div className="kpi-card green">
-          <div className="kpi-lbl">Turnover MTD</div>
-          <div className="kpi-val sm">{fmtFull(turnoverMTD)}</div>
-          <div className="kpi-chg">Revenue this month, to date</div>
-        </div>
-        <div className="kpi-card amber">
-          <div className="kpi-lbl">Projected MTD</div>
-          <div className="kpi-val sm">{fmtFull(projectedMTD)}</div>
-          <div className="kpi-chg">Open MTD + Revenue MTD</div>
-        </div>
-        <div className="kpi-card blue">
-          <div className="kpi-lbl">Open Orders (Future) – Kalverhuisvesting</div>
-          <div className="kpi-val sm">{fmtFull(openOrderValueFuture)}</div>
-          <div className="kpi-chg">Due after today</div>
-        </div>
-        <div className="kpi-card sky">
-          <div className="kpi-lbl">Open Value MTD</div>
-          <div className="kpi-val sm">{fmtFull(openOrderValueMTD)}</div>
-          <div className="kpi-chg">Open orders due this month</div>
-        </div>
-        <div className="kpi-card teal">
-          <div className="kpi-lbl">Open Value (Full)</div>
-          <div className="kpi-val sm">{fmtFull(openOrderValuePresent)}</div>
-          <div className="kpi-chg">All open orders due today or earlier</div>
-        </div>
+        <div className="kpi-card green"><div className="kpi-lbl">Turnover MTD</div><div className="kpi-val sm">{fmtFull(turnoverMTD)}</div><div className="kpi-chg">Revenue this month, to date</div></div>
+        <div className="kpi-card amber"><div className="kpi-lbl">Projected MTD</div><div className="kpi-val sm">{fmtFull(projectedMTD)}</div><div className="kpi-chg">Open MTD + Revenue MTD</div></div>
+        <div className="kpi-card blue"><div className="kpi-lbl">Open Orders (Future) – Kalverhuisvesting</div><div className="kpi-val sm">{fmtFull(openOrderValueFuture)}</div><div className="kpi-chg">Due after today</div></div>
+        <div className="kpi-card sky"><div className="kpi-lbl">Open Value MTD</div><div className="kpi-val sm">{fmtFull(openOrderValueMTD)}</div><div className="kpi-chg">Open orders due this month</div></div>
+        <div className="kpi-card teal"><div className="kpi-lbl">Open Value (Full)</div><div className="kpi-val sm">{fmtFull(openOrderValuePresent)}</div><div className="kpi-chg">All open orders due today or earlier</div></div>
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:1.4}}>
-          <Panel title="Turnover — Last 3 Months" subtitle={`This year vs last year · through ${currentMonth || '—'}`} flex={1} tableHeaders={cmpTable.headers} tableRows={cmpTable.rows} insight={turnoverInsight}>
-            <EC option={cmpOpt}/>
-          </Panel>
+          <Panel title="Turnover — Last 3 Months" subtitle={`This year vs last year · through ${currentMonth||'—'}`} flex={1} tableHeaders={cmpTable.headers} tableRows={cmpTable.rows} insight={turnoverInsight}><EC option={cmpOpt}/></Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Melkpoeder Tonnage" subtitle={melkSalesman === 'All' ? 'Per month · this year vs last year' : `${melkSalesman.split(' ')[0]} · this year vs last year`} flex={1} controls={melkTonControls} tableHeaders={melkTonTable.headers} tableRows={melkTonTable.rows} insight={melkTonInsight}>
-            <EC option={melkTonOpt} />
-          </Panel>
+          <Panel title="Melkpoeder Tonnage" subtitle={melkSalesman==='All'?'Per month · this year vs last year':`${melkSalesman.split(' ')[0]} · this year vs last year`} flex={1} controls={melkTonControls} tableHeaders={melkTonTable.headers} tableRows={melkTonTable.rows} insight={melkTonInsight}><EC option={melkTonOpt}/></Panel>
         </div>
       </div>
       <div className="charts-row" style={{flex:0.8}}>
-        <Panel title="Verkoper Prestaties" subtitle={`Last 3 months · through ${currentMonth || '—'}`} flex={1} tableHeaders={repTable.headers} tableRows={repTable.rows} insight={repInsight}>
-          <EC option={repOpt} />
-        </Panel>
+        <Panel title="Verkoper Prestaties" subtitle={`Last 3 months · through ${currentMonth||'—'}`} flex={1} tableHeaders={repTable.headers} tableRows={repTable.rows} insight={repInsight}><EC option={repOpt}/></Panel>
       </div>
     </div>
   );
 }
 
-
 function Revenue({ fm, label }) {
-  const totalRev = fm.reduce((s,m)=>s+m.rev,0);
-  const totalOrders = fm.reduce((s,m)=>s+m.orders,0);
-  const best = fm.length?fm.reduce((b,c)=>c.rev>b.rev?c:b,fm[0]):null;
-  const avg = fm.length?totalRev/fm.length:0;
+  const totalRev=fm.reduce((s,m)=>s+m.rev,0);
+  const totalOrders=fm.reduce((s,m)=>s+m.orders,0);
+  const best=fm.length?fm.reduce((b,c)=>c.rev>b.rev?c:b,fm[0]):null;
+  const avg=fm.length?totalRev/fm.length:0;
+  const [selectedMonth,setSelectedMonth]=useState(null);
+  const [showPrevOverlay,setShowPrevOverlay]=useState(false);
+  const prevPeriod=useMemo(()=>{
+    if(!fm.length)return[];
+    const startIdx=monthly.findIndex(m=>m.m===fm[0].m);
+    if(startIdx<=0)return[];
+    const from=Math.max(0,startIdx-fm.length);
+    return monthly.slice(from,startIdx);
+  },[fm]);
+  const canShowPrev=prevPeriod.length>0;
+  const prevTotal=prevPeriod.reduce((s,m)=>s+m.rev,0);
+  const periodDelta=(canShowPrev&&prevTotal)?((totalRev-prevTotal)/prevTotal)*100:null;
 
-  const [selectedMonth, setSelectedMonth] = useState(null);
-
-  const [showPrevOverlay, setShowPrevOverlay] = useState(false);
-  const prevPeriod = useMemo(() => {
-    if (!fm.length) return [];
-    const startIdx = monthly.findIndex(m => m.m === fm[0].m);
-    if (startIdx <= 0) return [];
-    const from = Math.max(0, startIdx - fm.length);
-    return monthly.slice(from, startIdx);
-  }, [fm]);
-  const canShowPrev = prevPeriod.length > 0;
-  const prevTotal = prevPeriod.reduce((s,m)=>s+m.rev,0);
-  const periodDelta = (canShowPrev && prevTotal) ? ((totalRev - prevTotal) / prevTotal) * 100 : null;
-
-  const barOpt = withDataZoom(withCrosshair({
-    tooltip:{
-      trigger:'axis',
-      formatter:p=>{
-        let html = `<strong>${p[0].name}</strong><br/>`;
-        p.forEach(s => { html += `${s.marker} ${s.seriesName}: ${s.value != null ? fmtFull(s.value) : '—'}<br/>`; });
-        return html;
-      }
-    },
-    legend: showPrevOverlay && canShowPrev ? { bottom: 0, textStyle:{color:'#5F7078',fontSize:10}, icon:'roundRect', selectedMode:false } : undefined,
-    grid:{left:'3%',right:'4%',bottom: showPrevOverlay && canShowPrev ? '18%' : '12%',top:'8%',containLabel:true},
+  const barOpt=withDataZoom(withCrosshair({
+    tooltip:{trigger:'axis',formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;p.forEach(s=>{html+=`${s.marker} ${s.seriesName}: ${s.value!=null?fmtFull(s.value):'—'}<br/>`;});return html;}},
+    legend:showPrevOverlay&&canShowPrev?{bottom:0,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false}:undefined,
+    grid:{left:'3%',right:'4%',bottom:showPrevOverlay&&canShowPrev?'18%':'12%',top:'8%',containLabel:true},
     xAxis:{type:'category',data:fm.map(d=>d.m),axisLabel:{color:'#5F7078',fontSize:9}},
     yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     series:[
-      {
-        name: 'Current period',
-        type:'bar',
-        data:fm.map(d => ({
-          value: d.rev,
-          itemStyle: {
-            color: selectedMonth && selectedMonth !== d.m ? 'rgba(8,145,178,0.2)' : 'rgba(8,145,178,0.75)',
-            borderRadius: [3,3,0,0]
-          }
-        })),
-        barMaxWidth:28
-      },
-      ...(showPrevOverlay && canShowPrev ? [{
-        name: 'Previous period',
-        type: 'line',
-        data: fm.map((_, i) => prevPeriod[i] ? prevPeriod[i].rev : null),
-        smooth: true,
-        symbol: 'circle',
-        symbolSize: 5,
-        lineStyle: { color: '#E5A93D', width: 2, type: 'dashed' },
-        itemStyle: { color: '#E5A93D' }
-      }] : [])
+      {name:'Current period',type:'bar',data:fm.map(d=>({value:d.rev,itemStyle:{color:selectedMonth&&selectedMonth!==d.m?'rgba(8,145,178,0.2)':'rgba(8,145,178,0.75)',borderRadius:[3,3,0,0]}})),barMaxWidth:28},
+      ...(showPrevOverlay&&canShowPrev?[{name:'Previous period',type:'line',data:fm.map((_,i)=>prevPeriod[i]?prevPeriod[i].rev:null),smooth:true,symbol:'circle',symbolSize:5,lineStyle:{color:'#E5A93D',width:2,type:'dashed'},itemStyle:{color:'#E5A93D'}}]:[])
     ]
   }));
 
-  const prevToggleControl = (
-    <button
-      className={`cmp-toggle${showPrevOverlay ? ' active' : ''}`}
-      onClick={() => setShowPrevOverlay(v => !v)}
-      disabled={!canShowPrev}
-      title={canShowPrev ? 'Overlay the previous equal-length period' : 'No earlier data available to compare'}
-    >
-      ↔ {showPrevOverlay ? 'Hide' : 'vs'} Previous period
+  const prevToggleControl=(
+    <button className={`cmp-toggle${showPrevOverlay?' active':''}`} onClick={()=>setShowPrevOverlay(v=>!v)} disabled={!canShowPrev}>
+      ↔ {showPrevOverlay?'Hide':'vs'} Previous period
     </button>
   );
-
-  const revenueInsight = (() => {
-    const parts = [];
-    if (periodDelta != null) parts.push(`Revenue ${periodDelta >= 0 ? 'up' : 'down'} ${Math.abs(periodDelta).toFixed(1)}% vs the previous ${fm.length}-month period`);
-    if (best) parts.push(`best month: ${best.m} (${fmtFull(best.rev)})`);
-    return parts.length ? parts.join(' · ') : null;
-  })();
+  const revenueInsight=(()=>{const parts=[];if(periodDelta!=null)parts.push(`Revenue ${periodDelta>=0?'up':'down'} ${Math.abs(periodDelta).toFixed(1)}% vs the previous ${fm.length}-month period`);if(best)parts.push(`best month: ${best.m} (${fmtFull(best.rev)})`);return parts.length?parts.join(' · '):null;})();
 
   const m25=fm.filter(m=>m.m.includes('25')),m26=fm.filter(m=>m.m.includes('26'));
   const order=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const n25=m25.map(m=>m.m.split(' ')[0]),n26=m26.map(m=>m.m.split(' ')[0]);
   let cMonths=(m25.length&&m26.length)?n25.filter(m=>n26.includes(m)):[...new Set([...n25,...n26])];
   cMonths.sort((a,b)=>order.indexOf(a)-order.indexOf(b));
-  
   const lineSeries=[];
-  if(m25.length)lineSeries.push({name:'2025',type:'line',data:cMonths.map(m=>m25.find(d=>d.m.startsWith(m))?.rev||null),
-    lineStyle:{color:'#0891B2',width:2},
-    itemStyle:{color:'#0891B2'},areaStyle:{color:'rgba(8,145,178,.07)'},smooth:true});
-  if(m26.length)lineSeries.push({name:'2026',type:'line',data:cMonths.map(m=>m26.find(d=>d.m.startsWith(m))?.rev||null),
-    lineStyle:{color:'#73D4F2',width:2,type:'dashed'},
-    itemStyle:{color:'#73D4F2'},areaStyle:{color:'rgba(115,212,242,.07)'},smooth:true});
-  
-  const cmpOpt = withDataZoom(withCrosshair({
+  if(m25.length)lineSeries.push({name:'2025',type:'line',data:cMonths.map(m=>m25.find(d=>d.m.startsWith(m))?.rev||null),lineStyle:{color:'#0891B2',width:2},itemStyle:{color:'#0891B2'},areaStyle:{color:'rgba(8,145,178,.07)'},smooth:true});
+  if(m26.length)lineSeries.push({name:'2026',type:'line',data:cMonths.map(m=>m26.find(d=>d.m.startsWith(m))?.rev||null),lineStyle:{color:'#73D4F2',width:2,type:'dashed'},itemStyle:{color:'#73D4F2'},areaStyle:{color:'rgba(115,212,242,.07)'},smooth:true});
+  const cmpOpt=withDataZoom(withCrosshair({
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',formatter:p=>p.map(s=>`${s.marker} ${s.seriesName}: ${s.value?fmtFull(s.value):'—'}`).join('<br/>')},
-    legend:{
-      bottom:0,
-      textStyle:{color:'#5F7078',fontSize:10},
-      icon:'roundRect',
-      selectedMode: false
-    },
+    legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false},
     grid:{left:'3%',right:'4%',bottom:'16%',top:'8%',containLabel:true},
     xAxis:{type:'category',data:cMonths,axisLabel:{color:'#5F7078',fontSize:9}},
     yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     series:lineSeries
   }));
-
-  const ordersOpt = withDataZoom(withCrosshair({
+  const ordersOpt=withDataZoom(withCrosshair({
     tooltip:{trigger:'axis',formatter:p=>`<strong>${p[0].name}</strong><br/>Orders: ${fmtN(p[0].value)}`},
     grid:{left:'3%',right:'4%',bottom:'12%',top:'8%',containLabel:true},
     xAxis:{type:'category',data:fm.map(d=>d.m),axisLabel:{color:'#5F7078',fontSize:9},axisLine:{lineStyle:{color:'#DDE6E9'}}},
     yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtN(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    series:[{
-      type:'line',
-      data:fm.map(d => d.orders),
-      step:'middle',
-      symbol:'circle',
-      symbolSize:(val,params)=>{
-        const m = fm[params.dataIndex]?.m;
-        return selectedMonth && selectedMonth === m ? 8 : 5;
-      },
-      lineStyle:{color:'#0369A1',width:2},
-      areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(3,105,161,.18)'},{offset:1,color:'rgba(3,105,161,.01)'}]}},
-      itemStyle:{
-        color:'#0369A1',
-        borderColor:'#fff',
-        borderWidth:1.5
-      },
-      emphasis:{itemStyle:{color:'#0369A1'}}
-    }]
+    series:[{type:'line',data:fm.map(d=>d.orders),step:'middle',symbol:'circle',symbolSize:(val,params)=>{const m=fm[params.dataIndex]?.m;return selectedMonth&&selectedMonth===m?8:5;},lineStyle:{color:'#0369A1',width:2},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(3,105,161,.18)'},{offset:1,color:'rgba(3,105,161,.01)'}]}},itemStyle:{color:'#0369A1',borderColor:'#fff',borderWidth:1.5},emphasis:{itemStyle:{color:'#0369A1'}}}]
   },fmtN));
 
   const barTbl={headers:['Month','Revenue','Orders','Avg Order Value'],rows:fm.map(m=>[m.m,fmtFull(m.rev),fmtN(m.orders),fmtFull(Math.round(m.rev/(m.orders||1)))])};
   const ordTbl={headers:['Month','Orders'],rows:fm.map(m=>[m.m,fmtN(m.orders)])};
-
-  const handleMonthClick = (p) => {
-    const month = fm[p.dataIndex]?.m;
-    setSelectedMonth(selectedMonth === month ? null : month);
-  };
+  const handleMonthClick=(p)=>{const month=fm[p.dataIndex]?.m;setSelectedMonth(selectedMonth===month?null:month);};
 
   return (
     <div className="page-area" key="revenue">
@@ -1705,17 +1452,11 @@ function Revenue({ fm, label }) {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Monthly Revenue" subtitle={label} tag={`${fm.length}m`} flex={1} controls={prevToggleControl} tableHeaders={barTbl.headers} tableRows={barTbl.rows} insight={revenueInsight}>
-            <EC option={barOpt} onEvents={{'click': handleMonthClick}}/>
-          </Panel>
-          <Panel title="2025 vs 2026" subtitle="Year overlay" flex={1}>
-            <EC option={cmpOpt}/>
-          </Panel>
+          <Panel title="Monthly Revenue" subtitle={label} tag={`${fm.length}m`} flex={1} controls={prevToggleControl} tableHeaders={barTbl.headers} tableRows={barTbl.rows} insight={revenueInsight}><EC option={barOpt} onEvents={{'click':handleMonthClick}}/></Panel>
+          <Panel title="2025 vs 2026" subtitle="Year overlay" flex={1}><EC option={cmpOpt}/></Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Order Volume" subtitle="Monthly transactions" flex={1} tableHeaders={ordTbl.headers} tableRows={ordTbl.rows}>
-            <EC option={ordersOpt} onEvents={{'click': handleMonthClick}}/>
-          </Panel>
+          <Panel title="Order Volume" subtitle="Monthly transactions" flex={1} tableHeaders={ordTbl.headers} tableRows={ordTbl.rows}><EC option={ordersOpt} onEvents={{'click':handleMonthClick}}/></Panel>
         </div>
       </div>
     </div>
@@ -1723,235 +1464,62 @@ function Revenue({ fm, label }) {
 }
 
 function SalesReps({ fm, label, highlightQuery }) {
-  const months = fm.map(m=>m.m);
-  const reps = useMemo(()=>{
-    const g={};
-    salesrepsRaw.filter(r=>months.includes(r.m)).forEach(r=>{
-      const k=r.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};
-      g[k].rev+=r.rev;g[k].qty+=r.qty;g[k].orders+=r.orders;
-    });
-    return Object.values(g).sort((a,b)=>b.rev-a.rev);
-  },[months]);
-
+  const months=fm.map(m=>m.m);
+  const reps=useMemo(()=>{const g={};salesrepsRaw.filter(r=>months.includes(r.m)).forEach(r=>{const k=r.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};g[k].rev+=r.rev;g[k].qty+=r.qty;g[k].orders+=r.orders;});return Object.values(g).sort((a,b)=>b.rev-a.rev);},[months]);
   const totalRev=reps.reduce((s,r)=>s+r.rev,0);
   const top3=reps.slice(0,3);
-  const [selRep,setSelRep] = useState(null);
+  const [selRep,setSelRep]=useState(null);
 
-  const barOpt = withDataZoom({
-    tooltip: {
-      ...TOOLTIP_STYLE,
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      formatter: p => {
-        const pct = totalRev > 0 ? (p[0].value / totalRev * 100).toFixed(2).replace('.', ',') : '0';
-        return `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)} (${pct}%)`;
-      }
-    },
-    grid: { left: '2%', right: '6%', bottom: '12%', top: '5%', containLabel: true },
-    xAxis: {
-      type: 'value',
-      min: 0,
-      minInterval: 1,
-      axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) },
-      splitLine: { lineStyle: { color: '#F0F3F4' } }
-    },
-    yAxis: {
-      type: 'category',
-      data: reps.map(d => d.n.split(' ')[0]),
-      axisLabel: { color: '#5F7078', fontSize: 9 },
-      inverse: true
-    },
-    legend: { show: false },
-    series: [{
-      type: 'bar',
-      data: reps.map((d, i) => ({
-        value: d.rev,
-        itemStyle: {
-          color: selRep && selRep !== d.n ? PALETTE[i % PALETTE.length] + '44' : PALETTE[i % PALETTE.length],
-          borderRadius: [0, 3, 3, 0]
-        }
-      })),
-      barMaxWidth: 18
-    }]
+  const barOpt=withDataZoom({
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{const pct=totalRev>0?(p[0].value/totalRev*100).toFixed(2).replace('.',',' ):'0';return `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)} (${pct}%)`;}},
+    grid:{left:'2%',right:'6%',bottom:'12%',top:'5%',containLabel:true},
+    xAxis:{type:'value',min:0,minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
+    yAxis:{type:'category',data:reps.map(d=>d.n.split(' ')[0]),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
+    legend:{show:false},
+    series:[{type:'bar',data:reps.map((d,i)=>({value:d.rev,itemStyle:{color:selRep&&selRep!==d.n?PALETTE[i%PALETTE.length]+'44':PALETTE[i%PALETTE.length],borderRadius:[0,3,3,0]}})),barMaxWidth:18}]
   });
-
   const tbl={headers:['#','Verkoper','Revenue','Orders','Avg Order Value'],rows:reps.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),fmtFull(Math.round(d.rev/(d.orders||1)))])};
+  const handleRepClick=(p)=>{const repName=reps[p.dataIndex]?.n;setSelRep(selRep===repName?null:repName);};
+  const leaderboardRows=selRep?tbl.rows.filter(r=>r[1]===selRep):tbl.rows;
+  const repsInsight=reps[0]?`${reps[0].n} leads with ${fmtFull(reps[0].rev)}${totalRev>0?` (${(reps[0].rev/totalRev*100).toFixed(0)}% of shown revenue)`:''}`  :null;
 
-  const handleRepClick = (p) => {
-    const repName = reps[p.dataIndex]?.n;
-    setSelRep(selRep === repName ? null : repName);
-  };
-
-  const leaderboardRows = selRep ? tbl.rows.filter(r => r[1] === selRep) : tbl.rows;
-
-  const repsInsight = reps[0]
-    ? `${reps[0].n} leads with ${fmtFull(reps[0].rev)}${totalRev > 0 ? ` (${(reps[0].rev/totalRev*100).toFixed(0)}% of shown revenue)` : ''}`
-    : null;
-
-  const smPeriods = useMemo(() => {
-    const seen = new Set();
-    salesmanCategorySales.forEach(s => (s.monthly || []).forEach(mo => seen.add(mo.m)));
-    return [...seen];
-  }, []);
-  const [smPeriod, setSmPeriod] = useState('All');
-
-  const smRevFor = (rec, period) => {
-    if (!rec) return 0;
-    if (period === 'All') return rec.rev;
-    const mo = (rec.monthly || []).find(m => m.m === period);
-    return mo ? mo.rev : 0;
-  };
-  const smOrdersFor = (rec, period) => {
-    if (!rec) return 0;
-    if (period === 'All') return rec.orders;
-    const mo = (rec.monthly || []).find(m => m.m === period);
-    return mo ? mo.orders : 0;
-  };
-
-  const smCats = useMemo(() => [...new Set(salesmanCategorySales.map(s => s.category))], []);
-  const smOrder = useMemo(() => {
-    const totals = {};
-    salesmanCategorySales.forEach(s => {
-      if (s.salesman === 'Unknown') return;
-      totals[s.salesman] = (totals[s.salesman] || 0) + smRevFor(s, smPeriod);
-    });
-    return Object.entries(totals).sort((a,b) => b[1]-a[1]).map(([n]) => n);
-  }, [smPeriod]);
-
-  const smSeries = smCats.map((cat, i) => ({
-    name: cat,
-    type: 'bar',
-    stack: 'total',
-    data: smOrder.map(n => {
-      const rec = salesmanCategorySales.find(s => s.salesman === n && s.category === cat);
-      return smRevFor(rec, smPeriod);
-    }),
-    itemStyle: { color: PALETTE[i % PALETTE.length] }
-  }));
-
-  const smOpt = withDataZoom({
-    tooltip: {
-      ...TOOLTIP_STYLE,
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      formatter: p => {
-        let html = `<strong>${p[0].name}</strong><br/>`;
-        let sum = 0;
-        p.forEach(s => { if (s.value) { html += `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}<br/>`; sum += s.value; } });
-        html += `<strong>Total: ${fmtFull(sum)}</strong>`;
-        return html;
-      }
-    },
-    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 8 }, type: 'scroll', itemWidth: 10, itemHeight: 10 },
-    grid: { left: '2%', right: '6%', bottom: '20%', top: '5%', containLabel: true },
-    xAxis: {
-      type: 'value', min: 0, minInterval: 1,
-      axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) },
-      splitLine: { lineStyle: { color: '#F0F3F4' } }
-    },
-    yAxis: {
-      type: 'category',
-      data: smOrder.map(n => n.split(' ')[0]),
-      axisLabel: { color: '#5F7078', fontSize: 9 },
-      inverse: true
-    },
-    series: smSeries
+  const smPeriods=useMemo(()=>{const seen=new Set();salesmanCategorySales.forEach(s=>(s.monthly||[]).forEach(mo=>seen.add(mo.m)));return[...seen];},[]);
+  const [smPeriod,setSmPeriod]=useState('All');
+  const smRevFor=(rec,period)=>{if(!rec)return 0;if(period==='All')return rec.rev;const mo=(rec.monthly||[]).find(m=>m.m===period);return mo?mo.rev:0;};
+  const smOrdersFor=(rec,period)=>{if(!rec)return 0;if(period==='All')return rec.orders;const mo=(rec.monthly||[]).find(m=>m.m===period);return mo?mo.orders:0;};
+  const smCats=useMemo(()=>[...new Set(salesmanCategorySales.map(s=>s.category))],[]);
+  const smOrder=useMemo(()=>{const totals={};salesmanCategorySales.forEach(s=>{if(s.salesman==='Unknown')return;totals[s.salesman]=(totals[s.salesman]||0)+smRevFor(s,smPeriod);});return Object.entries(totals).sort((a,b)=>b[1]-a[1]).map(([n])=>n);},[smPeriod]);
+  const smSeries=smCats.map((cat,i)=>({name:cat,type:'bar',stack:'total',data:smOrder.map(n=>{const rec=salesmanCategorySales.find(s=>s.salesman===n&&s.category===cat);return smRevFor(rec,smPeriod);}),itemStyle:{color:PALETTE[i%PALETTE.length]}}));
+  const smOpt=withDataZoom({
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;let sum=0;p.forEach(s=>{if(s.value){html+=`${s.marker} ${s.seriesName}: ${fmtFull(s.value)}<br/>`;sum+=s.value;}});html+=`<strong>Total: ${fmtFull(sum)}</strong>`;return html;}},
+    legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:8},type:'scroll',itemWidth:10,itemHeight:10},
+    grid:{left:'2%',right:'6%',bottom:'20%',top:'5%',containLabel:true},
+    xAxis:{type:'value',min:0,minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
+    yAxis:{type:'category',data:smOrder.map(n=>n.split(' ')[0]),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
+    series:smSeries
   });
+  const smTbl={headers:['Verkoper','Category','Revenue','Orders'],rows:[...salesmanCategorySales].filter(s=>s.salesman!=='Unknown').map(s=>({...s,_rev:smRevFor(s,smPeriod),_orders:smOrdersFor(s,smPeriod)})).filter(s=>smPeriod==='All'||s._rev!==0||s._orders!==0).sort((a,b)=>b._rev-a._rev).map(s=>[s.salesman,s.category,fmtFull(s._rev),fmtN(s._orders)])};
+  const smPeriodControl=(<select className="panel-select" value={smPeriod} onChange={e=>setSmPeriod(e.target.value)}><option value="All">Full period</option>{smPeriods.map(p=><option key={p} value={p}>{p}</option>)}</select>);
 
-  const smTbl = {
-    headers: ['Verkoper','Category','Revenue','Orders'],
-    rows: [...salesmanCategorySales]
-      .filter(s => s.salesman !== 'Unknown')
-      .map(s => ({ ...s, _rev: smRevFor(s, smPeriod), _orders: smOrdersFor(s, smPeriod) }))
-      .filter(s => smPeriod === 'All' || s._rev !== 0 || s._orders !== 0)
-      .sort((a,b) => b._rev - a._rev)
-      .map(s => [s.salesman, s.category, fmtFull(s._rev), fmtN(s._orders)])
+  const vmPeriods=useMemo(()=>{const seen=new Set();totalTonnageByCategory.forEach(c=>(c.monthly||[]).forEach(mo=>seen.add(mo.m)));return[...seen];},[]);
+  const [vmPeriod,setVmPeriod]=useState('All');
+  const vmSalesmen=useMemo(()=>[...new Set(tonnagePerSalesman.map(t=>t.salesman))].filter(n=>n!=='Unknown').sort(),[]);
+  const [vmSalesman,setVmSalesman]=useState('All');
+  const VM_CATS=['Melkpoeder','Veevoeders'];
+  const vmData=useMemo(()=>{
+    const source=vmSalesman==='All'?totalTonnageByCategory:tonnagePerSalesman.filter(t=>t.salesman===vmSalesman);
+    return VM_CATS.map(cat=>{const rec=source.find(c=>c.category===cat);if(!rec)return{category:cat,revenue:0,tonnage:0,orders:0};if(vmPeriod==='All')return rec;const mo=(rec.monthly||[]).find(m=>m.m===vmPeriod);return{category:cat,revenue:mo?mo.revenue:0,tonnage:mo?mo.tonnage:0,orders:mo?(mo.orders??rec.orders):0};});
+  },[vmPeriod,vmSalesman]);
+  const vmOpt={
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;p.forEach(s=>{html+=`${s.marker} ${s.seriesName}: ${s.seriesName==='Tonnage'?fmtNum(s.value)+' t':fmtFull(s.value)}<br/>`;});return html;}},
+    legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10}},
+    grid:{left:'12%',right:'12%',bottom:'18%',top:'8%',containLabel:true},
+    xAxis:{type:'category',data:vmData.map(c=>c.category),axisLabel:{color:'#5F7078',fontSize:10}},
+    yAxis:[{type:'value',name:'Revenue',nameTextStyle:{color:'#5F7078',fontSize:9},axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},{type:'value',name:'Tonnage',nameTextStyle:{color:'#5F7078',fontSize:9},axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtNum(v)},splitLine:{show:false}}],
+    series:[{name:'Revenue',type:'bar',data:vmData.map(c=>c.revenue),itemStyle:{color:'#40BCF3',borderRadius:[3,3,0,0]},barMaxWidth:50},{name:'Tonnage',type:'line',yAxisIndex:1,data:vmData.map(c=>c.tonnage),itemStyle:{color:'#1F3741'},lineStyle:{width:2},symbol:'circle',symbolSize:7}]
   };
-
-  const smPeriodControl = (
-    <select className="panel-select" value={smPeriod} onChange={e => setSmPeriod(e.target.value)} aria-label="Period">
-      <option value="All">Full period</option>
-      {smPeriods.map(p => <option key={p} value={p}>{p}</option>)}
-    </select>
-  );
-
-  const vmPeriods = useMemo(() => {
-    const seen = new Set();
-    totalTonnageByCategory.forEach(c => (c.monthly || []).forEach(mo => seen.add(mo.m)));
-    return [...seen];
-  }, []);
-  const [vmPeriod, setVmPeriod] = useState('All');
-
-  const vmSalesmen = useMemo(
-    () => [...new Set(tonnagePerSalesman.map(t => t.salesman))].filter(n => n !== 'Unknown').sort(),
-    []
-  );
-  const [vmSalesman, setVmSalesman] = useState('All');
-
-  const VM_CATS = ['Melkpoeder', 'Veevoeders'];
-
-  const vmData = useMemo(() => {
-    const source = vmSalesman === 'All'
-      ? totalTonnageByCategory
-      : tonnagePerSalesman.filter(t => t.salesman === vmSalesman);
-
-    return VM_CATS.map(cat => {
-      const rec = source.find(c => c.category === cat);
-      if (!rec) return { category: cat, revenue: 0, tonnage: 0, orders: 0 };
-      if (vmPeriod === 'All') return rec;
-      const mo = (rec.monthly || []).find(m => m.m === vmPeriod);
-      return {
-        category: cat,
-        revenue: mo ? mo.revenue : 0,
-        tonnage: mo ? mo.tonnage : 0,
-        orders: mo ? (mo.orders ?? rec.orders) : 0,
-      };
-    });
-  }, [vmPeriod, vmSalesman]);
-
-  const vmOpt = {
-    tooltip: {
-      ...TOOLTIP_STYLE,
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      formatter: p => {
-        let html = `<strong>${p[0].name}</strong><br/>`;
-        p.forEach(s => {
-          html += `${s.marker} ${s.seriesName}: ${s.seriesName === 'Tonnage' ? fmtNum(s.value) + ' t' : fmtFull(s.value)}<br/>`;
-        });
-        return html;
-      }
-    },
-    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 } },
-    grid: { left: '12%', right: '12%', bottom: '18%', top: '8%', containLabel: true },
-    xAxis: { type: 'category', data: vmData.map(c => c.category), axisLabel: { color: '#5F7078', fontSize: 10 } },
-    yAxis: [
-      { type: 'value', name: 'Revenue', nameTextStyle: { color: '#5F7078', fontSize: 9 }, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
-      { type: 'value', name: 'Tonnage', nameTextStyle: { color: '#5F7078', fontSize: 9 }, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmtNum(v) }, splitLine: { show: false } }
-    ],
-    series: [
-      { name: 'Revenue', type: 'bar', data: vmData.map(c => c.revenue), itemStyle: { color: '#40BCF3', borderRadius: [3,3,0,0] }, barMaxWidth: 50 },
-      { name: 'Tonnage', type: 'line', yAxisIndex: 1, data: vmData.map(c => c.tonnage), itemStyle: { color: '#1F3741' }, lineStyle: { width: 2 }, symbol: 'circle', symbolSize: 7 }
-    ]
-  };
-
-  const vmTbl = {
-    headers: ['Category','Revenue','Tonnage','Orders'],
-    rows: vmData.map(c => [c.category, fmtFull(c.revenue), fmtNum(c.tonnage) + ' t', fmtN(c.orders)])
-  };
-
-  const vmControls = (
-    <>
-      <select className="panel-select" value={vmSalesman} onChange={e => setVmSalesman(e.target.value)} aria-label="Salesman">
-        <option value="All">All salesmen</option>
-        {vmSalesmen.map(n => <option key={n} value={n}>{n}</option>)}
-      </select>
-      <select className="panel-select" value={vmPeriod} onChange={e => setVmPeriod(e.target.value)} aria-label="Period">
-        <option value="All">Full period</option>
-        {vmPeriods.map(p => <option key={p} value={p}>{p}</option>)}
-      </select>
-    </>
-  );
+  const vmTbl={headers:['Category','Revenue','Tonnage','Orders'],rows:vmData.map(c=>[c.category,fmtFull(c.revenue),fmtNum(c.tonnage)+' t',fmtN(c.orders)])};
+  const vmControls=(<><select className="panel-select" value={vmSalesman} onChange={e=>setVmSalesman(e.target.value)}><option value="All">All salesmen</option>{vmSalesmen.map(n=><option key={n} value={n}>{n}</option>)}</select><select className="panel-select" value={vmPeriod} onChange={e=>setVmPeriod(e.target.value)}><option value="All">Full period</option>{vmPeriods.map(p=><option key={p} value={p}>{p}</option>)}</select></>);
 
   return (
     <div className="page-area" key="reps">
@@ -1963,30 +1531,17 @@ function SalesReps({ fm, label, highlightQuery }) {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Omzet per Verkoper" subtitle={label} flex={1} controls={<ExportExcelButton filename="omzet_per_verkoper.xlsx" headers={tbl.headers} rows={tbl.rows} />} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={repsInsight}>
-            <EC option={barOpt} onEvents={{'click': handleRepClick}}/>
-          </Panel>
-          <Panel title="Verkoper Leaderboard" subtitle={selRep ? `Filtered · click the chart to change` : 'Ranked by revenue · click a bar above to drill in'} flex={1}>
-            <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
-              {selRep && (
-                <div className="drill-chip">
-                  Showing: {selRep}
-                  <button onClick={() => setSelRep(null)} title="Clear selection">✕</button>
-                </div>
-              )}
-              <div style={{flex:1, minHeight:0}}>
-                <InlineTable headers={tbl.headers} rows={leaderboardRows} height="100%" searchable initialQuery={highlightQuery}/>
-              </div>
+          <Panel title="Omzet per Verkoper" subtitle={label} flex={1} controls={<ExportExcelButton filename="omzet_per_verkoper.xlsx" headers={tbl.headers} rows={tbl.rows}/>} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={repsInsight}><EC option={barOpt} onEvents={{'click':handleRepClick}}/></Panel>
+          <Panel title="Verkoper Leaderboard" subtitle={selRep?'Filtered · click the chart to change':'Ranked by revenue · click a bar above to drill in'} flex={1}>
+            <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+              {selRep&&(<div className="drill-chip">Showing: {selRep}<button onClick={()=>setSelRep(null)} title="Clear selection">✕</button></div>)}
+              <div style={{flex:1,minHeight:0}}><InlineTable headers={tbl.headers} rows={leaderboardRows} height="100%" searchable initialQuery={highlightQuery}/></div>
             </div>
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Sales per Verkoper by Category" subtitle="Stacked by category" flex={1} controls={<>{smPeriodControl}<ExportExcelButton filename="sales_per_verkoper_by_category.xlsx" headers={smTbl.headers} rows={smTbl.rows} /></>} tableHeaders={smTbl.headers} tableRows={smTbl.rows}>
-            <EC option={smOpt} />
-          </Panel>
-          <Panel title="Veevoeder & Melkpoeder" subtitle={vmSalesman === 'All' ? 'Revenue vs tonnage' : `Revenue vs tonnage — ${vmSalesman}`} flex={1} controls={vmControls} tableHeaders={vmTbl.headers} tableRows={vmTbl.rows}>
-            <EC option={vmOpt} />
-          </Panel>
+          <Panel title="Sales per Verkoper by Category" subtitle="Stacked by category" flex={1} controls={<>{smPeriodControl}<ExportExcelButton filename="sales_per_verkoper_by_category.xlsx" headers={smTbl.headers} rows={smTbl.rows}/></>} tableHeaders={smTbl.headers} tableRows={smTbl.rows}><EC option={smOpt}/></Panel>
+          <Panel title="Veevoeder & Melkpoeder" subtitle={vmSalesman==='All'?'Revenue vs tonnage':`Revenue vs tonnage — ${vmSalesman}`} flex={1} controls={vmControls} tableHeaders={vmTbl.headers} tableRows={vmTbl.rows}><EC option={vmOpt}/></Panel>
         </div>
       </div>
     </div>
@@ -1996,93 +1551,36 @@ function SalesReps({ fm, label, highlightQuery }) {
 function Customers({ fm, label, highlightQuery }) {
   const months=fm.map(m=>m.m);
   const totalRevenue=fm.reduce((s,m)=>s+m.rev,0);
+  const custs=useMemo(()=>{const g={};customersRaw.filter(c=>months.includes(c.m)).forEach(c=>{if(!g[c.n])g[c.n]={n:c.n,rev:0,orders:0};g[c.n].rev+=c.rev;g[c.n].orders+=c.orders;});return Object.values(g).sort((a,b)=>b.rev-a.rev);},[months]);
+  const top15=custs.slice(0,15);
+  const top15Rev=top15.reduce((s,c)=>s+c.rev,0);
+  const itemsPerPage=15;
+  const [currentCount,setCurrentCount]=useState(15);
+  const currentItems=custs.slice(0,currentCount);
+  const showMore=()=>setCurrentCount(c=>Math.min(c+itemsPerPage,custs.length));
+  const showLess=()=>setCurrentCount(c=>Math.max(c-itemsPerPage,itemsPerPage));
+  const showAll=()=>setCurrentCount(custs.length);
+  const resetToDefault=()=>setCurrentCount(itemsPerPage);
 
-  const custs=useMemo(()=>{
-    const g={};
-    customersRaw.filter(c=>months.includes(c.m)).forEach(c=>{if(!g[c.n])g[c.n]={n:c.n,rev:0,orders:0};g[c.n].rev+=c.rev;g[c.n].orders+=c.orders;});
-    return Object.values(g).sort((a,b)=>b.rev-a.rev);
-  },[months]);
-
-  const top15 = custs.slice(0,15);
-  const top15Rev = top15.reduce((s,c)=>s+c.rev,0);
-
-  const itemsPerPage = 15;
-  const [currentCount, setCurrentCount] = useState(15);
-  const currentItems = custs.slice(0, currentCount);
-
-  const showMore = () => setCurrentCount(c => Math.min(c + itemsPerPage, custs.length));
-  const showLess = () => setCurrentCount(c => Math.max(c - itemsPerPage, itemsPerPage));
-  const showAll = () => setCurrentCount(custs.length);
-  const resetToDefault = () => setCurrentCount(itemsPerPage);
-
-  const barOpt = withDataZoom({
+  const barOpt=withDataZoom({
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},
     grid:{left:'2%',right:'6%',bottom:'12%',top:'5%',containLabel:true},
     xAxis:{type:'value',min:0,minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     yAxis:{type:'category',data:currentItems.map(d=>d.n.length>20?d.n.slice(0,20)+'…':d.n),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
     legend:{show:false},
-    series:[{
-      type:'bar',
-      data:currentItems.map((d,i)=>({
-        value:d.rev,
-        itemStyle:{
-          color:PALETTE[i%PALETTE.length]+'cc',
-          borderRadius:[0,3,3,0]
-        }
-      })),
-      barMaxWidth:16
-    }]
+    series:[{type:'bar',data:currentItems.map((d,i)=>({value:d.rev,itemStyle:{color:PALETTE[i%PALETTE.length]+'cc',borderRadius:[0,3,3,0]}})),barMaxWidth:16}]
   });
 
   const tbl={headers:['#','Customer','Revenue','Orders','Avg Order Value'],rows:currentItems.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),fmtFull(Math.round(d.rev/(d.orders||1)))])};
   const fullTbl={headers:['#','Customer','Revenue','Orders','Avg Order Value'],rows:custs.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),fmtFull(Math.round(d.rev/(d.orders||1)))])};
+  const customersInsight=custs[0]?`Top customer: ${custs[0].n} — ${fmtFull(custs[0].rev)}${totalRevenue>0?` (${(custs[0].rev/totalRevenue*100).toFixed(1)}% of total revenue)`:''}`  :null;
 
-  const customersInsight = custs[0]
-    ? `Top customer: ${custs[0].n} — ${fmtFull(custs[0].rev)}${totalRevenue > 0 ? ` (${(custs[0].rev/totalRevenue*100).toFixed(1)}% of total revenue)` : ''}`
-    : null;
-
-  const PaginationControls = () => (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-      flexShrink: 0,
-      marginTop: '4px',
-      padding: '4px 0',
-      flexWrap: 'wrap'
-    }}>
-      <button onClick={showLess} disabled={currentCount <= itemsPerPage} style={{
-        padding: '3px 10px', border: '1px solid var(--border)', borderRadius: '4px',
-        background: 'var(--surface3)', color: 'var(--muted)',
-        cursor: currentCount <= itemsPerPage ? 'not-allowed' : 'pointer',
-        fontSize: '11px', fontFamily: 'inherit',
-        opacity: currentCount <= itemsPerPage ? 0.4 : 1, transition: 'all .14s'
-      }}>◀ Show Less</button>
-
-      <span style={{
-        fontSize: '10px', color: 'var(--muted)', fontFamily: 'JetBrains Mono, monospace',
-        minWidth: '80px', textAlign: 'center'
-      }}>
-        {currentCount >= custs.length ? `All ${custs.length}` : `1-${currentCount} / ${custs.length}`}
-      </span>
-
-      <button onClick={showMore} disabled={currentCount >= custs.length} style={{
-        padding: '3px 10px', border: '1px solid var(--border)', borderRadius: '4px',
-        background: 'var(--surface3)', color: 'var(--muted)',
-        cursor: currentCount >= custs.length ? 'not-allowed' : 'pointer',
-        fontSize: '11px', fontFamily: 'inherit',
-        opacity: currentCount >= custs.length ? 0.4 : 1, transition: 'all .14s'
-      }}>Show More ▶</button>
-
-      <button onClick={currentCount >= custs.length ? resetToDefault : showAll} style={{
-        padding: '2px 8px',
-        border: `1px solid ${currentCount >= custs.length ? 'var(--accent)' : 'var(--border)'}`,
-        borderRadius: '4px',
-        background: currentCount >= custs.length ? 'rgba(64,188,243,0.1)' : 'var(--surface3)',
-        color: currentCount >= custs.length ? 'var(--accent2)' : 'var(--muted)',
-        cursor: 'pointer', fontSize: '9px', fontFamily: 'inherit', marginLeft: '4px',
-        transition: 'all .14s'
-      }}>{currentCount >= custs.length ? `📋 ${itemsPerPage}` : '📋 Full'}</button>
+  const PaginationControls=()=>(
+    <div style={{display:'flex',alignItems:'center',gap:'8px',flexShrink:0,marginTop:'4px',padding:'4px 0',flexWrap:'wrap'}}>
+      <button onClick={showLess} disabled={currentCount<=itemsPerPage} style={{padding:'3px 10px',border:'1px solid var(--border)',borderRadius:'4px',background:'var(--surface3)',color:'var(--muted)',cursor:currentCount<=itemsPerPage?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',opacity:currentCount<=itemsPerPage?0.4:1,transition:'all .14s'}}>◀ Show Less</button>
+      <span style={{fontSize:'10px',color:'var(--muted)',fontFamily:'JetBrains Mono, monospace',minWidth:'80px',textAlign:'center'}}>{currentCount>=custs.length?`All ${custs.length}`:`1-${currentCount} / ${custs.length}`}</span>
+      <button onClick={showMore} disabled={currentCount>=custs.length} style={{padding:'3px 10px',border:'1px solid var(--border)',borderRadius:'4px',background:'var(--surface3)',color:'var(--muted)',cursor:currentCount>=custs.length?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',opacity:currentCount>=custs.length?0.4:1,transition:'all .14s'}}>Show More ▶</button>
+      <button onClick={currentCount>=custs.length?resetToDefault:showAll} style={{padding:'2px 8px',border:`1px solid ${currentCount>=custs.length?'var(--accent)':'var(--border)'}`,borderRadius:'4px',background:currentCount>=custs.length?'rgba(64,188,243,0.1)':'var(--surface3)',color:currentCount>=custs.length?'var(--accent2)':'var(--muted)',cursor:'pointer',fontSize:'9px',fontFamily:'inherit',marginLeft:'4px',transition:'all .14s'}}>{currentCount>=custs.length?`📋 ${itemsPerPage}`:'📋 Full'}</button>
     </div>
   );
 
@@ -2096,19 +1594,15 @@ function Customers({ fm, label, highlightQuery }) {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Customers by Revenue" subtitle={label} flex={1} controls={<ExportExcelButton filename="customers_by_revenue.xlsx" headers={fullTbl.headers} rows={fullTbl.rows} />} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={customersInsight}>
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <div style={{ flex: 1, minHeight: 0 }}>
-                <EC option={barOpt}/>
-              </div>
-              <PaginationControls />
+          <Panel title="Customers by Revenue" subtitle={label} flex={1} controls={<ExportExcelButton filename="customers_by_revenue.xlsx" headers={fullTbl.headers} rows={fullTbl.rows}/>} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={customersInsight}>
+            <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+              <div style={{flex:1,minHeight:0}}><EC option={barOpt}/></div>
+              <PaginationControls/>
             </div>
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-<Panel title="Leaderboard" subtitle="All clients · searchable" flex={1}>
-  <InlineTable headers={fullTbl.headers} rows={fullTbl.rows} height="100%" searchable initialQuery={highlightQuery}/>
-</Panel>
+          <Panel title="Leaderboard" subtitle="All clients · searchable" flex={1}><InlineTable headers={fullTbl.headers} rows={fullTbl.rows} height="100%" searchable initialQuery={highlightQuery}/></Panel>
         </div>
       </div>
     </div>
@@ -2116,336 +1610,89 @@ function Customers({ fm, label, highlightQuery }) {
 }
 
 function Products({ fm, label, highlightQuery }) {
-  const months = fm.map(m => m.m);
-  const prods = useMemo(() => {
-    const g = {};
-    productsRaw.filter(p => months.includes(p.m)).forEach(p => {
-      const k = p.n.trim();
-      if (!g[k]) g[k] = { n: k, rev: 0, qty: 0, orders: 0 };
-      g[k].rev += p.rev;
-      g[k].qty += p.qty;
-      g[k].orders += p.orders;
-    });
-    return Object.values(g).sort((a, b) => b.rev - a.rev);
-  }, [months]);
+  const months=fm.map(m=>m.m);
+  const prods=useMemo(()=>{const g={};productsRaw.filter(p=>months.includes(p.m)).forEach(p=>{const k=p.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};g[k].rev+=p.rev;g[k].qty+=p.qty;g[k].orders+=p.orders;});return Object.values(g).sort((a,b)=>b.rev-a.rev);},[months]);
+  const totalRev=prods.reduce((s,p)=>s+p.rev,0);
+  const top5Rev=prods.slice(0,5).reduce((s,p)=>s+p.rev,0);
+  const productsInsight=prods.length?`Top product: ${prods[0].n}${totalRev>0?` (${(prods[0].rev/totalRev*100).toFixed(0)}% of revenue)`:''} · Top 5 lines make up ${totalRev>0?(top5Rev/totalRev*100).toFixed(0):0}% of total`:null;
+  const [selProd,setSelProd]=useState(null);
+  const [itemsPerPage]=useState(15);
+  const [currentCount,setCurrentCount]=useState(15);
+  useEffect(()=>{if(highlightQuery)setCurrentCount(prods.length);},[highlightQuery,prods.length]);
+  const [donutItemsPerPage]=useState(10);
+  const [donutCurrentCount,setDonutCurrentCount]=useState(10);
+  const currentItems=prods.slice(0,currentCount);
+  const donutCurrentItems=prods.slice(0,donutCurrentCount);
+  const [autoZoom,setAutoZoom]=useState(true);
 
-  const totalRev = prods.reduce((s, p) => s + p.rev, 0);
-  const top5Rev = prods.slice(0, 5).reduce((s, p) => s + p.rev, 0);
-  const productsInsight = prods.length
-    ? `Top product: ${prods[0].n}${totalRev > 0 ? ` (${(prods[0].rev / totalRev * 100).toFixed(0)}% of revenue)` : ''} · Top 5 lines make up ${totalRev > 0 ? (top5Rev / totalRev * 100).toFixed(0) : 0}% of total`
-    : null;
-  const [selProd, setSelProd] = useState(null);
-  
-  const [itemsPerPage, setItemsPerPage] = useState(15);
-  const [currentCount, setCurrentCount] = useState(15);
-  useEffect(() => { if (highlightQuery) setCurrentCount(prods.length); }, [highlightQuery, prods.length]);
-  const [donutItemsPerPage, setDonutItemsPerPage] = useState(10);
-  const [donutCurrentCount, setDonutCurrentCount] = useState(10);
-  
-  const currentItems = prods.slice(0, currentCount);
-  const donutCurrentItems = prods.slice(0, donutCurrentCount);
-  
-  const [autoZoom, setAutoZoom] = useState(true);
-  
-  const showMore = () => {
-    const newCount = Math.min(currentCount + itemsPerPage, prods.length);
-    setCurrentCount(newCount);
-  };
+  const showMore=()=>setCurrentCount(c=>Math.min(c+itemsPerPage,prods.length));
+  const showLess=()=>setCurrentCount(c=>Math.max(c-itemsPerPage,itemsPerPage));
+  const showAll=()=>setCurrentCount(prods.length);
+  const resetToDefault=()=>setCurrentCount(itemsPerPage);
+  const showMoreDonut=()=>setDonutCurrentCount(c=>Math.min(c+donutItemsPerPage,prods.length));
+  const showLessDonut=()=>setDonutCurrentCount(c=>Math.max(c-donutItemsPerPage,donutItemsPerPage));
+  const showAllDonut=()=>setDonutCurrentCount(prods.length);
+  const resetToDefaultDonut=()=>setDonutCurrentCount(donutItemsPerPage);
 
-  const showLess = () => {
-    const newCount = Math.max(currentCount - itemsPerPage, itemsPerPage);
-    setCurrentCount(newCount);
-  };
-
-  const showAll = () => {
-    setCurrentCount(prods.length);
-  };
-
-  const resetToDefault = () => {
-    setCurrentCount(itemsPerPage);
-  };
-
-  const showMoreDonut = () => {
-    const newCount = Math.min(donutCurrentCount + donutItemsPerPage, prods.length);
-    setDonutCurrentCount(newCount);
-  };
-
-  const showLessDonut = () => {
-    const newCount = Math.max(donutCurrentCount - donutItemsPerPage, donutItemsPerPage);
-    setDonutCurrentCount(newCount);
-  };
-
-  const showAllDonut = () => {
-    setDonutCurrentCount(prods.length);
-  };
-
-  const resetToDefaultDonut = () => {
-    setDonutCurrentCount(donutItemsPerPage);
-  };
-
-  const barOpt = withDataZoom({
-    tooltip: {
-      ...TOOLTIP_STYLE,
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`
-    },
-    grid: {
-      left: '2%',
-      right: '6%',
-      bottom: '12%',
-      top: '5%',
-      containLabel: true
-    },
-    xAxis: {
-      type: 'value',
-      min: 0,
-      minInterval: 1,
-      axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) },
-      splitLine: { lineStyle: { color: '#F0F3F4' } },
-      max: (value) => {
-        if (autoZoom && currentItems.length > 0) {
-          const maxVal = Math.max(...currentItems.map(p => p.rev));
-          const minVal = Math.min(...currentItems.map(p => p.rev));
-          if (maxVal < 60000 && maxVal > 0) return maxVal * 1.3;
-          if (maxVal < 200000 && maxVal > 0) return maxVal * 1.2;
-          return null;
-        }
-        return null;
-      }
-    },
-    yAxis: {
-      type: 'category',
-      data: currentItems.map(d => d.n.length > 22 ? d.n.slice(0, 22) + '…' : d.n),
-      axisLabel: { color: '#5F7078', fontSize: 9 },
-      inverse: true
-    },
-    legend: { show: false },
-    series: [{
-      type: 'bar',
-      data: currentItems.map((d, i) => ({
-        value: d.rev,
-        itemStyle: {
-          color: selProd && selProd !== d.n ? PALETTE[i % PALETTE.length] + '44' : PALETTE[i % PALETTE.length],
-          borderRadius: [0, 3, 3, 0]
-        }
-      })),
-      barMaxWidth: 18
-    }]
+  const barOpt=withDataZoom({
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},
+    grid:{left:'2%',right:'6%',bottom:'12%',top:'5%',containLabel:true},
+    xAxis:{type:'value',min:0,minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}},max:(value)=>{if(autoZoom&&currentItems.length>0){const maxVal=Math.max(...currentItems.map(p=>p.rev));const minVal=Math.min(...currentItems.map(p=>p.rev));if(maxVal<60000&&maxVal>0)return maxVal*1.3;if(maxVal<200000&&maxVal>0)return maxVal*1.2;return null;}return null;}},
+    yAxis:{type:'category',data:currentItems.map(d=>d.n.length>22?d.n.slice(0,22)+'…':d.n),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
+    legend:{show:false},
+    series:[{type:'bar',data:currentItems.map((d,i)=>({value:d.rev,itemStyle:{color:selProd&&selProd!==d.n?PALETTE[i%PALETTE.length]+'44':PALETTE[i%PALETTE.length],borderRadius:[0,3,3,0]}})),barMaxWidth:18}]
   });
 
-const donutData = donutCurrentItems.map((d, i) => ({
-  name: d.n.length > 16 ? d.n.slice(0, 16) + '…' : d.n,
-  fullName: d.n,
-  value: d.rev,
-  itemStyle: {
-    color: selProd && selProd !== d.n ? PALETTE[i % PALETTE.length] + '44' : PALETTE[i % PALETTE.length]
-  }
-}));
+  const donutData=donutCurrentItems.map((d,i)=>({name:d.n.length>16?d.n.slice(0,16)+'…':d.n,fullName:d.n,value:d.rev,itemStyle:{color:selProd&&selProd!==d.n?PALETTE[i%PALETTE.length]+'44':PALETTE[i%PALETTE.length]}}));
+  const donutOpt={tooltip:{...TOOLTIP_STYLE,trigger:'item',formatter:p=>`${p.name}: ${fmtFull(p.value)} (${p.percent}%)`},legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:9},type:'scroll',selectedMode:'multiple'},series:[{type:'pie',radius:['48%','70%'],center:['50%','44%'],data:donutData,itemStyle:{borderRadius:3,borderColor:'#fff',borderWidth:2},label:{show:false},emphasis:{scaleSize:6}}]};
 
- 
-const donutOpt = {
-  tooltip: {
-    ...TOOLTIP_STYLE,
-    trigger: 'item',
-    formatter: p => `${p.name}: ${fmtFull(p.value)} (${p.percent}%)`
-  },
-  legend: {
-    bottom: 0,
-    textStyle: { color: '#5F7078', fontSize: 9 },
-    type: 'scroll',
-    selectedMode: 'multiple'
-  },
-  series: [{
-    type: 'pie',
-    radius: ['48%', '70%'],
-    center: ['50%', '44%'],
-    data: donutData,
-    itemStyle: { borderRadius: 3, borderColor: '#fff', borderWidth: 2 },
-    label: { show: false },
-    emphasis: { scaleSize: 6 }
-  }]
-};
+  const tbl={headers:['#','Product','Revenue','Orders','Share'],rows:currentItems.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),((d.rev/totalRev)*100).toFixed(1).replace('.',','  )+'%'])};
 
-  const tbl = {
-    headers: ['#', 'Product', 'Revenue', 'Orders', 'Share'],
-    rows: currentItems.map((d, i) => [
-      i + 1,
-      d.n,
-      fmtFull(d.rev),
-      fmtN(d.orders),
-      ((d.rev / totalRev) * 100).toFixed(1).replace('.',',') + '%'
-    ])
-  };
-
-  const PaginationControls = () => (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '8px',
-      flexShrink: 0,
-      marginTop: '4px',
-      padding: '4px 0',
-      flexWrap: 'wrap'
-    }}>
-      <button onClick={showLess} disabled={currentCount <= itemsPerPage} style={{
-        padding: '3px 10px', border: '1px solid var(--border)', borderRadius: '4px',
-        background: 'var(--surface3)', color: 'var(--muted)',
-        cursor: currentCount <= itemsPerPage ? 'not-allowed' : 'pointer',
-        fontSize: '11px', fontFamily: 'inherit',
-        opacity: currentCount <= itemsPerPage ? 0.4 : 1, transition: 'all .14s'
-      }}>◀ Show Less</button>
-      
-      <span style={{
-        fontSize: '10px', color: 'var(--muted)', fontFamily: 'JetBrains Mono, monospace',
-        minWidth: '80px', textAlign: 'center'
-      }}>
-        {currentCount >= prods.length ? `All ${prods.length}` : `1-${currentCount} / ${prods.length}`}
-      </span>
-      
-      <button onClick={showMore} disabled={currentCount >= prods.length} style={{
-        padding: '3px 10px', border: '1px solid var(--border)', borderRadius: '4px',
-        background: 'var(--surface3)', color: 'var(--muted)',
-        cursor: currentCount >= prods.length ? 'not-allowed' : 'pointer',
-        fontSize: '11px', fontFamily: 'inherit',
-        opacity: currentCount >= prods.length ? 0.4 : 1, transition: 'all .14s'
-      }}>Show More ▶</button>
-
-      <button onClick={currentCount >= prods.length ? resetToDefault : showAll} style={{
-        padding: '2px 8px',
-        border: `1px solid ${currentCount >= prods.length ? 'var(--accent)' : 'var(--border)'}`,
-        borderRadius: '4px',
-        background: currentCount >= prods.length ? 'rgba(64,188,243,0.1)' : 'var(--surface3)',
-        color: currentCount >= prods.length ? 'var(--accent2)' : 'var(--muted)',
-        cursor: 'pointer', fontSize: '9px', fontFamily: 'inherit', marginLeft: '4px',
-        transition: 'all .14s'
-      }}>{currentCount >= prods.length ? `📋 ${itemsPerPage}` : '📋 Full'}</button>
-
-      <button onClick={() => setAutoZoom(!autoZoom)} style={{
-        padding: '2px 8px',
-        border: `1px solid ${autoZoom ? 'var(--accent)' : 'var(--border)'}`,
-        borderRadius: '4px',
-        background: autoZoom ? 'rgba(64,188,243,0.1)' : 'var(--surface3)',
-        color: autoZoom ? 'var(--accent2)' : 'var(--muted)',
-        cursor: 'pointer', fontSize: '9px', fontFamily: 'inherit', marginLeft: '4px',
-        transition: 'all .14s'
-      }}>🔍 {autoZoom ? 'Auto' : 'Fixed'}</button>
+  const PaginationControls=()=>(
+    <div style={{display:'flex',alignItems:'center',gap:'8px',flexShrink:0,marginTop:'4px',padding:'4px 0',flexWrap:'wrap'}}>
+      <button onClick={showLess} disabled={currentCount<=itemsPerPage} style={{padding:'3px 10px',border:'1px solid var(--border)',borderRadius:'4px',background:'var(--surface3)',color:'var(--muted)',cursor:currentCount<=itemsPerPage?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',opacity:currentCount<=itemsPerPage?0.4:1,transition:'all .14s'}}>◀ Show Less</button>
+      <span style={{fontSize:'10px',color:'var(--muted)',fontFamily:'JetBrains Mono, monospace',minWidth:'80px',textAlign:'center'}}>{currentCount>=prods.length?`All ${prods.length}`:`1-${currentCount} / ${prods.length}`}</span>
+      <button onClick={showMore} disabled={currentCount>=prods.length} style={{padding:'3px 10px',border:'1px solid var(--border)',borderRadius:'4px',background:'var(--surface3)',color:'var(--muted)',cursor:currentCount>=prods.length?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',opacity:currentCount>=prods.length?0.4:1,transition:'all .14s'}}>Show More ▶</button>
+      <button onClick={currentCount>=prods.length?resetToDefault:showAll} style={{padding:'2px 8px',border:`1px solid ${currentCount>=prods.length?'var(--accent)':'var(--border)'}`,borderRadius:'4px',background:currentCount>=prods.length?'rgba(64,188,243,0.1)':'var(--surface3)',color:currentCount>=prods.length?'var(--accent2)':'var(--muted)',cursor:'pointer',fontSize:'9px',fontFamily:'inherit',marginLeft:'4px',transition:'all .14s'}}>{currentCount>=prods.length?`📋 ${itemsPerPage}`:'📋 Full'}</button>
+      <button onClick={()=>setAutoZoom(!autoZoom)} style={{padding:'2px 8px',border:`1px solid ${autoZoom?'var(--accent)':'var(--border)'}`,borderRadius:'4px',background:autoZoom?'rgba(64,188,243,0.1)':'var(--surface3)',color:autoZoom?'var(--accent2)':'var(--muted)',cursor:'pointer',fontSize:'9px',fontFamily:'inherit',marginLeft:'4px',transition:'all .14s'}}>🔍 {autoZoom?'Auto':'Fixed'}</button>
+    </div>
+  );
+  const DonutPaginationControls=()=>(
+    <div style={{display:'flex',alignItems:'center',gap:'6px',justifyContent:'center',marginTop:'4px',padding:'2px 0',flexWrap:'wrap'}}>
+      <button onClick={showLessDonut} disabled={donutCurrentCount<=donutItemsPerPage} style={{padding:'2px 8px',border:'1px solid var(--border)',borderRadius:'4px',background:'var(--surface3)',color:'var(--muted)',cursor:donutCurrentCount<=donutItemsPerPage?'not-allowed':'pointer',fontSize:'10px',fontFamily:'inherit',opacity:donutCurrentCount<=donutItemsPerPage?0.4:1,transition:'all .14s'}}>◀</button>
+      <span style={{fontSize:'9px',color:'var(--muted)',fontFamily:'JetBrains Mono, monospace',minWidth:'60px',textAlign:'center'}}>{donutCurrentCount>=prods.length?`All ${prods.length}`:`1-${donutCurrentCount} / ${prods.length}`}</span>
+      <button onClick={showMoreDonut} disabled={donutCurrentCount>=prods.length} style={{padding:'2px 8px',border:'1px solid var(--border)',borderRadius:'4px',background:'var(--surface3)',color:'var(--muted)',cursor:donutCurrentCount>=prods.length?'not-allowed':'pointer',fontSize:'10px',fontFamily:'inherit',opacity:donutCurrentCount>=prods.length?0.4:1,transition:'all .14s'}}>▶</button>
+      <button onClick={donutCurrentCount>=prods.length?resetToDefaultDonut:showAllDonut} style={{padding:'2px 6px',border:`1px solid ${donutCurrentCount>=prods.length?'var(--accent)':'var(--border)'}`,borderRadius:'4px',background:donutCurrentCount>=prods.length?'rgba(64,188,243,0.1)':'var(--surface3)',color:donutCurrentCount>=prods.length?'var(--accent2)':'var(--muted)',cursor:'pointer',fontSize:'8px',fontFamily:'inherit',marginLeft:'4px',transition:'all .14s'}}>{donutCurrentCount>=prods.length?`📋 ${donutItemsPerPage}`:'📋 Full'}</button>
     </div>
   );
 
-  const DonutPaginationControls = () => (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center',
-      marginTop: '4px', padding: '2px 0', flexWrap: 'wrap'
-    }}>
-      <button onClick={showLessDonut} disabled={donutCurrentCount <= donutItemsPerPage} style={{
-        padding: '2px 8px', border: '1px solid var(--border)', borderRadius: '4px',
-        background: 'var(--surface3)', color: 'var(--muted)',
-        cursor: donutCurrentCount <= donutItemsPerPage ? 'not-allowed' : 'pointer',
-        fontSize: '10px', fontFamily: 'inherit',
-        opacity: donutCurrentCount <= donutItemsPerPage ? 0.4 : 1, transition: 'all .14s'
-      }}>◀</button>
-      
-      <span style={{
-        fontSize: '9px', color: 'var(--muted)', fontFamily: 'JetBrains Mono, monospace',
-        minWidth: '60px', textAlign: 'center'
-      }}>
-        {donutCurrentCount >= prods.length ? `All ${prods.length}` : `1-${donutCurrentCount} / ${prods.length}`}
-      </span>
-      
-      <button onClick={showMoreDonut} disabled={donutCurrentCount >= prods.length} style={{
-        padding: '2px 8px', border: '1px solid var(--border)', borderRadius: '4px',
-        background: 'var(--surface3)', color: 'var(--muted)',
-        cursor: donutCurrentCount >= prods.length ? 'not-allowed' : 'pointer',
-        fontSize: '10px', fontFamily: 'inherit',
-        opacity: donutCurrentCount >= prods.length ? 0.4 : 1, transition: 'all .14s'
-      }}>▶</button>
-
-      <button onClick={donutCurrentCount >= prods.length ? resetToDefaultDonut : showAllDonut} style={{
-        padding: '2px 6px',
-        border: `1px solid ${donutCurrentCount >= prods.length ? 'var(--accent)' : 'var(--border)'}`,
-        borderRadius: '4px',
-        background: donutCurrentCount >= prods.length ? 'rgba(64,188,243,0.1)' : 'var(--surface3)',
-        color: donutCurrentCount >= prods.length ? 'var(--accent2)' : 'var(--muted)',
-        cursor: 'pointer', fontSize: '8px', fontFamily: 'inherit', marginLeft: '4px',
-        transition: 'all .14s'
-      }}>{donutCurrentCount >= prods.length ? `📋 ${donutItemsPerPage}` : '📋 Full'}</button>
-    </div>
-  );
-
-  const allProductsTableRows = prods.map(d => [d.n, fmtFull(d.rev), ((d.rev / totalRev) * 100).toFixed(1).replace('.',',') + '%']);
-
-  const handleBarClick = (p) => {
-    const item = currentItems[p.dataIndex];
-    if (item) {
-      setSelProd(selProd === item.n ? null : item.n);
-    }
-  };
-
-const [selectedCategory, setSelectedCategory] = useState(null);
-
-
-const handleDonutClick = (p) => {
-  const fullName = donutCurrentItems.find(x => x.n.startsWith(p.name.replace('…', '')))?.n;
-  setSelProd(selProd === fullName ? null : fullName || null);
-};
-
-const handleDonutLegend = (params, echartsInstance) => {
-  if (echartsInstance) {
-    echartsInstance.dispatchAction({ type: 'legendSelect', name: params.name });
-  }
-  const fullName = donutCurrentItems.find(x => x.n.startsWith(params.name.replace('…', '')))?.n;
-  setSelProd(prev => prev === (fullName || null) ? null : (fullName || null));
-};
+  const allProductsTableRows=prods.map(d=>[d.n,fmtFull(d.rev),((d.rev/totalRev)*100).toFixed(1).replace('.',','  )+'%']);
+  const handleBarClick=(p)=>{const item=currentItems[p.dataIndex];if(item){setSelProd(selProd===item.n?null:item.n);}};
+  const handleDonutClick=(p)=>{const fullName=donutCurrentItems.find(x=>x.n.startsWith(p.name.replace('…','')))?.n;setSelProd(selProd===fullName?null:fullName||null);};
+  const handleDonutLegend=(params,echartsInstance)=>{if(echartsInstance){echartsInstance.dispatchAction({type:'legendSelect',name:params.name});}const fullName=donutCurrentItems.find(x=>x.n.startsWith(params.name.replace('…','')))?.n;setSelProd(prev=>prev===(fullName||null)?null:(fullName||null));};
 
   return (
     <div className="page-area" key="products">
       <div className="kpi-strip">
-        <div className="kpi-card blue">
-          <div className="kpi-lbl">#1 Product</div>
-          <div className="kpi-val sm">{prods[0]?.n?.split(' - ')[0] || '—'}</div>
-          <div className="kpi-chg">{fmtFull(prods[0]?.rev || 0)} · {totalRev > 0 ? ((prods[0]?.rev || 0) / totalRev * 100).toFixed(0) : 0}% share</div>
-        </div>
-        <div className="kpi-card teal">
-          <div className="kpi-lbl">#2 Product</div>
-          <div className="kpi-val sm">{prods[1]?.n?.split(' - ')[0] || '—'}</div>
-          <div className="kpi-chg">{fmtFull(prods[1]?.rev || 0)} · {totalRev > 0 ? ((prods[1]?.rev || 0) / totalRev * 100).toFixed(0) : 0}% share</div>
-        </div>
-        <div className="kpi-card navy">
-          <div className="kpi-lbl">#3 Product</div>
-          <div className="kpi-val sm">{prods[2]?.n?.split(' - ')[0] || '—'}</div>
-          <div className="kpi-chg">{fmtFull(prods[2]?.rev || 0)} · {totalRev > 0 ? ((prods[2]?.rev || 0) / totalRev * 100).toFixed(0) : 0}% share</div>
-        </div>
-        <div className="kpi-card green">
-          <div className="kpi-lbl">Products Tracked</div>
-          <div className="kpi-val sm">{prods.length}</div>
-          <div className="kpi-chg">Active lines</div>
-        </div>
+        <div className="kpi-card blue"><div className="kpi-lbl">#1 Product</div><div className="kpi-val sm">{prods[0]?.n?.split(' - ')[0]||'—'}</div><div className="kpi-chg">{fmtFull(prods[0]?.rev||0)} · {totalRev>0?((prods[0]?.rev||0)/totalRev*100).toFixed(0):0}% share</div></div>
+        <div className="kpi-card teal"><div className="kpi-lbl">#2 Product</div><div className="kpi-val sm">{prods[1]?.n?.split(' - ')[0]||'—'}</div><div className="kpi-chg">{fmtFull(prods[1]?.rev||0)} · {totalRev>0?((prods[1]?.rev||0)/totalRev*100).toFixed(0):0}% share</div></div>
+        <div className="kpi-card navy"><div className="kpi-lbl">#3 Product</div><div className="kpi-val sm">{prods[2]?.n?.split(' - ')[0]||'—'}</div><div className="kpi-chg">{fmtFull(prods[2]?.rev||0)} · {totalRev>0?((prods[2]?.rev||0)/totalRev*100).toFixed(0):0}% share</div></div>
+        <div className="kpi-card green"><div className="kpi-lbl">Products Tracked</div><div className="kpi-val sm">{prods.length}</div><div className="kpi-chg">Active lines</div></div>
       </div>
       <div className="charts-row">
-        <div className="charts-col" style={{ flex: 2 }}>
-          <Panel title="Top Products by Revenue" subtitle={label} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows} defaultView={highlightQuery ? 'table' : 'chart'} searchableTable tableInitialQuery={highlightQuery} insight={productsInsight}>
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <div style={{ flex: 1, minHeight: 0 }}>
-                <EC option={barOpt} onEvents={{ 'click': handleBarClick }}/>
-              </div>
-              <PaginationControls />
+        <div className="charts-col" style={{flex:2}}>
+          <Panel title="Top Products by Revenue" subtitle={label} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows} defaultView={highlightQuery?'table':'chart'} searchableTable tableInitialQuery={highlightQuery} insight={productsInsight}>
+            <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+              <div style={{flex:1,minHeight:0}}><EC option={barOpt} onEvents={{'click':handleBarClick}}/></div>
+              <PaginationControls/>
             </div>
           </Panel>
         </div>
-        <div className="charts-col" style={{ flex: 1 }}>
-          <Panel title="Product Share" subtitle="Click to isolate" flex={1} tableHeaders={['Product', 'Revenue', 'Share']} tableRows={allProductsTableRows} defaultView="chart">
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <div style={{ flex: 1, minHeight: 0 }}>
-                <EC 
-                  option={donutOpt} 
-                  onEvents={{
-                    'click': handleDonutClick,
-                    'legendselectchanged': handleDonutLegend
-                  }}
-                />
-              </div>
-              <DonutPaginationControls />
+        <div className="charts-col" style={{flex:1}}>
+          <Panel title="Product Share" subtitle="Click to isolate" flex={1} tableHeaders={['Product','Revenue','Share']} tableRows={allProductsTableRows} defaultView="chart">
+            <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+              <div style={{flex:1,minHeight:0}}><EC option={donutOpt} onEvents={{'click':handleDonutClick,'legendselectchanged':handleDonutLegend}}/></div>
+              <DonutPaginationControls/>
             </div>
           </Panel>
         </div>
@@ -2456,49 +1703,16 @@ const handleDonutLegend = (params, echartsInstance) => {
 
 function Categories({ fm, label, highlightQuery }) {
   const months=fm.map(m=>m.m);
-
-  const cats=useMemo(()=>{
-    const g={};
-    categoriesRaw.filter(c=>months.includes(c.m)).forEach(c=>{const k=c.n.trim();if(!g[k])g[k]={n:k,rev:0,orders:0};g[k].rev+=c.rev;g[k].orders+=c.orders;});
-    return Object.values(g).sort((a,b)=>b.rev-a.rev);
-  },[months]);
+  const cats=useMemo(()=>{const g={};categoriesRaw.filter(c=>months.includes(c.m)).forEach(c=>{const k=c.n.trim();if(!g[k])g[k]={n:k,rev:0,orders:0};g[k].rev+=c.rev;g[k].orders+=c.orders;});return Object.values(g).sort((a,b)=>b.rev-a.rev);},[months]);
   const totalRev=cats.reduce((s,c)=>s+c.rev,0);
-
-const donutData=cats.map((d,i)=>({
-  name:d.n,
-  value:d.rev,
-  itemStyle:{ color:PALETTE[i%PALETTE.length] }
-}));
-
-const donutOpt={
-  tooltip:{...TOOLTIP_STYLE,trigger:'item',formatter:p=>`${p.name}: ${fmtFull(p.value)} (${p.percent}%)`},
-  legend:{
-    bottom:0,
-    textStyle:{color:'#5F7078',fontSize:9},
-    type:'scroll',
-    selectedMode:false
-  },
-  series:[{
-    type:'pie',
-    radius:['48%','70%'],
-    center:['50%','44%'],
-    data:donutData,
-    itemStyle:{borderRadius:3,borderColor:'#fff',borderWidth:2},
-    label:{show:false},
-    emphasis:{scaleSize:6}
-  }]
-};
-
-  const tbl={headers:['#','Category','Revenue','Orders','Share'],rows:cats.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),((d.rev/totalRev)*100).toFixed(1).replace('.',',')+'%'])};
-
-  const [selectedCat, setSelectedCat] = useState(highlightQuery || null);
-  useEffect(() => { if (highlightQuery) setSelectedCat(highlightQuery); }, [highlightQuery]);
-  const handleCatDonutClick = (p) => setSelectedCat(prev => prev === p.name ? null : p.name);
-  const catRows = selectedCat ? tbl.rows.filter(r => r[1] === selectedCat) : tbl.rows;
-
-  const catsInsight = cats[0]
-    ? `${cats[0].n} leads with ${fmtFull(cats[0].rev)}${totalRev > 0 ? ` (${(cats[0].rev/totalRev*100).toFixed(0)}% share)` : ''}`
-    : null;
+  const donutData=cats.map((d,i)=>({name:d.n,value:d.rev,itemStyle:{color:PALETTE[i%PALETTE.length]}}));
+  const donutOpt={tooltip:{...TOOLTIP_STYLE,trigger:'item',formatter:p=>`${p.name}: ${fmtFull(p.value)} (${p.percent}%)`},legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:9},type:'scroll',selectedMode:false},series:[{type:'pie',radius:['48%','70%'],center:['50%','44%'],data:donutData,itemStyle:{borderRadius:3,borderColor:'#fff',borderWidth:2},label:{show:false},emphasis:{scaleSize:6}}]};
+  const tbl={headers:['#','Category','Revenue','Orders','Share'],rows:cats.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),((d.rev/totalRev)*100).toFixed(1).replace('.',','  )+'%'])};
+  const [selectedCat,setSelectedCat]=useState(highlightQuery||null);
+  useEffect(()=>{if(highlightQuery)setSelectedCat(highlightQuery);},[highlightQuery]);
+  const handleCatDonutClick=(p)=>setSelectedCat(prev=>prev===p.name?null:p.name);
+  const catRows=selectedCat?tbl.rows.filter(r=>r[1]===selectedCat):tbl.rows;
+  const catsInsight=cats[0]?`${cats[0].n} leads with ${fmtFull(cats[0].rev)}${totalRev>0?` (${(cats[0].rev/totalRev*100).toFixed(0)}% share)`:''}`  :null;
 
   return (
     <div className="page-area" key="cats">
@@ -2510,24 +1724,15 @@ const donutOpt={
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Category Revenue" subtitle={selectedCat ? `Filtered · click the donut to change` : label} flex={1}>
-            <div style={{display:'flex', flexDirection:'column', height:'100%'}}>
-              {selectedCat && (
-                <div className="drill-chip">
-                  Showing: {selectedCat}
-                  <button onClick={() => setSelectedCat(null)} title="Clear selection">✕</button>
-                </div>
-              )}
-              <div style={{flex:1, minHeight:0}}>
-                <InlineTable headers={tbl.headers} rows={catRows} height="100%"/>
-              </div>
+          <Panel title="Category Revenue" subtitle={selectedCat?'Filtered · click the donut to change':label} flex={1}>
+            <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+              {selectedCat&&(<div className="drill-chip">Showing: {selectedCat}<button onClick={()=>setSelectedCat(null)} title="Clear selection">✕</button></div>)}
+              <div style={{flex:1,minHeight:0}}><InlineTable headers={tbl.headers} rows={catRows} height="100%"/></div>
             </div>
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Category Split" subtitle="Click a slice to drill in" flex={1} tableHeaders={['Category','Revenue','Share']} tableRows={cats.map(d=>[d.n,fmtFull(d.rev),((d.rev/totalRev)*100).toFixed(1).replace('.',',')+'%'])} insight={catsInsight}>
-            <EC option={donutOpt} onEvents={{'click': handleCatDonutClick}} />
-          </Panel>
+          <Panel title="Category Split" subtitle="Click a slice to drill in" flex={1} tableHeaders={['Category','Revenue','Share']} tableRows={cats.map(d=>[d.n,fmtFull(d.rev),((d.rev/totalRev)*100).toFixed(1).replace('.',','  )+'%'])} insight={catsInsight}><EC option={donutOpt} onEvents={{'click':handleCatDonutClick}}/></Panel>
         </div>
       </div>
     </div>
@@ -2536,94 +1741,24 @@ const donutOpt={
 
 function Channels({ fm, label }) {
   const months=fm.map(m=>m.m);
-  const ch=useMemo(()=>{
-    const f=salesrepsRaw.filter(s=>months.includes(s.m));
-    const ws=f.filter(s=>s.n==='Webshop');
-    const dr=f.filter(s=>s.n!=='Webshop');
-    return {dRev:dr.reduce((s,r)=>s+r.rev,0),wRev:ws.reduce((s,r)=>s+r.rev,0),dOrd:dr.reduce((s,r)=>s+r.orders,0),wOrd:ws.reduce((s,r)=>s+r.orders,0)};
-  },[months]);
+  const ch=useMemo(()=>{const f=salesrepsRaw.filter(s=>months.includes(s.m));const ws=f.filter(s=>s.n==='Webshop');const dr=f.filter(s=>s.n!=='Webshop');return{dRev:dr.reduce((s,r)=>s+r.rev,0),wRev:ws.reduce((s,r)=>s+r.rev,0),dOrd:dr.reduce((s,r)=>s+r.orders,0),wOrd:ws.reduce((s,r)=>s+r.orders,0)};},[months]);
   const total=ch.dRev+ch.wRev;
   const dAOV=ch.dOrd>0?Math.round(ch.dRev/ch.dOrd):0;
   const wAOV=ch.wOrd>0?Math.round(ch.wRev/ch.wOrd):0;
+  const [selChannel,setSelChannel]=useState(null);
 
-  const [selChannel, setSelChannel] = useState(null);
+  const donutOpt={tooltip:{...TOOLTIP_STYLE,trigger:'item',formatter:p=>`${p.name}: ${fmtFull(p.value)} (${p.percent}%)`},legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10},selectedMode:'multiple'},series:[{type:'pie',radius:['48%','70%'],center:['50%','44%'],data:[{name:'Direct Sales',value:ch.dRev,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(8,145,178,0.2)':'#0891B2'}},{name:'Webshop',value:ch.wRev,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2'}}],itemStyle:{borderRadius:3,borderColor:'#fff',borderWidth:2},label:{show:false},emphasis:{scaleSize:6}}]};
+  const ordOpt=withDataZoom({tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtN(p[0].value)}`},grid:{left:'3%',right:'4%',bottom:'12%',top:'8%',containLabel:true},xAxis:{type:'category',data:['Direct Sales','Webshop'],axisLabel:{color:'#5F7078',fontSize:10}},yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtN(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},legend:{show:false},series:[{type:'bar',data:[{value:ch.dOrd,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(8,145,178,0.2)':'#0891B2',borderRadius:[4,4,0,0]}},{value:ch.wOrd,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2',borderRadius:[4,4,0,0]}}],barMaxWidth:60}]});
+  const aovOpt=withDataZoom({tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`${p[0].name}: ${fmtFull(p[0].value)}`},grid:{left:'3%',right:'4%',bottom:'12%',top:'8%',containLabel:true},xAxis:{type:'category',data:['Direct Sales','Webshop'],axisLabel:{color:'#5F7078',fontSize:10}},yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},legend:{show:false},series:[{type:'bar',data:[{value:dAOV,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(3,105,161,0.2)':'#0891B2',borderRadius:[4,4,0,0]}},{value:wAOV,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2',borderRadius:[4,4,0,0]}}],barMaxWidth:60}]});
 
-const donutOpt={
-  tooltip:{...TOOLTIP_STYLE,trigger:'item',formatter:p=>`${p.name}: ${fmtFull(p.value)} (${p.percent}%)`},
-  legend:{
-    bottom:0,
-    textStyle:{color:'#5F7078',fontSize:10},
-    selectedMode:'multiple'
-  },
-  series:[{
-    type:'pie',
-    radius:['48%','70%'],
-    center:['50%','44%'],
-    data:[
-      {name:'Direct Sales',value:ch.dRev,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(8,145,178,0.2)':'#0891B2'}},
-      {name:'Webshop',value:ch.wRev,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2'}}
-    ],
-    itemStyle:{borderRadius:3,borderColor:'#fff',borderWidth:2},
-    label:{show:false},
-    emphasis:{scaleSize:6}
-  }]
-};
-  
-  const ordOpt = withDataZoom({
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtN(p[0].value)}`},
-    grid:{left:'3%',right:'4%',bottom:'12%',top:'8%',containLabel:true},
-    xAxis:{type:'category',data:['Direct Sales','Webshop'],axisLabel:{color:'#5F7078',fontSize:10}},
-    yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtN(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    legend:{show:false},
-    series:[{
-      type:'bar',
-      data:[
-        {value:ch.dOrd,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(8,145,178,0.2)':'#0891B2',borderRadius:[4,4,0,0]}},
-        {value:ch.wOrd,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2',borderRadius:[4,4,0,0]}}
-      ],
-      barMaxWidth:60
-    }]
-  });
-  
-  const aovOpt = withDataZoom({
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`${p[0].name}: ${fmtFull(p[0].value)}`},
-    grid:{left:'3%',right:'4%',bottom:'12%',top:'8%',containLabel:true},
-    xAxis:{type:'category',data:['Direct Sales','Webshop'],axisLabel:{color:'#5F7078',fontSize:10}},
-    yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    legend:{show:false},
-    series:[{
-      type:'bar',
-      data:[
-        {value:dAOV,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(3,105,161,0.2)':'#0891B2',borderRadius:[4,4,0,0]}},
-        {value:wAOV,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2',borderRadius:[4,4,0,0]}}
-      ],
-      barMaxWidth:60
-    }]
-  });
-
-  const leadChannel = ch.dRev >= ch.wRev ? 'Direct Sales' : 'Webshop';
-  const leadShare = total > 0 ? (Math.max(ch.dRev, ch.wRev) / total * 100).toFixed(0) : 0;
-  const aovLeader = dAOV >= wAOV ? 'Direct Sales' : 'Webshop';
-  const aovGapPct = Math.min(dAOV, wAOV) > 0 ? (Math.abs(dAOV - wAOV) / Math.min(dAOV, wAOV) * 100).toFixed(0) : null;
-  const channelsInsight = total > 0
-    ? `${leadChannel} leads with ${leadShare}% of revenue${aovGapPct ? ` · ${aovLeader} orders run ${aovGapPct}% larger on average` : ''}`
-    : null;
-
-  const handleChannelClick = (p) => {
-    const channelName = p.name || (p.dataIndex === 0 ? 'Direct Sales' : 'Webshop');
-    setSelChannel(selChannel === channelName ? null : channelName);
-  };
-
-const handleDonutLegend = (params, echartsInstance) => {
-  if (echartsInstance) {
-    echartsInstance.dispatchAction({ type: 'legendSelect', name: params.name });
-  }
-  setSelChannel(prev => prev === params.name ? null : params.name);
-};
-
-const handleDonutClick = (p) => {
-  setSelChannel(selChannel === p.name ? null : p.name);
-};
+  const leadChannel=ch.dRev>=ch.wRev?'Direct Sales':'Webshop';
+  const leadShare=total>0?(Math.max(ch.dRev,ch.wRev)/total*100).toFixed(0):0;
+  const aovLeader=dAOV>=wAOV?'Direct Sales':'Webshop';
+  const aovGapPct=Math.min(dAOV,wAOV)>0?(Math.abs(dAOV-wAOV)/Math.min(dAOV,wAOV)*100).toFixed(0):null;
+  const channelsInsight=total>0?`${leadChannel} leads with ${leadShare}% of revenue${aovGapPct?` · ${aovLeader} orders run ${aovGapPct}% larger on average`:''}`:null;
+  const handleChannelClick=(p)=>{const channelName=p.name||(p.dataIndex===0?'Direct Sales':'Webshop');setSelChannel(selChannel===channelName?null:channelName);};
+  const handleDonutLegend=(params,echartsInstance)=>{if(echartsInstance){echartsInstance.dispatchAction({type:'legendSelect',name:params.name});}setSelChannel(prev=>prev===params.name?null:params.name);};
+  const handleDonutClick=(p)=>{setSelChannel(selChannel===p.name?null:p.name);};
 
   return (
     <div className="page-area" key="channels">
@@ -2635,25 +1770,13 @@ const handleDonutClick = (p) => {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:1.2}}>
-          <Panel title="Channel Revenue Share" subtitle={label} flex={1} tableHeaders={['Channel','Revenue','Share','Orders','AOV']} tableRows={[['Direct Sales',fmtFull(ch.dRev),total>0?((ch.dRev/total)*100).toFixed(1).replace('.',',')+'%':'—',fmtN(ch.dOrd),fmtFull(dAOV)],['Webshop',fmtFull(ch.wRev),total>0?((ch.wRev/total)*100).toFixed(1).replace('.',',')+'%':'—',fmtN(ch.wOrd),fmtFull(wAOV)]]} insight={channelsInsight}>
-            <EC 
-              option={donutOpt} 
-              onEvents={{
-                'click': handleChannelClick,
-                'legendselectchanged': handleDonutLegend
-              }}
-            />
-          </Panel>
+          <Panel title="Channel Revenue Share" subtitle={label} flex={1} tableHeaders={['Channel','Revenue','Share','Orders','AOV']} tableRows={[['Direct Sales',fmtFull(ch.dRev),total>0?((ch.dRev/total)*100).toFixed(1).replace('.',','  )+'%':'—',fmtN(ch.dOrd),fmtFull(dAOV)],['Webshop',fmtFull(ch.wRev),total>0?((ch.wRev/total)*100).toFixed(1).replace('.',','  )+'%':'—',fmtN(ch.wOrd),fmtFull(wAOV)]]} insight={channelsInsight}><EC option={donutOpt} onEvents={{'click':handleDonutClick,'legendselectchanged':handleDonutLegend}}/></Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Order Volume" subtitle="By channel" flex={1}>
-            <EC option={ordOpt} onEvents={{'click': handleChannelClick}}/>
-          </Panel>
+          <Panel title="Order Volume" subtitle="By channel" flex={1}><EC option={ordOpt} onEvents={{'click':handleChannelClick}}/></Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Avg Order Value" subtitle="Direct vs Webshop" flex={1}>
-            <EC option={aovOpt} onEvents={{'click': handleChannelClick}}/>
-          </Panel>
+          <Panel title="Avg Order Value" subtitle="Direct vs Webshop" flex={1}><EC option={aovOpt} onEvents={{'click':handleChannelClick}}/></Panel>
         </div>
       </div>
     </div>
@@ -2661,289 +1784,135 @@ const handleDonutClick = (p) => {
 }
 
 /* ── FINANCE HELPERS ───────────────────────────────────────────── */
-const FIN_CAT_ORDER = ['Revenue','COGS','Personnel','Rent & Property','Premises',
-  'Vehicle & Transport','Marketing','Office & IT','General Admin','Finance','Other OpEx','Other'];
+const FIN_CAT_ORDER=['Revenue','COGS','Personnel','Rent & Property','Premises','Vehicle & Transport','Marketing','Office & IT','General Admin','Finance','Other OpEx','Other'];
+function buildWaterfallSeries(steps){let running=0;const base=[],val=[],colors=[];steps.forEach(s=>{if(s.total){base.push(Math.min(0,running));val.push(Math.abs(running));colors.push('#1F3741');}else{base.push(Math.min(running,running+s.delta));val.push(Math.abs(s.delta));colors.push(s.delta>=0?'#2E9B62':'#D95C5C');running+=s.delta;}});return{base,val,colors};}
+function YoyBadge({cy,py,goodIfUp=true}){if(py===undefined||py===null)return null;const diff=cy-py;const pct=py!==0?Math.abs(diff/py)*100:null;const good=goodIfUp?diff>=0:diff<=0;return<span className={`fin-badge ${good?'good':'bad'}`}>{diff>=0?'▲':'▼'} {pct!==null?pct.toFixed(1).replace('.',','  )+'%':'—'}</span>;}
+const fmtAxis=v=>{const av=Math.abs(v),sign=v<0?'-':'';if(av>=1e6)return sign+'€'+(av/1e6).toLocaleString('de-DE',{minimumFractionDigits:0,maximumFractionDigits:1})+'M';if(av>=1e3)return sign+'€'+(av/1e3).toLocaleString('de-DE',{maximumFractionDigits:0})+'K';return sign+'€'+Math.round(av).toLocaleString('de-DE');};
 
-function buildWaterfallSeries(steps) {
-  let running = 0;
-  const base = [], val = [], colors = [];
-  steps.forEach(s => {
-    if (s.total) {
-      base.push(Math.min(0, running)); val.push(Math.abs(running)); colors.push('#1F3741');
-    } else {
-      base.push(Math.min(running, running + s.delta)); val.push(Math.abs(s.delta));
-      colors.push(s.delta >= 0 ? '#2E9B62' : '#D95C5C'); running += s.delta;
-    }
-  });
-  return { base, val, colors };
-}
-
-function YoyBadge({ cy, py, goodIfUp = true }) {
-  if (py === undefined || py === null) return null;
-  const diff = cy - py;
-  const pct = py !== 0 ? Math.abs(diff / py) * 100 : null;
-  const good = goodIfUp ? diff >= 0 : diff <= 0;
-  return <span className={`fin-badge ${good ? 'good' : 'bad'}`}>{diff >= 0 ? '▲' : '▼'} {pct !== null ? pct.toFixed(1).replace('.',',') + '%' : '—'}</span>;
-}
-
-const fmtAxis = v => {
-  const av = Math.abs(v), sign = v < 0 ? '-' : '';
-  if (av >= 1e6) return sign + '€' + (av / 1e6).toLocaleString('de-DE', {minimumFractionDigits:0, maximumFractionDigits:1}) + 'M';
-  if (av >= 1e3) return sign + '€' + (av / 1e3).toLocaleString('de-DE', {maximumFractionDigits:0}) + 'K';
-  return sign + '€' + Math.round(av).toLocaleString('de-DE');
+const mkBarOpt=(labels,vals,colorFn,lw)=>{
+  const L=lw||(isMobileViewport()?105:150);
+  return{
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},
+    grid:{left:L,right:18,bottom:22,top:6,containLabel:false},
+    xAxis:{type:'value',splitNumber:4,minInterval:1,axisLabel:{color:'#5F7078',fontSize:8,formatter:v=>fmtAxis(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},
+    yAxis:{type:'category',data:labels,axisLabel:{color:'#5F7078',fontSize:8,width:L-10,overflow:'truncate',ellipsis:'…'},inverse:true,axisTick:{show:false}},
+    series:[{type:'bar',barMaxWidth:12,data:vals.map((v,i)=>({value:v,itemStyle:{color:colorFn(i),borderRadius:[0,3,3,0]}}))}]
+  };
 };
-
-const mkBarOpt = (labels, vals, colorFn, lw) => ({
-  tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' },
-    formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}` },
-  grid: { left: lw || 150, right: 18, bottom: 22, top: 6, containLabel: false },
-  xAxis: { type: 'value', splitNumber: 4, minInterval: 1,
-    axisLabel: { color: '#5F7078', fontSize: 8, formatter: v => fmtAxis(v), hideOverlap: true },
-    splitLine: { lineStyle: { color: '#F0F3F4' } }, axisTick: { show: false } },
-  yAxis: { type: 'category', data: labels,
-    axisLabel: { color: '#5F7078', fontSize: 8, width: (lw||150)-10, overflow: 'truncate', ellipsis: '…' },
-    inverse: true, axisTick: { show: false } },
-  series: [{ type: 'bar', barMaxWidth: 12,
-    data: vals.map((v, i) => ({ value: v, itemStyle: { color: colorFn(i), borderRadius: [0,3,3,0] } })) }]
-});
 
 function PLSummary() {
-  const revCY = finSummary.revenue.cy, revPY = finSummary.revenue.py;
-  const cogsCY = finSummary.cogs.cy, cogsPY = finSummary.cogs.py;
-  const opexCY = finSummary.opex.cy, opexPY = finSummary.opex.py;
-  const gpCY = revCY - cogsCY, gpPY = revPY - cogsPY;
-  const ebitdaCY = gpCY - opexCY, ebitdaPY = gpPY - opexPY;
-  const gmCY = revCY ? (gpCY / revCY) * 100 : 0;
-  const gmPY = revPY ? (gpPY / revPY) * 100 : 0;
-  const emCY = revCY ? (ebitdaCY / revCY) * 100 : 0;
-  const emPY = revPY ? (ebitdaPY / revPY) * 100 : 0;
-  const opexPctCY = revCY ? (opexCY / revCY) * 100 : 0;
-  const opexPctPY = revPY ? (opexPY / revPY) * 100 : 0;
+  const revCY=finSummary.revenue.cy,revPY=finSummary.revenue.py;
+  const cogsCY=finSummary.cogs.cy,cogsPY=finSummary.cogs.py;
+  const opexCY=finSummary.opex.cy,opexPY=finSummary.opex.py;
+  const gpCY=revCY-cogsCY,gpPY=revPY-cogsPY;
+  const ebitdaCY=gpCY-opexCY,ebitdaPY=gpPY-opexPY;
+  const gmCY=revCY?(gpCY/revCY)*100:0;
+  const gmPY=revPY?(gpPY/revPY)*100:0;
+  const emCY=revCY?(ebitdaCY/revCY)*100:0;
+  const emPY=revPY?(ebitdaPY/revPY)*100:0;
+  const opexPctCY=revCY?(opexCY/revCY)*100:0;
+  const hasTaxData=finSummary.tax?.cy!==undefined&&finSummary.tax?.cy!==null;
+  const taxCY=hasTaxData?finSummary.tax.cy:null;
+  const taxPY=hasTaxData?finSummary.tax.py:null;
+  const netCY=hasTaxData?ebitdaCY-taxCY:null;
+  const netPY=hasTaxData?ebitdaPY-taxPY:null;
+  const nmCY=hasTaxData&&revCY?(netCY/revCY)*100:null;
+  const nmPY=hasTaxData&&revPY?(netPY/revPY)*100:null;
 
-  const hasTaxData = finSummary.tax?.cy !== undefined && finSummary.tax?.cy !== null;
-  const taxCY = hasTaxData ? finSummary.tax.cy : null;
-  const taxPY = hasTaxData ? finSummary.tax.py : null;
-  const netCY = hasTaxData ? ebitdaCY - taxCY : null;
-  const netPY = hasTaxData ? ebitdaPY - taxPY : null;
-  const nmCY = hasTaxData && revCY ? (netCY / revCY) * 100 : null;
-  const nmPY = hasTaxData && revPY ? (netPY / revPY) * 100 : null;
-
-  const wfCats = ['Revenue', 'COGS', 'Gross Profit', 'OpEx', 'EBITDA'];
-  const wfDisplay = [revCY, -cogsCY, gpCY, -opexCY, ebitdaCY];
-  const { base: wfBase, val: wfVal, colors: wfColors } = buildWaterfallSeries([
-    { delta: revCY }, { delta: -cogsCY }, { total: true }, { delta: -opexCY }, { total: true }
-  ]);
-  const wfOpt = {
-    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' },
-      formatter: p => `<strong>${wfCats[p[0].dataIndex]}</strong><br/>${fmtFull(wfDisplay[p[0].dataIndex])}` },
-    grid: { left: 14, right: 14, bottom: 26, top: 30, containLabel: true },
-    xAxis: { type: 'category', data: wfCats, axisLabel: { color: '#5F7078', fontSize: 9 }, axisTick: { show: false } },
-    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 8, formatter: v => fmtAxis(v) },
-      splitLine: { lineStyle: { color: '#F0F3F4' } }, axisTick: { show: false } },
-    series: [
-      { type: 'bar', stack: 'wf', data: wfBase, itemStyle: { color: 'transparent' }, silent: true, tooltip: { show: false } },
-      { type: 'bar', stack: 'wf', barWidth: '55%',
-        data: wfVal.map((v, i) => ({ value: v, itemStyle: { color: wfColors[i], borderRadius: 3 } })),
-        label: { show: true, position: 'top', distance: 4, color: '#1F3741', fontSize: 8, fontWeight: 700,
-          backgroundColor: '#fff', borderColor: '#DDE6E9', borderWidth: 1, borderRadius: 3, padding: [3, 5],
-          formatter: p => fmtAxis(wfDisplay[p.dataIndex]) } }
+  const wfCats=['Revenue','COGS','Gross Profit','OpEx','EBITDA'];
+  const wfDisplay=[revCY,-cogsCY,gpCY,-opexCY,ebitdaCY];
+  const{base:wfBase,val:wfVal,colors:wfColors}=buildWaterfallSeries([{delta:revCY},{delta:-cogsCY},{total:true},{delta:-opexCY},{total:true}]);
+  const wfOpt={
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${wfCats[p[0].dataIndex]}</strong><br/>${fmtFull(wfDisplay[p[0].dataIndex])}`},
+    grid:{left:14,right:14,bottom:26,top:30,containLabel:true},
+    xAxis:{type:'category',data:wfCats,axisLabel:{color:'#5F7078',fontSize:9},axisTick:{show:false}},
+    yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:8,formatter:v=>fmtAxis(v)},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},
+    series:[
+      {type:'bar',stack:'wf',data:wfBase,itemStyle:{color:'transparent'},silent:true,tooltip:{show:false}},
+      {type:'bar',stack:'wf',barWidth:'55%',data:wfVal.map((v,i)=>({value:v,itemStyle:{color:wfColors[i],borderRadius:3}})),label:{show:true,position:'top',distance:4,color:'#1F3741',fontSize:8,fontWeight:700,backgroundColor:'#fff',borderColor:'#DDE6E9',borderWidth:1,borderRadius:3,padding:[3,5],formatter:p=>fmtAxis(wfDisplay[p.dataIndex])}}
     ]
   };
-  const wfTable = { headers: ['Step','2026 (Jan–Mar)','2025 (Jan–Jun)'],
-    rows: [['Revenue',fmtFull(revCY),fmtFull(revPY)],['COGS',fmtFull(-cogsCY),fmtFull(-cogsPY)],['Gross Profit',fmtFull(gpCY),fmtFull(gpPY)],['OpEx',fmtFull(-opexCY),fmtFull(-opexPY)],['EBITDA',fmtFull(ebitdaCY),fmtFull(ebitdaPY)]] };
+  const wfTable={headers:['Step','2026 (Jan–Mar)','2025 (Jan–Jun)'],rows:[['Revenue',fmtFull(revCY),fmtFull(revPY)],['COGS',fmtFull(-cogsCY),fmtFull(-cogsPY)],['Gross Profit',fmtFull(gpCY),fmtFull(gpPY)],['OpEx',fmtFull(-opexCY),fmtFull(-opexPY)],['EBITDA',fmtFull(ebitdaCY),fmtFull(ebitdaPY)]]};
 
-  const tornCats = finCategories.map(c => c.cat);
-  const tornVals = finCategories.map(c => c.cy - c.py);
-  const tornColors = finCategories.map(c => {
-    const bad = c.cat==='Revenue' ? (c.cy-c.py)<0 : (c.cy-c.py)>0;
-    return bad ? '#D95C5C' : '#2E9B62';
-  });
-  const tornOpt = {
-    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' },
-      formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}` },
-    grid: { left: 120, right: 16, bottom: 18, top: 6, containLabel: false },
-    xAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 8, formatter: v => fmtAxis(v) },
-      splitLine: { lineStyle: { color: '#F0F3F4' } }, axisTick: { show: false } },
-    yAxis: { type: 'category', data: tornCats,
-      axisLabel: { color: '#5F7078', fontSize: 8, width: 112, overflow: 'truncate' },
-      inverse: true, axisTick: { show: false } },
-    series: [{ type: 'bar', barMaxWidth: 12,
-      data: tornVals.map((v,i) => ({ value: v, itemStyle: { color: tornColors[i], borderRadius: v>=0?[0,3,3,0]:[3,0,0,3] } })) }]
+  const tornCats=finCategories.map(c=>c.cat);
+  const tornVals=finCategories.map(c=>c.cy-c.py);
+  const tornColors=finCategories.map(c=>{const bad=c.cat==='Revenue'?(c.cy-c.py)<0:(c.cy-c.py)>0;return bad?'#D95C5C':'#2E9B62';});
+  const tornOpt={tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},grid:{left:120,right:16,bottom:18,top:6,containLabel:false},xAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:8,formatter:v=>fmtAxis(v)},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},yAxis:{type:'category',data:tornCats,axisLabel:{color:'#5F7078',fontSize:8,width:112,overflow:'truncate'},inverse:true,axisTick:{show:false}},series:[{type:'bar',barMaxWidth:12,data:tornVals.map((v,i)=>({value:v,itemStyle:{color:tornColors[i],borderRadius:v>=0?[0,3,3,0]:[3,0,0,3]}}))}]};
+  const tornTable={headers:['Category','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','YoY %'],rows:finCategories.map(c=>[c.cat,fmtFull(c.cy),fmtFull(c.py),fmtFull(c.cy-c.py),c.py?fmtPct((c.cy-c.py)/Math.abs(c.py)*100):'—'])};
+
+  const GaugeSVG=({value,label,py})=>{
+    const clamp=v=>Math.max(-30,Math.min(30,v));
+    const angle=(clamp(value)+30)/60*180-90;
+    const r=44,cx=58,cy2=52;
+    const toXY=(deg)=>{const rad=(deg-90)*Math.PI/180;return{x:cx+r*Math.cos(rad),y:cy2+r*Math.sin(rad)};};
+    const arcPath=(from,to,color,rr)=>{const a=toXY(from*3),b=toXY(to*3);const large=(to-from)*3>180?1:0;return`<path d="M ${a.x} ${a.y} A ${rr} ${rr} 0 ${large} 1 ${b.x} ${b.y}" stroke="${color}" stroke-width="8" fill="none" stroke-linecap="butt"/>`;};
+    const color=value>=10?'#2E9B62':value>=0?'#E5A93D':'#D95C5C';
+    const px2=toXY(angle);
+    return(
+      <div style={{display:'flex',flexDirection:'column',alignItems:'center',flex:1}}>
+        <svg viewBox="0 0 116 68" style={{width:'100%',maxWidth:150,overflow:'visible'}}>
+          <g dangerouslySetInnerHTML={{__html:arcPath(-30,0,'#D95C5C',r)+arcPath(0,10,'#E5A93D',r)+arcPath(10,30,'#2E9B62',r)+`<line x1="${cx}" y1="${cy2}" x2="${px2.x}" y2="${px2.y}" stroke="#1F3741" stroke-width="3" stroke-linecap="round"/>`+`<circle cx="${cx}" cy="${cy2}" r="4" fill="#1F3741"/>`}}/>
+        </svg>
+        <div style={{fontSize:19,fontWeight:800,fontFamily:'JetBrains Mono,monospace',color,marginTop:-4}}>{value.toFixed(1).replace('.',','  )}%</div>
+        <div style={{fontSize:10,color:'var(--muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',marginTop:2}}>{label}</div>
+        <div style={{fontSize:10,color:'var(--muted)',marginTop:1}}>2025: {py.toFixed(1).replace('.',','  )}%</div>
+      </div>
+    );
   };
-  const tornTable = { headers: ['Category','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','YoY %'],
-    rows: finCategories.map(c => [c.cat, fmtFull(c.cy), fmtFull(c.py), fmtFull(c.cy-c.py),
-      c.py ? fmtPct((c.cy-c.py)/Math.abs(c.py)*100) : '—']) };
-
-  const GaugeSVG = ({ value, label, py }) => {
-  const clamp = v => Math.max(-30, Math.min(30, v));
-  const angle = (clamp(value) + 30) / 60 * 180 - 90;
-  const r = 44;
-  const cx = 58;
-  const cy2 = 52;
-  
-  const toXY = (deg) => {
-    const rad = (deg - 90) * Math.PI / 180;
-    return { x: cx + r * Math.cos(rad), y: cy2 + r * Math.sin(rad) };
-  };
-  
-  const arcPath = (from, to, color, rr) => {
-    const a = toXY(from * 3), b = toXY(to * 3);
-    const large = (to - from) * 3 > 180 ? 1 : 0;
-    return `<path d="M ${a.x} ${a.y} A ${rr} ${rr} 0 ${large} 1 ${b.x} ${b.y}" stroke="${color}" stroke-width="8" fill="none" stroke-linecap="butt"/>`;
-  };
-  
-  const color = value >= 10 ? '#2E9B62' : value >= 0 ? '#E5A93D' : '#D95C5C';
-  const px2 = toXY(angle);
-  
-  return (
-    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', flex:1 }}>
-      <svg viewBox="0 0 116 68" style={{ width:'100%', maxWidth:150,overflow:'visible' }}>
-        <g dangerouslySetInnerHTML={{ __html:
-          arcPath(-30,0,'#D95C5C',r) + arcPath(0,10,'#E5A93D',r) + arcPath(10,30,'#2E9B62',r) +
-          `<line x1="${cx}" y1="${cy2}" x2="${px2.x}" y2="${px2.y}" stroke="#1F3741" stroke-width="3" stroke-linecap="round"/>`+
-          `<circle cx="${cx}" cy="${cy2}" r="4" fill="#1F3741"/>`
-        }} />
-      </svg>
-      <div style={{ fontSize:19, fontWeight:800, fontFamily:'JetBrains Mono,monospace', color, marginTop:-4 }}>{value.toFixed(1).replace('.',',')}%</div>
-      <div style={{ fontSize:10, color:'var(--muted)', fontWeight:700, textTransform:'uppercase', letterSpacing:'.05em', marginTop:2 }}>{label}</div>
-      <div style={{ fontSize:10, color:'var(--muted)', marginTop:1 }}>2025: {py.toFixed(1).replace('.',',')}%</div>
-    </div>
-  );
-};
-  const gaugeTable = { headers: ['Metric','2026 (Jan–Mar)','2025 (Jan–Jun)'],
-    rows: [['Gross Margin %', gmCY.toFixed(1).replace('.',',')+'%', gmPY.toFixed(1).replace('.',',')+'%'],
-           ['EBITDA Margin %', emCY.toFixed(1).replace('.',',')+'%', emPY.toFixed(1).replace('.',',')+'%']] };
-
-  const bridgeSteps = [
-    { name: 'Revenue', delta: revCY - revPY },
-    { name: 'COGS', delta: -(cogsCY - cogsPY) },
-    { name: 'OpEx', delta: -(opexCY - opexPY) },
-  ];
-  const biggestBridgeMove = bridgeSteps.reduce((a, b) => Math.abs(b.delta) > Math.abs(a.delta) ? b : a);
-  const bridgeInsight = `EBITDA margin ${emCY >= emPY ? 'improved' : 'declined'} to ${emCY.toFixed(1).replace('.',',')}% (vs ${emPY.toFixed(1).replace('.',',')}% PY) · Largest driver: ${biggestBridgeMove.name} (${biggestBridgeMove.delta >= 0 ? '+' : ''}${fmtFull(biggestBridgeMove.delta)})`;
-
-  const tornSorted = [...finCategories].map(c => ({ cat: c.cat, delta: c.cy - c.py, bad: c.cat==='Revenue' ? (c.cy-c.py)<0 : (c.cy-c.py)>0 }));
-  const worstMover = tornSorted.filter(c => c.bad).sort((a,b) => Math.abs(b.delta)-Math.abs(a.delta))[0];
-  const bestMover = tornSorted.filter(c => !c.bad).sort((a,b) => Math.abs(b.delta)-Math.abs(a.delta))[0];
-  const tornadoInsight = [
-    bestMover ? `Best mover: ${bestMover.cat} (${bestMover.delta >= 0 ? '+' : ''}${fmtFull(bestMover.delta)})` : null,
-    worstMover ? `Watch: ${worstMover.cat} (${worstMover.delta >= 0 ? '+' : ''}${fmtFull(worstMover.delta)})` : null,
-  ].filter(Boolean).join(' · ') || null;
+  const gaugeTable={headers:['Metric','2026 (Jan–Mar)','2025 (Jan–Jun)'],rows:[['Gross Margin %',gmCY.toFixed(1).replace('.',','  )+'%',gmPY.toFixed(1).replace('.',','  )+'%'],['EBITDA Margin %',emCY.toFixed(1).replace('.',','  )+'%',emPY.toFixed(1).replace('.',','  )+'%']]};
+  const bridgeSteps=[{name:'Revenue',delta:revCY-revPY},{name:'COGS',delta:-(cogsCY-cogsPY)},{name:'OpEx',delta:-(opexCY-opexPY)}];
+  const biggestBridgeMove=bridgeSteps.reduce((a,b)=>Math.abs(b.delta)>Math.abs(a.delta)?b:a);
+  const bridgeInsight=`EBITDA margin ${emCY>=emPY?'improved':'declined'} to ${emCY.toFixed(1).replace('.',','  )}% (vs ${emPY.toFixed(1).replace('.',','  )}% PY) · Largest driver: ${biggestBridgeMove.name} (${biggestBridgeMove.delta>=0?'+':''}${fmtFull(biggestBridgeMove.delta)})`;
+  const tornSorted=[...finCategories].map(c=>({cat:c.cat,delta:c.cy-c.py,bad:c.cat==='Revenue'?(c.cy-c.py)<0:(c.cy-c.py)>0}));
+  const worstMover=tornSorted.filter(c=>c.bad).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta))[0];
+  const bestMover=tornSorted.filter(c=>!c.bad).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta))[0];
+  const tornadoInsight=[bestMover?`Best mover: ${bestMover.cat} (${bestMover.delta>=0?'+':''}${fmtFull(bestMover.delta)})`:null,worstMover?`Watch: ${worstMover.cat} (${worstMover.delta>=0?'+':''}${fmtFull(worstMover.delta)})`:null].filter(Boolean).join(' · ')||null;
 
   return (
     <div className="page-area fin-scroll" key="plsummary">
       <div className="fin-note">⚠ Partial periods: 2026 = Jan–Mar · 2025 = Jan–Jun</div>
       <div className="kpi-strip">
-        <div className="kpi-card blue">
-          <div className="kpi-lbl">Revenue</div>
-          <div className="kpi-val sm">{fmtFull(revCY)}</div>
-          <div className="kpi-chg"><YoyBadge cy={revCY} py={revPY} goodIfUp /></div>
-        </div>
-        <div className="kpi-card sky">
-          <div className="kpi-lbl">Gross Margin<span className="indicative-tag">Indicative</span></div>
-          <div className="kpi-val sm">{fmtFull(gpCY)}</div>
-          <div className="kpi-chg">{gmCY.toFixed(1).replace('.',',')}% margin · vs {gmPY.toFixed(1).replace('.',',')}% PY</div>
-        </div>
-        <div className="kpi-card amber">
-          <div className="kpi-lbl">OpEx</div>
-          <div className="kpi-val sm">{opexPctCY.toFixed(1).replace('.',',')}%</div>
-          <div className="kpi-chg">{fmtFull(opexCY)} · of turnover</div>
-        </div>
-        <div className="kpi-card green">
-          <div className="kpi-lbl">EBITDA<span className="indicative-tag">Indicative</span></div>
-          <div className="kpi-val sm">{fmtFull(ebitdaCY)}</div>
-          <div className="kpi-chg">{emCY.toFixed(1).replace('.',',')}% margin · vs {emPY.toFixed(1).replace('.',',')}% PY</div>
-        </div>
-        <div className="kpi-card navy">
-          <div className="kpi-lbl">Net Margin (after Tax)<span className="indicative-tag">Indicative</span></div>
-          {hasTaxData ? (
-            <>
-              <div className="kpi-val sm">{fmtFull(netCY)}</div>
-              <div className="kpi-chg">{nmCY.toFixed(1).replace('.',',')}% margin · vs {nmPY.toFixed(1).replace('.',',')}% PY</div>
-            </>
-          ) : (
-            <>
-              <div className="kpi-val sm">—</div>
-              <div className="kpi-chg">Pending — awaiting tax data</div>
-            </>
-          )}
-        </div>
+        <div className="kpi-card blue"><div className="kpi-lbl">Revenue</div><div className="kpi-val sm">{fmtFull(revCY)}</div><div className="kpi-chg"><YoyBadge cy={revCY} py={revPY} goodIfUp/></div></div>
+        <div className="kpi-card sky"><div className="kpi-lbl">Gross Margin<span className="indicative-tag">Indicative</span></div><div className="kpi-val sm">{fmtFull(gpCY)}</div><div className="kpi-chg">{gmCY.toFixed(1).replace('.',','  )}% margin · vs {gmPY.toFixed(1).replace('.',','  )}% PY</div></div>
+        <div className="kpi-card amber"><div className="kpi-lbl">OpEx</div><div className="kpi-val sm">{opexPctCY.toFixed(1).replace('.',','  )}%</div><div className="kpi-chg">{fmtFull(opexCY)} · of turnover</div></div>
+        <div className="kpi-card green"><div className="kpi-lbl">EBITDA<span className="indicative-tag">Indicative</span></div><div className="kpi-val sm">{fmtFull(ebitdaCY)}</div><div className="kpi-chg">{emCY.toFixed(1).replace('.',','  )}% margin · vs {emPY.toFixed(1).replace('.',','  )}% PY</div></div>
+        <div className="kpi-card navy"><div className="kpi-lbl">Net Margin (after Tax)<span className="indicative-tag">Indicative</span></div>{hasTaxData?(<><div className="kpi-val sm">{fmtFull(netCY)}</div><div className="kpi-chg">{nmCY.toFixed(1).replace('.',','  )}% margin · vs {nmPY.toFixed(1).replace('.',','  )}% PY</div></>):(<><div className="kpi-val sm">—</div><div className="kpi-chg">Pending — awaiting tax data</div></>)}</div>
       </div>
-
       <div className="charts-row">
-        <Panel title="P&L Bridge" subtitle="2026 Jan–Mar" height={420} className="fin-fixed" style={{flex:1}} tableHeaders={wfTable.headers} tableRows={wfTable.rows} insight={bridgeInsight}>
-          <EC option={wfOpt} />
-        </Panel>
+        <Panel title="P&L Bridge" subtitle="2026 Jan–Mar" height={420} className="fin-fixed" style={{flex:1}} tableHeaders={wfTable.headers} tableRows={wfTable.rows} insight={bridgeInsight}><EC option={wfOpt}/></Panel>
         <Panel title="Margin Health" subtitle="Gross & EBITDA margins" tag="Indicative" height={420} className="fin-fixed" style={{flex:0.8}} tableHeaders={gaugeTable.headers} tableRows={gaugeTable.rows}>
-          <div style={{display:'flex', flexDirection:'column', gap:18, height:'100%', alignItems:'center', justifyContent:'center', padding:'4px 0'}}>
-            <GaugeSVG value={gmCY} label="Gross Margin" py={gmPY} />
-            <div style={{height:1, background:'var(--border)', alignSelf:'stretch'}} />
-            <GaugeSVG value={emCY} label="EBITDA Margin" py={emPY} />
+          <div style={{display:'flex',flexDirection:'column',gap:18,height:'100%',alignItems:'center',justifyContent:'center',padding:'4px 0'}}>
+            <GaugeSVG value={gmCY} label="Gross Margin" py={gmPY}/>
+            <div style={{height:1,background:'var(--border)',alignSelf:'stretch'}}/>
+            <GaugeSVG value={emCY} label="EBITDA Margin" py={emPY}/>
           </div>
         </Panel>
-        <Panel title="Category YoY Change" subtitle="Green = favorable" height={420} className="fin-fixed" style={{flex:1}} defaultView="table" tableHeaders={tornTable.headers} tableRows={tornTable.rows} insight={tornadoInsight}>
-          <EC option={tornOpt} />
-        </Panel>
+        <Panel title="Category YoY Change" subtitle="Green = favorable" height={420} className="fin-fixed" style={{flex:1}} defaultView="table" tableHeaders={tornTable.headers} tableRows={tornTable.rows} insight={tornadoInsight}><EC option={tornOpt}/></Panel>
       </div>
     </div>
   );
 }
 
-/* ── PAGE: REVENUE & COSTS ──────────────────────────────────── */
 function FinRevCosts() {
-  const revenueLines = useMemo(() => finLines.filter(l => l.cat === 'Revenue').sort((a,b) => b.cy - a.cy), []);
-  const costLines = useMemo(() => finLines.filter(l => l.cat !== 'Revenue').sort((a,b) => b.cy - a.cy), []);
-  const anomalies = useMemo(() => finLines.filter(l => l.cat!=='Revenue' && l.cy>l.py && Math.abs(l.cy)>500).sort((a,b) => b.yoy - a.yoy), []);
-  const topRev = revenueLines.slice(0,10);
-  const topCost = costLines.slice(0,10);
-  const topAnom = anomalies.slice(0,10);
-
-  const revOpt = mkBarOpt(topRev.map(l=>l.desc), topRev.map(l=>l.cy), () => '#40BCF3');
-  const costOpt = mkBarOpt(topCost.map(l=>l.desc), topCost.map(l=>l.cy), () => '#35A9DE');
-  const anomOpt = mkBarOpt(topAnom.map(l=>l.desc), topAnom.map(l=>l.yoy), () => '#1F3741');
-
-  const revCY = finSummary.revenue.cy, revPY = finSummary.revenue.py;
-  const cogsCY = finSummary.cogs.cy, cogsPY = finSummary.cogs.py;
-
-  const revTbl = { headers:['Acct','Description','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','YoY %'],
-    rows: revenueLines.slice(0,15).map(l=>[l.acct,l.desc,fmtFull(l.cy),fmtFull(l.py),fmtFull(l.yoy),l.yoyPct!==null?fmtPct(l.yoyPct):'—']) };
-  const costTbl = { headers:['Acct','Cat','Description','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','% of Turnover','Relative Difference'],
-    rows: costLines.slice(0,20).map(l=>[l.acct,l.cat,l.desc,fmtFull(l.cy),fmtFull(l.py),fmtFull(l.yoy),
-      revCY?fmtPct(l.cy/revCY*100):'—', l.yoyPct!==null?fmtPct(l.yoyPct):'—']) };
-  const anomTbl = { headers:['Acct','Cat','Description','2026 (Jan–Mar)','YoY €','% of Turnover','Relative Difference'],
-    rows: anomalies.map(l=>[l.acct,l.cat,l.desc,fmtFull(l.cy),fmtFull(l.yoy),
-      revCY?fmtPct(l.cy/revCY*100):'—', l.yoyPct!==null?fmtPct(l.yoyPct):'—']) };
-
-  const costCats = finCategories.filter(c => c.cat !== 'Revenue');
-  const costPctPeriods = ['2025 (Jan–Jun)', '2026 (Jan–Mar)'];
-  const costPctSeries = costCats.map((c, i) => ({
-    name: c.cat,
-    type: 'line',
-    symbol: 'circle',
-    symbolSize: 6,
-    lineStyle: { width: 2, color: PALETTE[i % PALETTE.length] },
-    itemStyle: { color: PALETTE[i % PALETTE.length] },
-    data: [
-      revPY ? +(c.py / revPY * 100).toFixed(2) : 0,
-      revCY ? +(c.cy / revCY * 100).toFixed(2) : 0,
-    ],
-  }));
-  const costPctOpt = {
-    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis',
-      formatter: p => `<strong>${p[0].axisValue}</strong><br/>` + p.map(i => `${i.marker} ${i.seriesName}: ${i.value.toFixed(1).replace('.',',')}%`).join('<br/>') },
-    legend: { top: 0, textStyle: { color: '#5F7078', fontSize: 9 }, itemWidth: 10, itemHeight: 10 },
-    grid: { left: 44, right: 20, bottom: 24, top: 34, containLabel: true },
-    xAxis: { type: 'category', data: costPctPeriods, axisLabel: { color: '#5F7078', fontSize: 9 }, axisTick: { show: false } },
-    yAxis: { type: 'value', axisLabel: { color: '#5F7078', fontSize: 8, formatter: v => v + '%' },
-      splitLine: { lineStyle: { color: '#F0F3F4' } }, axisTick: { show: false } },
-    series: costPctSeries,
-  };
-  const costPctTbl = { headers: ['Category', '2025 (Jan–Jun) %', '2026 (Jan–Mar) %', 'Change (pts)'],
-    rows: costCats.map(c => {
-      const pctPY = revPY ? (c.py / revPY * 100) : 0;
-      const pctCY = revCY ? (c.cy / revCY * 100) : 0;
-      return [c.cat, fmtPct(pctPY), fmtPct(pctCY), fmtPct(pctCY - pctPY)];
-    }) };
+  const revenueLines=useMemo(()=>finLines.filter(l=>l.cat==='Revenue').sort((a,b)=>b.cy-a.cy),[]);
+  const costLines=useMemo(()=>finLines.filter(l=>l.cat!=='Revenue').sort((a,b)=>b.cy-a.cy),[]);
+  const anomalies=useMemo(()=>finLines.filter(l=>l.cat!=='Revenue'&&l.cy>l.py&&Math.abs(l.cy)>500).sort((a,b)=>b.yoy-a.yoy),[]);
+  const topRev=revenueLines.slice(0,10);
+  const topCost=costLines.slice(0,10);
+  const topAnom=anomalies.slice(0,10);
+  const revOpt=mkBarOpt(topRev.map(l=>l.desc),topRev.map(l=>l.cy),()=>'#40BCF3');
+  const costOpt=mkBarOpt(topCost.map(l=>l.desc),topCost.map(l=>l.cy),()=>'#35A9DE');
+  const anomOpt=mkBarOpt(topAnom.map(l=>l.desc),topAnom.map(l=>l.yoy),()=>'#1F3741');
+  const revCY=finSummary.revenue.cy,revPY=finSummary.revenue.py;
+  const cogsCY=finSummary.cogs.cy,cogsPY=finSummary.cogs.py;
+  const revTbl={headers:['Acct','Description','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','YoY %'],rows:revenueLines.slice(0,15).map(l=>[l.acct,l.desc,fmtFull(l.cy),fmtFull(l.py),fmtFull(l.yoy),l.yoyPct!==null?fmtPct(l.yoyPct):'—'])};
+  const costTbl={headers:['Acct','Cat','Description','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','% of Turnover','Relative Difference'],rows:costLines.slice(0,20).map(l=>[l.acct,l.cat,l.desc,fmtFull(l.cy),fmtFull(l.py),fmtFull(l.yoy),revCY?fmtPct(l.cy/revCY*100):'—',l.yoyPct!==null?fmtPct(l.yoyPct):'—'])};
+  const anomTbl={headers:['Acct','Cat','Description','2026 (Jan–Mar)','YoY €','% of Turnover','Relative Difference'],rows:anomalies.map(l=>[l.acct,l.cat,l.desc,fmtFull(l.cy),fmtFull(l.yoy),revCY?fmtPct(l.cy/revCY*100):'—',l.yoyPct!==null?fmtPct(l.yoyPct):'—'])};
+  const costCats=finCategories.filter(c=>c.cat!=='Revenue');
+  const costPctPeriods=['2025 (Jan–Jun)','2026 (Jan–Mar)'];
+  const costPctSeries=costCats.map((c,i)=>({name:c.cat,type:'line',symbol:'circle',symbolSize:6,lineStyle:{width:2,color:PALETTE[i%PALETTE.length]},itemStyle:{color:PALETTE[i%PALETTE.length]},data:[revPY?+(c.py/revPY*100).toFixed(2):0,revCY?+(c.cy/revCY*100).toFixed(2):0]}));
+  const costPctOpt={tooltip:{...TOOLTIP_STYLE,trigger:'axis',formatter:p=>`<strong>${p[0].axisValue}</strong><br/>`+p.map(i=>`${i.marker} ${i.seriesName}: ${i.value.toFixed(1).replace('.',','  )}%`).join('<br/>')},legend:{top:0,textStyle:{color:'#5F7078',fontSize:9},itemWidth:10,itemHeight:10},grid:{left:44,right:20,bottom:24,top:34,containLabel:true},xAxis:{type:'category',data:costPctPeriods,axisLabel:{color:'#5F7078',fontSize:9},axisTick:{show:false}},yAxis:{type:'value',axisLabel:{color:'#5F7078',fontSize:8,formatter:v=>v+'%'},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},series:costPctSeries};
+  const costPctTbl={headers:['Category','2025 (Jan–Jun) %','2026 (Jan–Mar) %','Change (pts)'],rows:costCats.map(c=>{const pctPY=revPY?(c.py/revPY*100):0;const pctCY=revCY?(c.cy/revCY*100):0;return[c.cat,fmtPct(pctPY),fmtPct(pctCY),fmtPct(pctCY-pctPY)];})};
 
   return (
     <div className="page-area fin-scroll" key="finrevcosts">
@@ -2957,59 +1926,29 @@ function FinRevCosts() {
         <div className="kpi-card sky"><div className="kpi-lbl">COGS/Rev</div><div className="kpi-val sm">{revCY?((cogsCY/revCY)*100).toFixed(0):0}%</div><div className="kpi-chg">vs {revPY?((cogsPY/revPY)*100).toFixed(0):0}% PY</div></div>
       </div>
       <div className="charts-row">
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title="Top Revenue Lines" subtitle="2026 Jan–Mar, largest first" height={420} className="fin-fixed" tableHeaders={revTbl.headers} tableRows={revTbl.rows}>
-            <EC option={revOpt} />
-          </Panel>
-        </div>
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title="Top Cost Lines" subtitle="2026 Jan–Mar, largest first" height={420} className="fin-fixed" tableHeaders={costTbl.headers} tableRows={costTbl.rows}>
-            <EC option={costOpt} />
-          </Panel>
-        </div>
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title="Cost Increases" subtitle="YoY watch list" height={420} className="fin-fixed" tableHeaders={anomTbl.headers} tableRows={anomTbl.rows}>
-            <EC option={anomOpt} />
-          </Panel>
-        </div>
+        <div className="charts-col" style={{flex:1}}><Panel title="Top Revenue Lines" subtitle="2026 Jan–Mar, largest first" height={420} className="fin-fixed" tableHeaders={revTbl.headers} tableRows={revTbl.rows}><EC option={revOpt}/></Panel></div>
+        <div className="charts-col" style={{flex:1}}><Panel title="Top Cost Lines" subtitle="2026 Jan–Mar, largest first" height={420} className="fin-fixed" tableHeaders={costTbl.headers} tableRows={costTbl.rows}><EC option={costOpt}/></Panel></div>
+        <div className="charts-col" style={{flex:1}}><Panel title="Cost Increases" subtitle="YoY watch list" height={420} className="fin-fixed" tableHeaders={anomTbl.headers} tableRows={anomTbl.rows}><EC option={anomOpt}/></Panel></div>
       </div>
       <div className="charts-row">
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title="Cost Categories as % of Turnover" subtitle="2025 (Jan–Jun) vs 2026 (Jan–Mar)" height={340} className="fin-fixed" tableHeaders={costPctTbl.headers} tableRows={costPctTbl.rows}>
-            <EC option={costPctOpt} />
-          </Panel>
-        </div>
+        <div className="charts-col" style={{flex:1}}><Panel title="Cost Categories as % of Turnover" subtitle="2025 (Jan–Jun) vs 2026 (Jan–Mar)" height={340} className="fin-fixed" tableHeaders={costPctTbl.headers} tableRows={costPctTbl.rows}><EC option={costPctOpt}/></Panel></div>
       </div>
     </div>
   );
 }
 
-/* ── PAGE: LEDGER & ANOMALIES ────────────────────────────────── */
 function FinLedger() {
-  const [q, setQ] = useState('');
-  const [cat, setCat] = useState('All');
-  const newCosts = useMemo(()=>finLines.filter(l=>l.cat!=='Revenue'&&l.cy>0&&l.py===0&&Math.abs(l.cy)>500).sort((a,b)=>b.cy-a.cy),[]);
-  const goneRevenue = useMemo(()=>finLines.filter(l=>l.cat==='Revenue'&&l.cy===0&&l.py>0).sort((a,b)=>b.py-a.py),[]);
-  const cats = ['All', ...FIN_CAT_ORDER.filter(c => finLines.some(l => l.cat === c))];
-  const filtered = finLines.filter(l =>
-    (cat==='All'||l.cat===cat) &&
-    (q.trim()===''||l.desc.toLowerCase().includes(q.toLowerCase())||String(l.acct).includes(q))
-  ).sort((a,b)=>Math.abs(b.cy)-Math.abs(a.cy));
-  const revCY = finSummary.revenue.cy;
-  const rows = filtered.map(l=>[l.acct,l.cat,l.desc,fmtFull(l.cy),fmtFull(l.py),fmtFull(l.yoy),
-    revCY?fmtPct(l.cy/revCY*100):'—', l.yoyPct!==null?fmtPct(l.yoyPct):'—']);
-
-  const sideColRef = useRef(null);
-  const [sideH, setSideH] = useState(null);
-  useLayoutEffect(() => {
-    const el = sideColRef.current;
-    if (!el) return;
-    const measure = () => setSideH(el.getBoundingClientRect().height);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [newCosts.length, goneRevenue.length]);
+  const [q,setQ]=useState('');
+  const [cat,setCat]=useState('All');
+  const newCosts=useMemo(()=>finLines.filter(l=>l.cat!=='Revenue'&&l.cy>0&&l.py===0&&Math.abs(l.cy)>500).sort((a,b)=>b.cy-a.cy),[]);
+  const goneRevenue=useMemo(()=>finLines.filter(l=>l.cat==='Revenue'&&l.cy===0&&l.py>0).sort((a,b)=>b.py-a.py),[]);
+  const cats=['All',...FIN_CAT_ORDER.filter(c=>finLines.some(l=>l.cat===c))];
+  const filtered=finLines.filter(l=>(cat==='All'||l.cat===cat)&&(q.trim()===''||l.desc.toLowerCase().includes(q.toLowerCase())||String(l.acct).includes(q))).sort((a,b)=>Math.abs(b.cy)-Math.abs(a.cy));
+  const revCY=finSummary.revenue.cy;
+  const rows=filtered.map(l=>[l.acct,l.cat,l.desc,fmtFull(l.cy),fmtFull(l.py),fmtFull(l.yoy),revCY?fmtPct(l.cy/revCY*100):'—',l.yoyPct!==null?fmtPct(l.yoyPct):'—']);
+  const sideColRef=useRef(null);
+  const [sideH,setSideH]=useState(null);
+  useLayoutEffect(()=>{const el=sideColRef.current;if(!el)return;const measure=()=>setSideH(el.getBoundingClientRect().height);measure();const ro=new ResizeObserver(measure);ro.observe(el);return()=>ro.disconnect();},[newCosts.length,goneRevenue.length]);
 
   return (
     <div className="page-area fin-scroll" key="finledger">
@@ -3022,46 +1961,23 @@ function FinLedger() {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:1.8}}>
-          <Panel title="Full Account Ledger" subtitle={`${fmtN(finLines.length)} lines · search & filter`}
-            className="ledger-fixed" height={sideH || 300}>
+          <Panel title="Full Account Ledger" subtitle={`${fmtN(finLines.length)} lines · search & filter`} className="ledger-fixed" height={sideH||300}>
             <div style={{display:'flex',flexDirection:'column',height:'100%',minHeight:0}}>
               <div className="ledger-toolbar">
-                <input className="ledger-search" placeholder="Search account # or description…" value={q} onChange={e=>setQ(e.target.value)} />
+                <input className="ledger-search" placeholder="Search account # or description…" value={q} onChange={e=>setQ(e.target.value)}/>
                 <span className="ledger-count">{fmtN(filtered.length)} / {fmtN(finLines.length)}</span>
               </div>
-              <div className="ledger-cats">
-                {cats.map(c=>(
-                  <button key={c} className={`filter-chip${cat===c?' active':''}`} style={{fontSize:9,padding:'2px 7px'}} onClick={()=>setCat(c)}>{c}</button>
-                ))}
-              </div>
-              <div style={{flex:1,minHeight:0}}>
-                <InlineTable headers={['Acct','Category','Description','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','% of Turnover','Relative Difference']} rows={rows} height="100%" />
-              </div>
+              <div className="ledger-cats">{cats.map(c=>(<button key={c} className={`filter-chip${cat===c?' active':''}`} style={{fontSize:9,padding:'2px 7px'}} onClick={()=>setCat(c)}>{c}</button>))}</div>
+              <div style={{flex:1,minHeight:0}}><InlineTable headers={['Acct','Category','Description','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','% of Turnover','Relative Difference']} rows={rows} height="100%"/></div>
             </div>
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}} ref={sideColRef}>
           <Panel title="🆕 New Costs in 2026" subtitle="Not present in 2025" className="hug">
-            <div style={{display:'flex',flexDirection:'column',gap:4}}>
-              {newCosts.length===0 ? <div className="watch-empty">None detected</div> :
-                newCosts.map(l=>(
-                  <div className="watch-row" key={l.acct}>
-                    <div className="watch-row-desc" title={l.desc}>{l.desc}</div>
-                    <div className="watch-row-amt">{fmtFull(l.cy)} · {l.cat}</div>
-                  </div>
-                ))}
-            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:4}}>{newCosts.length===0?<div className="watch-empty">None detected</div>:newCosts.map(l=>(<div className="watch-row" key={l.acct}><div className="watch-row-desc" title={l.desc}>{l.desc}</div><div className="watch-row-amt">{fmtFull(l.cy)} · {l.cat}</div></div>))}</div>
           </Panel>
           <Panel title="🔻 Revenue Lost" subtitle="Had 2025 revenue, now zero" className="hug">
-            <div style={{display:'flex',flexDirection:'column',gap:4}}>
-              {goneRevenue.length===0 ? <div className="watch-empty">None detected</div> :
-                goneRevenue.map(l=>(
-                  <div className="watch-row" key={l.acct}>
-                    <div className="watch-row-desc" title={l.desc}>{l.desc}</div>
-                    <div className="watch-row-amt">was {fmtFull(l.py)}</div>
-                  </div>
-                ))}
-            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:4}}>{goneRevenue.length===0?<div className="watch-empty">None detected</div>:goneRevenue.map(l=>(<div className="watch-row" key={l.acct}><div className="watch-row-desc" title={l.desc}>{l.desc}</div><div className="watch-row-amt">was {fmtFull(l.py)}</div></div>))}</div>
           </Panel>
         </div>
       </div>
@@ -3069,6 +1985,44 @@ function FinLedger() {
   );
 }
 
+/* ── MOBILE SCROLL HINT ──────────────────────────────────────── */
+function ScrollHint({ watchKey, disabled }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const update = () => {
+      const doc = document.documentElement;
+      const remaining = doc.scrollHeight - (window.scrollY + window.innerHeight);
+      setShow(isMobileViewport() && !disabled && remaining > 60);
+    };
+    update();
+    const t1 = setTimeout(update, 300);
+    const t2 = setTimeout(update, 900);
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(update);
+      ro.observe(document.body);
+    }
+    return () => {
+      clearTimeout(t1); clearTimeout(t2);
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      ro && ro.disconnect();
+    };
+  }, [watchKey, disabled]);
+
+  return (
+    <>
+      <div className={`scroll-fade${show ? '' : ' hidden'}`} aria-hidden="true" />
+      <button
+        className={`scroll-hint${show ? '' : ' hidden'}`}
+        aria-label="Scroll down for more"
+        onClick={() => window.scrollBy({ top: Math.round(window.innerHeight * 0.7), behavior: 'smooth' })}
+      >▼</button>
+    </>
+  );
+}
 
 /* ── APP ────────────────────────────────────────────────────── */
 const NAV = [
@@ -3078,36 +2032,32 @@ const NAV = [
   {section:'Channels',items:[{id:'channels',icon:'⇌',label:'Channel Mix',desc:'Direct sales vs webshop split'}]},
   {section:'Finance',items:[{id:'plsummary',icon:'⟡',label:'P&L Summary',desc:'Margins & profit & loss summary'},{id:'finrevcosts',icon:'↕',label:'Revenue & Costs',desc:'Revenue vs cost lines over time'},{id:'finledger',icon:'≣',label:'Ledger',desc:'Full financial ledger detail'}]},
 ];
-const PAGE_NAMES = {overview:'Overview Dashboard',revenue:'Revenue Trends',salesreps:'Verkoper',customers:'Top Customers',products:'Product Analysis',categories:'Category Breakdown',channels:'Channel Mix',plsummary:'P&L Summary',finrevcosts:'Revenue & Costs',finledger:'Ledger'};
+const PAGE_NAMES={overview:'Overview Dashboard',revenue:'Revenue Trends',salesreps:'Verkoper',customers:'Top Customers',products:'Product Analysis',categories:'Category Breakdown',channels:'Channel Mix',plsummary:'P&L Summary',finrevcosts:'Revenue & Costs',finledger:'Ledger'};
 
-const SUGGESTED_QUESTIONS = {
-  overview: ['How is revenue trending this month?', 'Which category is driving sales right now?', 'Who is this month\'s top verkoper?'],
-  revenue: ['What was our best month on record?', 'How does this period compare to the previous one?', 'What\'s the average monthly revenue?'],
-  salesreps: ['Who is the top-performing verkoper?', 'How concentrated is revenue among the top 3 reps?', 'Break down sales by verkoper and category'],
-  customers: ['Who are our top 5 customers?', 'What share of revenue comes from our top customers?', 'What\'s the average revenue per client?'],
-  products: ['What is our best-selling product?', 'How concentrated is revenue across products?', 'Show me products with the smallest share'],
-  categories: ['Which category has the biggest share of revenue?', 'How many active category groups are there?', 'Compare the top two categories'],
-  channels: ['Which channel drives the most revenue?', 'How is revenue split across channels?'],
-  plsummary: ['How is gross margin trending?', 'What is driving EBITDA this period?'],
-  finrevcosts: ['What are our biggest cost drivers?', 'How do revenue and costs compare year over year?'],
-  finledger: ['What are the largest YoY swings in the ledger?', 'Which accounts saw the biggest cost increases?'],
-  default: ['What can you tell me about this page?', 'Summarize the key numbers here'],
+const SUGGESTED_QUESTIONS={
+  overview:['How is revenue trending this month?','Which category is driving sales right now?','Who is this month\'s top verkoper?'],
+  revenue:['What was our best month on record?','How does this period compare to the previous one?','What\'s the average monthly revenue?'],
+  salesreps:['Who is the top-performing verkoper?','How concentrated is revenue among the top 3 reps?','Break down sales by verkoper and category'],
+  customers:['Who are our top 5 customers?','What share of revenue comes from our top customers?','What\'s the average revenue per client?'],
+  products:['What is our best-selling product?','How concentrated is revenue across products?','Show me products with the smallest share'],
+  categories:['Which category has the biggest share of revenue?','How many active category groups are there?','Compare the top two categories'],
+  channels:['Which channel drives the most revenue?','How is revenue split across channels?'],
+  plsummary:['How is gross margin trending?','What is driving EBITDA this period?'],
+  finrevcosts:['What are our biggest cost drivers?','How do revenue and costs compare year over year?'],
+  finledger:['What are the largest YoY swings in the ledger?','Which accounts saw the biggest cost increases?'],
+  default:['What can you tell me about this page?','Summarize the key numbers here'],
 };
 
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
-const AUTH_KEY = 'dairytop_auth';
-const AUTH_ACTIVITY_KEY = 'dairytop_auth_activity';
-const ACTIVITY_WRITE_THROTTLE_MS = 5000;
+const SESSION_TIMEOUT_MS=30*60*1000;
+const AUTH_KEY='dairytop_auth';
+const AUTH_ACTIVITY_KEY='dairytop_auth_activity';
+const ACTIVITY_WRITE_THROTTLE_MS=5000;
 
 function Sidebar({ page, setPage, sideOpen, setSideOpen, collapsed, toggleCollapsed, setHighlightQuery, dateRange, totalTx, totalClients, handleLogout }) {
-  const [navFlyout, setNavFlyout] = useState(null);
-  const handleNavHover = (e, item) => {
-    if (!collapsed) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    setNavFlyout({ id: item.id, icon: item.icon, label: item.label, desc: item.desc, top: rect.top + rect.height / 2, left: rect.right + 6 });
-  };
-  const handleNavLeave = () => setNavFlyout(null);
-  const goTo = (id) => { setPage(id); setSideOpen(false); setHighlightQuery(null); };
+  const [navFlyout,setNavFlyout]=useState(null);
+  const handleNavHover=(e,item)=>{if(!collapsed)return;const rect=e.currentTarget.getBoundingClientRect();setNavFlyout({id:item.id,icon:item.icon,label:item.label,desc:item.desc,top:rect.top+rect.height/2,left:rect.right+6});};
+  const handleNavLeave=()=>setNavFlyout(null);
+  const goTo=(id)=>{setPage(id);setSideOpen(false);setHighlightQuery(null);};
 
   return (
     <>
@@ -3120,7 +2070,7 @@ function Sidebar({ page, setPage, sideOpen, setSideOpen, collapsed, toggleCollap
           <nav className="nav">
             {NAV.map((s,i)=>(
               <div key={i}>
-                {i>0 && <div className="nav-divider"/>}
+                {i>0&&<div className="nav-divider"/>}
                 <div className="nav-section">{s.section}</div>
                 {s.items.map(item=>(
                   <div key={item.id} className={`nav-item${page===item.id?' active':''}${navFlyout?.id===item.id?' hovered':''}`}
@@ -3142,31 +2092,21 @@ function Sidebar({ page, setPage, sideOpen, setSideOpen, collapsed, toggleCollap
               <div className="stat-row"><span className="stat-lbl">Trans.</span><span className="stat-val">{totalTx.toLocaleString('de-DE')}</span></div>
               <div className="stat-row"><span className="stat-lbl">Clients</span><span className="stat-val">{totalClients.toLocaleString('de-DE')}</span></div>
             </div>
-            <button className="logout-btn" onClick={handleLogout} title={collapsed ? 'Sign out' : undefined}
-              onMouseEnter={(e)=>collapsed && handleNavHover(e,{id:'logout',icon:'↩',label:'Sign out',desc:'End your session'})}
+            <button className="logout-btn" onClick={handleLogout} title={collapsed?'Sign out':undefined}
+              onMouseEnter={(e)=>collapsed&&handleNavHover(e,{id:'logout',icon:'↩',label:'Sign out',desc:'End your session'})}
               onMouseLeave={handleNavLeave}>
               <span>↩</span><span className="logout-btn-label"> Sign out</span>
             </button>
           </div>
         </div>
-        <button
-          className="sb-collapse-btn"
-          onClick={toggleCollapsed}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          aria-pressed={collapsed}
-        >
-          {collapsed ? '›' : '‹'}
+        <button className="sb-collapse-btn" onClick={toggleCollapsed} title={collapsed?'Expand sidebar':'Collapse sidebar'} aria-label={collapsed?'Expand sidebar':'Collapse sidebar'} aria-pressed={collapsed}>
+          {collapsed?'›':'‹'}
         </button>
       </div>
-
-      {navFlyout && createPortal(
-        <div key={navFlyout.id} className="nav-flyout" style={{ top: navFlyout.top, left: navFlyout.left, transform: 'translateY(-50%)' }}>
+      {navFlyout&&createPortal(
+        <div key={navFlyout.id} className="nav-flyout" style={{top:navFlyout.top,left:navFlyout.left,transform:'translateY(-50%)'}}>
           <span className="nav-flyout-badge">{navFlyout.icon}</span>
-          <span className="nav-flyout-text">
-            <span className="nav-flyout-title">{navFlyout.label}</span>
-            {navFlyout.desc && <span className="nav-flyout-desc">{navFlyout.desc}</span>}
-          </span>
+          <span className="nav-flyout-text"><span className="nav-flyout-title">{navFlyout.label}</span>{navFlyout.desc&&<span className="nav-flyout-desc">{navFlyout.desc}</span>}</span>
           <span className="nav-flyout-chevron">›</span>
         </div>,
         document.body
@@ -3175,344 +2115,212 @@ function Sidebar({ page, setPage, sideOpen, setSideOpen, collapsed, toggleCollap
   );
 }
 
-const AUTH_USER_KEY = 'dairytop_username';
+const AUTH_USER_KEY='dairytop_username';
 
 export default function App() {
-  const [userName, setUserName] = useState(() => {
-    try { return localStorage.getItem(AUTH_USER_KEY) || ''; } catch { return ''; }
-  });
-  const [authed, setAuthed] = useState(() => {
-    const savedAuth = localStorage.getItem(AUTH_KEY);
-    const lastActivity = localStorage.getItem(AUTH_ACTIVITY_KEY);
-
-    if (savedAuth === 'true' && lastActivity) {
-      const elapsed = Date.now() - parseInt(lastActivity, 10);
-      if (elapsed < SESSION_TIMEOUT_MS) {
-        return true;
-      } else {
-        localStorage.removeItem(AUTH_KEY);
-        localStorage.removeItem(AUTH_ACTIVITY_KEY);
-        return false;
-      }
-    }
+  const [userName,setUserName]=useState(()=>{try{return localStorage.getItem(AUTH_USER_KEY)||'';}catch{return'';}});
+  const [authed,setAuthed]=useState(()=>{
+    const savedAuth=localStorage.getItem(AUTH_KEY);
+    const lastActivity=localStorage.getItem(AUTH_ACTIVITY_KEY);
+    if(savedAuth==='true'&&lastActivity){const elapsed=Date.now()-parseInt(lastActivity,10);if(elapsed<SESSION_TIMEOUT_MS)return true;else{localStorage.removeItem(AUTH_KEY);localStorage.removeItem(AUTH_ACTIVITY_KEY);return false;}}
     return false;
   });
-  
-  const SESSION_PAGE_KEY = 'dairytop_last_page';
-  const SESSION_FILTER_KEY = 'dairytop_last_filter';
-  const [page, setPage] = useState(() => sessionStorage.getItem(SESSION_PAGE_KEY) || 'overview');
-  const [filter, setFilter] = useState(() => {
-    try {
-      const saved = sessionStorage.getItem(SESSION_FILTER_KEY);
-      return saved ? JSON.parse(saved) : { years: [], months: {} };
-    } catch { return { years: [], months: {} }; }
-  });
-  const [sideOpen, setSideOpen] = useState(false);
 
-  const SIDEBAR_COLLAPSE_KEY = 'dairytop_sidebar_collapsed';
-  const [collapsed, setCollapsed] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(SIDEBAR_COLLAPSE_KEY) || 'false'); } catch { return false; }
-  });
-  const toggleCollapsed = () => {
-    setCollapsed(v => {
-      const next = !v;
-      try { localStorage.setItem(SIDEBAR_COLLAPSE_KEY, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  };
-  useEffect(() => {
-    const DURATION = 340;
-    const start = performance.now();
-    let raf;
-    const tick = (now) => {
-      liveChartInstances.forEach(inst => { try { inst.resize(); } catch { /* instance may have just unmounted */ } });
-      if (now - start < DURATION) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [collapsed]);
+  const SESSION_PAGE_KEY='dairytop_last_page';
+  const SESSION_FILTER_KEY='dairytop_last_filter';
+  const [page,setPage]=useState(()=>sessionStorage.getItem(SESSION_PAGE_KEY)||'overview');
+  const [filter,setFilter]=useState(()=>{try{const saved=sessionStorage.getItem(SESSION_FILTER_KEY);return saved?JSON.parse(saved):{years:[],months:{}};}catch{return{years:[],months:{}};}});
+  const [sideOpen,setSideOpen]=useState(false);
 
-  const [time, setTime] = useState(new Date());
+  const SIDEBAR_COLLAPSE_KEY='dairytop_sidebar_collapsed';
+  const [collapsed,setCollapsed]=useState(()=>{try{return JSON.parse(localStorage.getItem(SIDEBAR_COLLAPSE_KEY)||'false');}catch{return false;}});
+  const toggleCollapsed=()=>{setCollapsed(v=>{const next=!v;try{localStorage.setItem(SIDEBAR_COLLAPSE_KEY,JSON.stringify(next));}catch{}return next;});};
 
-  useEffect(() => { sessionStorage.setItem(SESSION_PAGE_KEY, page); }, [page]);
-  useEffect(() => { try { sessionStorage.setItem(SESSION_FILTER_KEY, JSON.stringify(filter)); } catch {} }, [filter]);
+  useEffect(()=>{
+    const DURATION=340;const start=performance.now();let raf;
+    const tick=(now)=>{liveChartInstances.forEach(inst=>{try{inst.resize();}catch{}});if(now-start<DURATION)raf=requestAnimationFrame(tick);};
+    raf=requestAnimationFrame(tick);
+    return()=>cancelAnimationFrame(raf);
+  },[collapsed]);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [highlightQuery, setHighlightQuery] = useState(null);
-  const searchIndex = useMemo(() => {
-    const seen = new Set();
-    const idx = [];
-    customersRaw.forEach(c => { if (!seen.has('c:'+c.n)) { seen.add('c:'+c.n); idx.push({ name: c.n, type: 'Customer', page: 'customers' }); } });
-    productsRaw.forEach(p => { if (!seen.has('p:'+p.n)) { seen.add('p:'+p.n); idx.push({ name: p.n, type: 'Product', page: 'products' }); } });
-    salesrepsRaw.forEach(r => { if (!seen.has('r:'+r.n)) { seen.add('r:'+r.n); idx.push({ name: r.n, type: 'Verkoper', page: 'salesreps' }); } });
-    categoriesRaw.forEach(c => { if (!seen.has('cat:'+c.n)) { seen.add('cat:'+c.n); idx.push({ name: c.n, type: 'Category', page: 'categories' }); } });
+  const [time,setTime]=useState(new Date());
+
+  /* Page change: persist + scroll to top on mobile */
+  useEffect(()=>{
+    sessionStorage.setItem(SESSION_PAGE_KEY,page);
+    window.scrollTo({top:0});
+  },[page]);
+
+  useEffect(()=>{try{sessionStorage.setItem(SESSION_FILTER_KEY,JSON.stringify(filter));}catch{}},[filter]);
+
+  /* Lock scroll while mobile drawer is open */
+  useEffect(()=>{
+    document.documentElement.classList.toggle('no-scroll',sideOpen);
+    return()=>document.documentElement.classList.remove('no-scroll');
+  },[sideOpen]);
+
+  const [searchQuery,setSearchQuery]=useState('');
+  const [searchOpen,setSearchOpen]=useState(false);
+  const [highlightQuery,setHighlightQuery]=useState(null);
+  const searchIndex=useMemo(()=>{
+    const seen=new Set();const idx=[];
+    customersRaw.forEach(c=>{if(!seen.has('c:'+c.n)){seen.add('c:'+c.n);idx.push({name:c.n,type:'Customer',page:'customers'});}});
+    productsRaw.forEach(p=>{if(!seen.has('p:'+p.n)){seen.add('p:'+p.n);idx.push({name:p.n,type:'Product',page:'products'});}});
+    salesrepsRaw.forEach(r=>{if(!seen.has('r:'+r.n)){seen.add('r:'+r.n);idx.push({name:r.n,type:'Verkoper',page:'salesreps'});}});
+    categoriesRaw.forEach(c=>{if(!seen.has('cat:'+c.n)){seen.add('cat:'+c.n);idx.push({name:c.n,type:'Category',page:'categories'});}});
     return idx;
-  }, []);
-  const SEARCH_GROUPS = [
-    { type: 'Customer', page: 'customers', label: 'Customers' },
-    { type: 'Product', page: 'products', label: 'Products' },
-    { type: 'Verkoper', page: 'salesreps', label: 'Verkopers' },
-    { type: 'Category', page: 'categories', label: 'Categories' },
-  ];
-  const MAX_PER_GROUP = 6;
-  const groupedResults = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return [];
-    return SEARCH_GROUPS
-      .map(g => {
-        const matches = searchIndex.filter(i => i.type === g.type && i.name.toLowerCase().includes(q));
-        return { ...g, items: matches.slice(0, MAX_PER_GROUP), total: matches.length };
-      })
-      .filter(g => g.items.length > 0);
-  }, [searchQuery, searchIndex]);
-  const firstResult = groupedResults[0]?.items?.[0];
-  const goToSearchResult = (result) => {
-    setPage(result.page);
-    setHighlightQuery(result.name);
-    setSearchQuery(result.name);
-    setSearchOpen(false);
-  };
+  },[]);
+  const SEARCH_GROUPS=[{type:'Customer',page:'customers',label:'Customers'},{type:'Product',page:'products',label:'Products'},{type:'Verkoper',page:'salesreps',label:'Verkopers'},{type:'Category',page:'categories',label:'Categories'}];
+  const MAX_PER_GROUP=6;
+  const groupedResults=useMemo(()=>{
+    const q=searchQuery.trim().toLowerCase();if(!q)return[];
+    return SEARCH_GROUPS.map(g=>{const matches=searchIndex.filter(i=>i.type===g.type&&i.name.toLowerCase().includes(q));return{...g,items:matches.slice(0,MAX_PER_GROUP),total:matches.length};}).filter(g=>g.items.length>0);
+  },[searchQuery,searchIndex]);
+  const firstResult=groupedResults[0]?.items?.[0];
+  const goToSearchResult=(result)=>{setPage(result.page);setHighlightQuery(result.name);setSearchQuery(result.name);setSearchOpen(false);};
 
-  const searchRef = useRef(null);
-  const searchResultsRef = useRef(null);
-  useEffect(() => {
-    const handler = (e) => {
-      if (searchRef.current?.contains(e.target)) return;
-      if (searchResultsRef.current?.contains(e.target)) return;
-      setSearchOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
+  const searchRef=useRef(null);
+  const searchResultsRef=useRef(null);
+  useEffect(()=>{
+    const handler=(e)=>{if(searchRef.current?.contains(e.target))return;if(searchResultsRef.current?.contains(e.target))return;setSearchOpen(false);};
+    document.addEventListener('mousedown',handler);return()=>document.removeEventListener('mousedown',handler);
+  },[]);
 
-  const [searchPos, setSearchPos] = useState(null);
-  useLayoutEffect(() => {
-    if (searchOpen && searchQuery.trim() && searchRef.current) {
-      const rect = searchRef.current.getBoundingClientRect();
-      setSearchPos({
-        top: rect.bottom + 6,
-        right: Math.max(8, window.innerWidth - rect.right),
-        width: Math.max(rect.width, 300),
-      });
-    }
-  }, [searchOpen, searchQuery, groupedResults.length]);
-  useEffect(() => {
-    if (!searchOpen) return;
-    const close = (e) => {
-      if (searchResultsRef.current?.contains(e.target)) return;
-      setSearchOpen(false);
-    };
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => {
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
-    };
-  }, [searchOpen]);
+  const [searchPos,setSearchPos]=useState(null);
+  useLayoutEffect(()=>{
+    if(searchOpen&&searchQuery.trim()&&searchRef.current){const rect=searchRef.current.getBoundingClientRect();setSearchPos({top:rect.bottom+6,right:Math.max(8,window.innerWidth-rect.right),width:Math.max(rect.width,300)});}
+  },[searchOpen,searchQuery,groupedResults.length]);
+  useEffect(()=>{
+    if(!searchOpen)return;
+    const close=(e)=>{if(searchResultsRef.current?.contains(e.target))return;setSearchOpen(false);};
+    window.addEventListener('scroll',close,true);window.addEventListener('resize',close);
+    return()=>{window.removeEventListener('scroll',close,true);window.removeEventListener('resize',close);};
+  },[searchOpen]);
 
-  useEffect(() => {
-    if (!authed) return;
-
-    let lastWrite = 0;
-    const markActive = () => {
-      const now = Date.now();
-      if (now - lastWrite < ACTIVITY_WRITE_THROTTLE_MS) return;
-      lastWrite = now;
-      localStorage.setItem(AUTH_ACTIVITY_KEY, now.toString());
-    };
-
+  useEffect(()=>{
+    if(!authed)return;
+    let lastWrite=0;
+    const markActive=()=>{const now=Date.now();if(now-lastWrite<ACTIVITY_WRITE_THROTTLE_MS)return;lastWrite=now;localStorage.setItem(AUTH_ACTIVITY_KEY,now.toString());};
     markActive();
+    const events=['mousemove','mousedown','keydown','wheel','scroll','touchstart','click'];
+    events.forEach(evt=>window.addEventListener(evt,markActive,{passive:true}));
+    return()=>{events.forEach(evt=>window.removeEventListener(evt,markActive));};
+  },[authed]);
 
-    const events = ['mousemove', 'mousedown', 'keydown', 'wheel', 'scroll', 'touchstart', 'click'];
-    events.forEach(evt => window.addEventListener(evt, markActive, { passive: true }));
+  useEffect(()=>{
+    if(!authed)return;
+    const checkSession=()=>{const lastActivity=localStorage.getItem(AUTH_ACTIVITY_KEY);if(lastActivity){const elapsed=Date.now()-parseInt(lastActivity,10);if(elapsed>=SESSION_TIMEOUT_MS){localStorage.removeItem(AUTH_KEY);localStorage.removeItem(AUTH_ACTIVITY_KEY);setAuthed(false);}}};
+    const interval=setInterval(checkSession,10000);return()=>clearInterval(interval);
+  },[authed]);
 
-    return () => {
-      events.forEach(evt => window.removeEventListener(evt, markActive));
-    };
-  }, [authed]);
+  useEffect(()=>{const t=setInterval(()=>setTime(new Date()),30000);return()=>clearInterval(t);},[]);
 
-  useEffect(() => {
-    if (!authed) return;
+  const handleLogin=(username)=>{setAuthed(true);localStorage.setItem(AUTH_KEY,'true');localStorage.setItem(AUTH_ACTIVITY_KEY,Date.now().toString());setUserName(username||'');try{localStorage.setItem(AUTH_USER_KEY,username||'');}catch{}};
+  const handleLogout=()=>{setAuthed(false);localStorage.removeItem(AUTH_KEY);localStorage.removeItem(AUTH_ACTIVITY_KEY);localStorage.removeItem(AUTH_USER_KEY);setUserName('');};
 
-    const checkSession = () => {
-      const lastActivity = localStorage.getItem(AUTH_ACTIVITY_KEY);
-      if (lastActivity) {
-        const elapsed = Date.now() - parseInt(lastActivity, 10);
-        if (elapsed >= SESSION_TIMEOUT_MS) {
-          localStorage.removeItem(AUTH_KEY);
-          localStorage.removeItem(AUTH_ACTIVITY_KEY);
-          setAuthed(false);
-        }
-      }
-    };
-
-    const interval = setInterval(checkSession, 10000);
-    return () => clearInterval(interval);
-  }, [authed]);
-
-  useEffect(() => { 
-    const t = setInterval(()=>setTime(new Date()),30000); 
-    return ()=>clearInterval(t); 
-  }, []);
-
-  const handleLogin = (username) => {
-    setAuthed(true);
-    localStorage.setItem(AUTH_KEY, 'true');
-    localStorage.setItem(AUTH_ACTIVITY_KEY, Date.now().toString());
-    setUserName(username || '');
-    try { localStorage.setItem(AUTH_USER_KEY, username || ''); } catch {}
-  };
-
-  const handleLogout = () => {
-    setAuthed(false);
-    localStorage.removeItem(AUTH_KEY);
-    localStorage.removeItem(AUTH_ACTIVITY_KEY);
-    localStorage.removeItem(AUTH_USER_KEY);
-    setUserName('');
-  };
-
-  const fm = useMemo(()=>{
+  const fm=useMemo(()=>{
     if(!filter.years||filter.years.length===0)return monthly;
-    return monthly.filter(m=>{
-      const [,yr]=m.m.split(' ');
-      if(!filter.years.includes(yr))return false;
-      const ym=filter.months[yr];
-      if(!ym||ym.length===0)return true;
-      return ym.includes(m.m);
-    });
+    return monthly.filter(m=>{const[,yr]=m.m.split(' ');if(!filter.years.includes(yr))return false;const ym=filter.months[yr];if(!ym||ym.length===0)return true;return ym.includes(m.m);});
   },[filter]);
 
-  const filterLabel = useMemo(()=>{
-    if(!filter.years||filter.years.length===0)return 'Full period';
+  const filterLabel=useMemo(()=>{
+    if(!filter.years||filter.years.length===0)return'Full period';
     return filter.years.map(y=>{const m=filter.months[y];return m&&m.length?`20${y} (${m.length}m)`:`20${y} (all)`;}).join(', ');
   },[filter]);
 
-  const dateRange = useMemo(()=>{
-    if(fm.length===0)return 'No data';
-    return `${fm[0].m} – ${fm[fm.length-1].m}`;
-  },[fm]);
-
-  const totalTx = useMemo(()=>fm.reduce((s,m)=>s+m.orders,0),[fm]);
+  const dateRange=useMemo(()=>{if(fm.length===0)return'No data';return`${fm[0].m} – ${fm[fm.length-1].m}`;},[fm]);
+  const totalTx=useMemo(()=>fm.reduce((s,m)=>s+m.orders,0),[fm]);
 
   if(!authed)return(<><style>{css}</style><Login onLogin={handleLogin}/></>);
 
-  const renderPage = () => {
+  const renderPage=()=>{
     const props={fm,label:filterLabel};
     const searchProps={highlightQuery};
     switch(page){
-      case 'overview': return <Overview/>;
-      case 'revenue': return <Revenue {...props}/>;
-      case 'salesreps': return <SalesReps {...props} {...searchProps}/>;
-      case 'customers': return <Customers {...props} {...searchProps}/>;
-      case 'products': return <Products {...props} {...searchProps}/>;
-      case 'categories': return <Categories {...props} {...searchProps}/>;
-      case 'channels': return <Channels {...props}/>;
-      case 'plsummary': return <PLSummary/>;
-      case 'finrevcosts': return <FinRevCosts/>;
-      case 'finledger': return <FinLedger/>;
-      default: return <Overview {...props}/>;
+      case'overview':return<Overview/>;
+      case'revenue':return<Revenue{...props}/>;
+      case'salesreps':return<SalesReps{...props}{...searchProps}/>;
+      case'customers':return<Customers{...props}{...searchProps}/>;
+      case'products':return<Products{...props}{...searchProps}/>;
+      case'categories':return<Categories{...props}{...searchProps}/>;
+      case'channels':return<Channels{...props}/>;
+      case'plsummary':return<PLSummary/>;
+      case'finrevcosts':return<FinRevCosts/>;
+      case'finledger':return<FinLedger/>;
+      default:return<Overview{...props}/>;
     }
   };
 
-  const handleExportPage = () => window.print();
+  const handleExportPage=()=>window.print();
 
   return (
     <>
-            <style>{css}</style>
+      <style>{css}</style>
       <div className="app">
         <button className="mob-toggle" onClick={()=>setSideOpen(v=>!v)} aria-label="Menu">{sideOpen?'✕':'☰'}</button>
         <div className={`mob-overlay${sideOpen?' open':''}`} onClick={()=>setSideOpen(false)}/>
 
         <Sidebar
-          page={page}
-          setPage={setPage}
-          sideOpen={sideOpen}
-          setSideOpen={setSideOpen}
-          collapsed={collapsed}
-          toggleCollapsed={toggleCollapsed}
-          setHighlightQuery={setHighlightQuery}
-          dateRange={dateRange}
-          totalTx={totalTx}
-          totalClients={totalClients}
-          handleLogout={handleLogout}
+          page={page} setPage={setPage} sideOpen={sideOpen} setSideOpen={setSideOpen}
+          collapsed={collapsed} toggleCollapsed={toggleCollapsed} setHighlightQuery={setHighlightQuery}
+          dateRange={dateRange} totalTx={totalTx} totalClients={totalClients} handleLogout={handleLogout}
         />
 
         <div className="main">
-          <div className="topbar">
-            <div>
-              <div className="tb-title">{PAGE_NAMES[page]}</div>
-              <div className="tb-sub">
-                {page === 'overview' ? (
-                  <span>Live · Current month{monthly.length ? ` (${monthly[monthly.length-1].m})` : ''}</span>
-                ) : (
-                  <>
-                    <span>{filterLabel}</span>
-                    <span className="tb-sep">·</span>
-                    <span>{dateRange}</span>
-                    <span className="tb-sep">·</span>
-                    <span>All products</span>
-                  </>
-                )}
+          <div className={`topbar${page==='overview'?' topbar-overview':''}`}>
+            {/* Row 1: title+subtitle (left) + actions (right) */}
+            <div className="tb-row1">
+              <div className="tb-titlewrap">
+                <div className="tb-title">{PAGE_NAMES[page]}</div>
+                <div className="tb-sub">
+                  {page==='overview'?(
+                    <span>Live · Current month{monthly.length?` (${monthly[monthly.length-1].m})`:''}</span>
+                  ):(
+                    <><span>{filterLabel}</span><span className="tb-sep">·</span><span>{dateRange}</span><span className="tb-sep">·</span><span>All products</span></>
+                  )}
+                </div>
+              </div>
+              <div className="tb-right">
+                <button className="tb-print-btn" onClick={handleExportPage} title="Export this page as a PDF via your browser's print dialog">⬇ Export</button>
+                <div className="tb-refresh">Updated <strong>{lastUpdated}</strong></div>
+                <div className="tb-time">{time.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>
+                <div className="live-badge"><span className="blink-dot"/>Live</div>
               </div>
             </div>
-            <div className="tb-right">
+            {/* Row 2: full-width search — hidden on overview */}
+            {page!=='overview'&&(
               <div className="tb-search" ref={searchRef}>
                 <span className="tb-search-icon">🔍</span>
-                <input
-                  type="text"
-                  placeholder="Find a customer, product, verkoper…"
-                  value={searchQuery}
-                  onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true); }}
-                  onFocus={() => setSearchOpen(true)}
-                  onKeyDown={e => { if (e.key === 'Enter' && firstResult) goToSearchResult(firstResult); if (e.key === 'Escape') setSearchOpen(false); }}
-                  aria-label="Global search"
-                />
-                {searchOpen && searchQuery.trim() && searchPos && createPortal(
-                  <div ref={searchResultsRef} className="tb-search-results" style={{ top: searchPos.top, right: searchPos.right, width: searchPos.width }}>
-                    {groupedResults.length === 0 ? (
-                      <div className="tb-search-empty">No matches in customers, products, or verkopers</div>
-                    ) : groupedResults.map(g => (
+                <input type="text" placeholder="Find a customer, product, verkoper…" value={searchQuery}
+                  onChange={e=>{setSearchQuery(e.target.value);setSearchOpen(true);}}
+                  onFocus={()=>setSearchOpen(true)}
+                  onKeyDown={e=>{if(e.key==='Enter'&&firstResult)goToSearchResult(firstResult);if(e.key==='Escape')setSearchOpen(false);}}
+                  aria-label="Global search"/>
+                {searchOpen&&searchQuery.trim()&&searchPos&&createPortal(
+                  <div ref={searchResultsRef} className="tb-search-results" style={{top:searchPos.top,right:searchPos.right,width:searchPos.width}}>
+                    {groupedResults.length===0?(<div className="tb-search-empty">No matches in customers, products, or verkopers</div>):groupedResults.map(g=>(
                       <div key={g.type} className="tb-search-group">
-                        <div className="tb-search-group-head">
-                          <span><strong>{g.label}</strong> ({g.total})</span>
-                          <span className="tb-search-group-dest">→ {PAGE_NAMES[g.page]}</span>
-                        </div>
-                        {g.items.map((r, i) => (
-                          <div key={i} className="tb-search-item" onClick={() => goToSearchResult(r)}>
-                            <span className="tb-search-item-name" title={r.name}>{r.name}</span>
-                            <span className="tb-search-item-arrow">→</span>
-                          </div>
-                        ))}
-                        {g.total > g.items.length && (
-                          <div className="tb-search-empty" style={{padding:'5px 12px', fontStyle:'normal'}}>
-                            +{g.total - g.items.length} more — refine your search
-                          </div>
-                        )}
+                        <div className="tb-search-group-head"><span><strong>{g.label}</strong> ({g.total})</span><span className="tb-search-group-dest">→ {PAGE_NAMES[g.page]}</span></div>
+                        {g.items.map((r,i)=>(<div key={i} className="tb-search-item" onClick={()=>goToSearchResult(r)}><span className="tb-search-item-name" title={r.name}>{r.name}</span><span className="tb-search-item-arrow">→</span></div>))}
+                        {g.total>g.items.length&&(<div className="tb-search-empty" style={{padding:'5px 12px',fontStyle:'normal'}}>+{g.total-g.items.length} more — refine your search</div>)}
                       </div>
                     ))}
                   </div>,
                   document.body
                 )}
               </div>
-              <button className="tb-print-btn" onClick={handleExportPage} title="Export this page as a PDF via your browser's print dialog">
-                ⬇ Export page
-              </button>
-              <div className="tb-refresh">Updated <strong>{lastUpdated}</strong></div>
-              <div className="tb-time">{time.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>
-              <div className="live-badge"><span className="blink-dot"/>Live</div>
-            </div>
+            )}
           </div>
-          {page !== 'overview' && <DateFilterBar filter={filter} setFilter={setFilter}/>}
+          {page!=='overview'&&<DateFilterBar filter={filter} setFilter={setFilter}/>}
           {renderPage()}
-          
         </div>
 
         <ChatBot
-          context={{ page, pageName: PAGE_NAMES[page], filterLabel, dateRange }}
-          suggestedQuestions={SUGGESTED_QUESTIONS[page] || SUGGESTED_QUESTIONS.default}
+          context={{page,pageName:PAGE_NAMES[page],filterLabel,dateRange}}
+          suggestedQuestions={SUGGESTED_QUESTIONS[page]||SUGGESTED_QUESTIONS.default}
           userName={formatDisplayName(userName)}
         />
+        <ScrollHint watchKey={page+JSON.stringify(filter)} disabled={sideOpen}/>
       </div>
     </>
   );

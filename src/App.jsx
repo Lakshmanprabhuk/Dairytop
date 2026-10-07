@@ -100,6 +100,23 @@ function withDataZoom(option) {
   };
 }
 
+/* Responsive category-axis label config: shrinks font and, when there are
+   enough categories (or the labels are long) to risk overlap on a narrow
+   mobile panel, rotates them so they never clash. */
+function catAxisLabel(count, baseFontSize, forceRotate) {
+  const mobile = isMobileViewport();
+  const fs = baseFontSize || 9;
+  const crowded = mobile && (forceRotate || count > 3);
+  return {
+    color: '#5F7078',
+    fontSize: mobile ? Math.max(7, fs - 1) : fs,
+    hideOverlap: true,
+    interval: 0,
+    rotate: crowded ? 40 : 0,
+    margin: crowded ? 10 : 8,
+  };
+}
+
 /* ── CSS ─────────────────────────────────────────────────────── */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
@@ -307,15 +324,19 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   box-shadow:none;transition:background .16s,border-color .16s;
 }
 .kpi-card:hover{background:var(--surface3);border-color:var(--border2);border-left-color:var(--kpi-accent,var(--accent));}
-.kpi-card.blue{--kpi-accent:var(--accent);}
-.kpi-card.teal{--kpi-accent:var(--accent2);}
-.kpi-card.navy{--kpi-accent:var(--accent3);}
-.kpi-card.green{--kpi-accent:var(--green);}
-.kpi-card.amber{--kpi-accent:var(--amber);}
-.kpi-card.sky{--kpi-accent:#63C4EE;}
-.kpi-card.red{--kpi-accent:var(--red);}
+.kpi-card.blue{--kpi-accent:var(--accent);--kpi-label:#0A6E9B;}
+.kpi-card.teal{--kpi-accent:var(--accent2);--kpi-label:#14708F;}
+.kpi-card.navy{--kpi-accent:var(--accent3);--kpi-label:#2A5570;}
+.kpi-card.green{--kpi-accent:var(--green);--kpi-label:#1A6E43;}
+.kpi-card.amber{--kpi-accent:var(--amber);--kpi-label:#8E610D;}
+.kpi-card.sky{--kpi-accent:#63C4EE;--kpi-label:#12718F;}
+.kpi-card.red{--kpi-accent:var(--red);--kpi-label:#9E3838;}
 .kpi-icon{position:absolute;right:10px;top:10px;font-size:16px;opacity:.3;}
-.kpi-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:5px;position:relative;}
+.kpi-lbl{
+  font-size:9px;color:var(--kpi-label,var(--muted2));
+  text-transform:uppercase;letter-spacing:.09em;font-weight:800;
+  margin-bottom:5px;position:relative;
+}
 .kpi-val{font-size:17px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1;color:var(--text);word-break:break-all;position:relative;letter-spacing:-.2px;}
 .kpi-val.sm{font-size:13px;}
 .kpi-chg{font-size:9.5px;color:var(--muted);margin-top:5px;font-weight:500;position:relative;display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
@@ -479,9 +500,21 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 }
 
 @media(max-width:900px){
-  html,body,#root{height:auto;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}
-  .app{height:auto;min-height:100vh;min-height:100dvh;overflow:visible;}
-  .main{overflow:visible;min-height:0;}
+  html,body,#root{
+    height:auto;width:100%;max-width:100vw;
+    overflow-y:auto;overflow-x:hidden;
+    -webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:none; /* stop the page from being swiped sideways */
+  }
+  .app{height:auto;min-height:100vh;min-height:100dvh;overflow:visible;max-width:100vw;}
+  .main{overflow:visible;min-height:0;max-width:100vw;}
+  /* Belt-and-braces: nothing in the content column may force the page wider
+     than the viewport (this is what causes the "zoomed out" look). */
+  .page-area,.charts-row,.charts-col,.chart-panel,.kpi-strip,
+  .topbar,.filter-bar,.tb-row1,.tb-search{
+    max-width:100%;
+    box-sizing:border-box;
+  }
 
   .sidebar{position:fixed;top:0;left:0;bottom:0;transform:translateX(-100%);z-index:250;width:260px;}
   .sidebar.open{transform:translateX(0);}
@@ -1297,8 +1330,8 @@ function Overview() {
       }
     },
     legend: { bottom:0, textStyle:{ color:'#5F7078', fontSize:10 }, icon:'roundRect', selectedMode:false },
-    grid: { left:'3%', right:'4%', bottom:'16%', top:'5%', containLabel:true },
-    xAxis: { type:'category', data:melkTonChartData.map(d=>d.label), axisLabel:{ color:'#5F7078', fontSize:9 } },
+    grid: { left:'3%', right:'4%', bottom: isMobileViewport() && melkTonChartData.length>3 ? '26%' : '16%', top:'5%', containLabel:true },
+    xAxis: { type:'category', data:melkTonChartData.map(d=>d.label), axisLabel:catAxisLabel(melkTonChartData.length,9) },
     yAxis: { type:'value', minInterval:0.1, axisLabel:{ color:'#5F7078', fontSize:9, formatter: v => v.toLocaleString('de-DE',{maximumFractionDigits:0})+' t' }, splitLine:{ lineStyle:{ color:'#F0F3F4' } } },
     series: [
       { name:'Last Year', type:'bar', data:melkTonChartData.map(d=>d.py), itemStyle:{ color:'#0891B2', borderRadius:[3,3,0,0] }, barGap:'0%', barCategoryGap:'30%' },
@@ -1328,7 +1361,7 @@ function Overview() {
     tooltip:{ ...TOOLTIP_STYLE, trigger:'axis', axisPointer:{type:'shadow'}, formatter:function(params){let html=`<strong>${params[0].name}</strong><br/>`;params.forEach(p=>{const val=p.value;html+=`${p.marker} ${p.seriesName}: ${val!=null?fmtFull(val):'—'}<br/>`;});return html;}},
     legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false},
     grid:{left:'3%',right:'4%',bottom:'16%',top:'5%',containLabel:true},
-    xAxis:{type:'category',data:last3WithPY.map(d=>d.name),axisLabel:{color:'#5F7078',fontSize:9}},
+    xAxis:{type:'category',data:last3WithPY.map(d=>d.name),axisLabel:catAxisLabel(last3WithPY.length,9)},
     yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     series:[
       {name:'Last Year',type:'bar',data:last3WithPY.map(d=>d.py),itemStyle:{color:'#0891B2',borderRadius:[3,3,0,0]},barGap:'0%',barCategoryGap:'30%'},
@@ -1339,7 +1372,7 @@ function Overview() {
   const repOpt = withDataZoom({
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},
     grid:{left:'2%',right:'6%',bottom:'12%',top:'5%',containLabel:true},
-    xAxis:{type:'value',min:0,minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
+xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisLabel:{color:'#5F7078',fontSize:isMobileViewport()?8:9,formatter:v=>fmt(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     yAxis:{type:'category',data:repsLast3Months.map(d=>d.n.split(' ')[0]),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
     legend:{show:false},
     series:[{type:'bar',data:repsLast3Months.map((d,i)=>({value:d.rev,itemStyle:{color:PALETTE[i%PALETTE.length],borderRadius:[0,3,3,0]}})),barMaxWidth:22}]
@@ -1398,8 +1431,8 @@ function Revenue({ fm, label }) {
   const barOpt=withDataZoom(withCrosshair({
     tooltip:{trigger:'axis',formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;p.forEach(s=>{html+=`${s.marker} ${s.seriesName}: ${s.value!=null?fmtFull(s.value):'—'}<br/>`;});return html;}},
     legend:showPrevOverlay&&canShowPrev?{bottom:0,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false}:undefined,
-    grid:{left:'3%',right:'4%',bottom:showPrevOverlay&&canShowPrev?'18%':'12%',top:'8%',containLabel:true},
-    xAxis:{type:'category',data:fm.map(d=>d.m),axisLabel:{color:'#5F7078',fontSize:9}},
+    grid:{left:'3%',right:'4%',bottom:isMobileViewport()&&fm.length>3?'28%':(showPrevOverlay&&canShowPrev?'18%':'12%'),top:'8%',containLabel:true},
+    xAxis:{type:'category',data:fm.map(d=>d.m),axisLabel:catAxisLabel(fm.length,9)},
     yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     series:[
       {name:'Current period',type:'bar',data:fm.map(d=>({value:d.rev,itemStyle:{color:selectedMonth&&selectedMonth!==d.m?'rgba(8,145,178,0.2)':'rgba(8,145,178,0.75)',borderRadius:[3,3,0,0]}})),barMaxWidth:28},
@@ -1425,15 +1458,15 @@ function Revenue({ fm, label }) {
   const cmpOpt=withDataZoom(withCrosshair({
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',formatter:p=>p.map(s=>`${s.marker} ${s.seriesName}: ${s.value?fmtFull(s.value):'—'}`).join('<br/>')},
     legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false},
-    grid:{left:'3%',right:'4%',bottom:'16%',top:'8%',containLabel:true},
-    xAxis:{type:'category',data:cMonths,axisLabel:{color:'#5F7078',fontSize:9}},
+    grid:{left:'3%',right:'4%',bottom:isMobileViewport()&&cMonths.length>3?'28%':'16%',top:'8%',containLabel:true},
+    xAxis:{type:'category',data:cMonths,axisLabel:catAxisLabel(cMonths.length,9)},
     yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     series:lineSeries
   }));
   const ordersOpt=withDataZoom(withCrosshair({
     tooltip:{trigger:'axis',formatter:p=>`<strong>${p[0].name}</strong><br/>Orders: ${fmtN(p[0].value)}`},
-    grid:{left:'3%',right:'4%',bottom:'12%',top:'8%',containLabel:true},
-    xAxis:{type:'category',data:fm.map(d=>d.m),axisLabel:{color:'#5F7078',fontSize:9},axisLine:{lineStyle:{color:'#DDE6E9'}}},
+    grid:{left:'3%',right:'4%',bottom:isMobileViewport()&&fm.length>3?'28%':'12%',top:'8%',containLabel:true},
+    xAxis:{type:'category',data:fm.map(d=>d.m),axisLabel:catAxisLabel(fm.length,9),axisLine:{lineStyle:{color:'#DDE6E9'}}},
     yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtN(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     series:[{type:'line',data:fm.map(d=>d.orders),step:'middle',symbol:'circle',symbolSize:(val,params)=>{const m=fm[params.dataIndex]?.m;return selectedMonth&&selectedMonth===m?8:5;},lineStyle:{color:'#0369A1',width:2},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(3,105,161,.18)'},{offset:1,color:'rgba(3,105,161,.01)'}]}},itemStyle:{color:'#0369A1',borderColor:'#fff',borderWidth:1.5},emphasis:{itemStyle:{color:'#0369A1'}}}]
   },fmtN));
@@ -1473,7 +1506,7 @@ function SalesReps({ fm, label, highlightQuery }) {
   const barOpt=withDataZoom({
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{const pct=totalRev>0?(p[0].value/totalRev*100).toFixed(2).replace('.',',' ):'0';return `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)} (${pct}%)`;}},
     grid:{left:'2%',right:'6%',bottom:'12%',top:'5%',containLabel:true},
-    xAxis:{type:'value',min:0,minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
+xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisLabel:{color:'#5F7078',fontSize:isMobileViewport()?8:9,formatter:v=>fmt(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     yAxis:{type:'category',data:reps.map(d=>d.n.split(' ')[0]),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
     legend:{show:false},
     series:[{type:'bar',data:reps.map((d,i)=>({value:d.rev,itemStyle:{color:selRep&&selRep!==d.n?PALETTE[i%PALETTE.length]+'44':PALETTE[i%PALETTE.length],borderRadius:[0,3,3,0]}})),barMaxWidth:18}]
@@ -1494,7 +1527,7 @@ function SalesReps({ fm, label, highlightQuery }) {
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;let sum=0;p.forEach(s=>{if(s.value){html+=`${s.marker} ${s.seriesName}: ${fmtFull(s.value)}<br/>`;sum+=s.value;}});html+=`<strong>Total: ${fmtFull(sum)}</strong>`;return html;}},
     legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:8},type:'scroll',itemWidth:10,itemHeight:10},
     grid:{left:'2%',right:'6%',bottom:'20%',top:'5%',containLabel:true},
-    xAxis:{type:'value',min:0,minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
+xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisLabel:{color:'#5F7078',fontSize:isMobileViewport()?8:9,formatter:v=>fmt(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     yAxis:{type:'category',data:smOrder.map(n=>n.split(' ')[0]),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
     series:smSeries
   });
@@ -1514,7 +1547,7 @@ function SalesReps({ fm, label, highlightQuery }) {
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;p.forEach(s=>{html+=`${s.marker} ${s.seriesName}: ${s.seriesName==='Tonnage'?fmtNum(s.value)+' t':fmtFull(s.value)}<br/>`;});return html;}},
     legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10}},
     grid:{left:'12%',right:'12%',bottom:'18%',top:'8%',containLabel:true},
-    xAxis:{type:'category',data:vmData.map(c=>c.category),axisLabel:{color:'#5F7078',fontSize:10}},
+    xAxis:{type:'category',data:vmData.map(c=>c.category),axisLabel:catAxisLabel(2,10)},
     yAxis:[{type:'value',name:'Revenue',nameTextStyle:{color:'#5F7078',fontSize:9},axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},{type:'value',name:'Tonnage',nameTextStyle:{color:'#5F7078',fontSize:9},axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtNum(v)},splitLine:{show:false}}],
     series:[{name:'Revenue',type:'bar',data:vmData.map(c=>c.revenue),itemStyle:{color:'#40BCF3',borderRadius:[3,3,0,0]},barMaxWidth:50},{name:'Tonnage',type:'line',yAxisIndex:1,data:vmData.map(c=>c.tonnage),itemStyle:{color:'#1F3741'},lineStyle:{width:2},symbol:'circle',symbolSize:7}]
   };
@@ -1565,7 +1598,7 @@ function Customers({ fm, label, highlightQuery }) {
   const barOpt=withDataZoom({
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},
     grid:{left:'2%',right:'6%',bottom:'12%',top:'5%',containLabel:true},
-    xAxis:{type:'value',min:0,minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
+xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisLabel:{color:'#5F7078',fontSize:isMobileViewport()?8:9,formatter:v=>fmt(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     yAxis:{type:'category',data:currentItems.map(d=>d.n.length>20?d.n.slice(0,20)+'…':d.n),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
     legend:{show:false},
     series:[{type:'bar',data:currentItems.map((d,i)=>({value:d.rev,itemStyle:{color:PALETTE[i%PALETTE.length]+'cc',borderRadius:[0,3,3,0]}})),barMaxWidth:16}]
@@ -1637,7 +1670,7 @@ function Products({ fm, label, highlightQuery }) {
   const barOpt=withDataZoom({
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},
     grid:{left:'2%',right:'6%',bottom:'12%',top:'5%',containLabel:true},
-    xAxis:{type:'value',min:0,minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}},max:(value)=>{if(autoZoom&&currentItems.length>0){const maxVal=Math.max(...currentItems.map(p=>p.rev));const minVal=Math.min(...currentItems.map(p=>p.rev));if(maxVal<60000&&maxVal>0)return maxVal*1.3;if(maxVal<200000&&maxVal>0)return maxVal*1.2;return null;}return null;}},
+    xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisLabel:{color:'#5F7078',fontSize:isMobileViewport()?8:9,formatter:v=>fmt(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}},max:(value)=>{if(autoZoom&&currentItems.length>0){const maxVal=Math.max(...currentItems.map(p=>p.rev));const minVal=Math.min(...currentItems.map(p=>p.rev));if(maxVal<60000&&maxVal>0)return maxVal*1.3;if(maxVal<200000&&maxVal>0)return maxVal*1.2;return null;}return null;}},
     yAxis:{type:'category',data:currentItems.map(d=>d.n.length>22?d.n.slice(0,22)+'…':d.n),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
     legend:{show:false},
     series:[{type:'bar',data:currentItems.map((d,i)=>({value:d.rev,itemStyle:{color:selProd&&selProd!==d.n?PALETTE[i%PALETTE.length]+'44':PALETTE[i%PALETTE.length],borderRadius:[0,3,3,0]}})),barMaxWidth:18}]
@@ -1748,8 +1781,8 @@ function Channels({ fm, label }) {
   const [selChannel,setSelChannel]=useState(null);
 
   const donutOpt={tooltip:{...TOOLTIP_STYLE,trigger:'item',formatter:p=>`${p.name}: ${fmtFull(p.value)} (${p.percent}%)`},legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10},selectedMode:'multiple'},series:[{type:'pie',radius:['48%','70%'],center:['50%','44%'],data:[{name:'Direct Sales',value:ch.dRev,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(8,145,178,0.2)':'#0891B2'}},{name:'Webshop',value:ch.wRev,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2'}}],itemStyle:{borderRadius:3,borderColor:'#fff',borderWidth:2},label:{show:false},emphasis:{scaleSize:6}}]};
-  const ordOpt=withDataZoom({tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtN(p[0].value)}`},grid:{left:'3%',right:'4%',bottom:'12%',top:'8%',containLabel:true},xAxis:{type:'category',data:['Direct Sales','Webshop'],axisLabel:{color:'#5F7078',fontSize:10}},yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtN(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},legend:{show:false},series:[{type:'bar',data:[{value:ch.dOrd,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(8,145,178,0.2)':'#0891B2',borderRadius:[4,4,0,0]}},{value:ch.wOrd,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2',borderRadius:[4,4,0,0]}}],barMaxWidth:60}]});
-  const aovOpt=withDataZoom({tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`${p[0].name}: ${fmtFull(p[0].value)}`},grid:{left:'3%',right:'4%',bottom:'12%',top:'8%',containLabel:true},xAxis:{type:'category',data:['Direct Sales','Webshop'],axisLabel:{color:'#5F7078',fontSize:10}},yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},legend:{show:false},series:[{type:'bar',data:[{value:dAOV,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(3,105,161,0.2)':'#0891B2',borderRadius:[4,4,0,0]}},{value:wAOV,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2',borderRadius:[4,4,0,0]}}],barMaxWidth:60}]});
+  const ordOpt=withDataZoom({tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtN(p[0].value)}`},grid:{left:'3%',right:'4%',bottom:isMobileViewport()?'22%':'12%',top:'8%',containLabel:true},xAxis:{type:'category',data:['Direct Sales','Webshop'],axisLabel:catAxisLabel(2,10,true)},yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtN(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},legend:{show:false},series:[{type:'bar',data:[{value:ch.dOrd,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(8,145,178,0.2)':'#0891B2',borderRadius:[4,4,0,0]}},{value:ch.wOrd,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2',borderRadius:[4,4,0,0]}}],barMaxWidth:60}]});
+  const aovOpt=withDataZoom({tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`${p[0].name}: ${fmtFull(p[0].value)}`},grid:{left:'3%',right:'4%',bottom:isMobileViewport()?'22%':'12%',top:'8%',containLabel:true},xAxis:{type:'category',data:['Direct Sales','Webshop'],axisLabel:catAxisLabel(2,10,true)},yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},legend:{show:false},series:[{type:'bar',data:[{value:dAOV,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(3,105,161,0.2)':'#0891B2',borderRadius:[4,4,0,0]}},{value:wAOV,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2',borderRadius:[4,4,0,0]}}],barMaxWidth:60}]});
 
   const leadChannel=ch.dRev>=ch.wRev?'Direct Sales':'Webshop';
   const leadShare=total>0?(Math.max(ch.dRev,ch.wRev)/total*100).toFixed(0):0;
@@ -1824,8 +1857,8 @@ function PLSummary() {
   const{base:wfBase,val:wfVal,colors:wfColors}=buildWaterfallSeries([{delta:revCY},{delta:-cogsCY},{total:true},{delta:-opexCY},{total:true}]);
   const wfOpt={
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${wfCats[p[0].dataIndex]}</strong><br/>${fmtFull(wfDisplay[p[0].dataIndex])}`},
-    grid:{left:14,right:14,bottom:26,top:30,containLabel:true},
-    xAxis:{type:'category',data:wfCats,axisLabel:{color:'#5F7078',fontSize:9},axisTick:{show:false}},
+    grid:{left:14,right:14,bottom:isMobileViewport()?54:26,top:30,containLabel:true},
+    xAxis:{type:'category',data:wfCats,axisLabel:catAxisLabel(wfCats.length,9),axisTick:{show:false}},
     yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:8,formatter:v=>fmtAxis(v)},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},
     series:[
       {type:'bar',stack:'wf',data:wfBase,itemStyle:{color:'transparent'},silent:true,tooltip:{show:false}},
@@ -1837,7 +1870,7 @@ function PLSummary() {
   const tornCats=finCategories.map(c=>c.cat);
   const tornVals=finCategories.map(c=>c.cy-c.py);
   const tornColors=finCategories.map(c=>{const bad=c.cat==='Revenue'?(c.cy-c.py)<0:(c.cy-c.py)>0;return bad?'#D95C5C':'#2E9B62';});
-  const tornOpt={tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},grid:{left:120,right:16,bottom:18,top:6,containLabel:false},xAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:8,formatter:v=>fmtAxis(v)},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},yAxis:{type:'category',data:tornCats,axisLabel:{color:'#5F7078',fontSize:8,width:112,overflow:'truncate'},inverse:true,axisTick:{show:false}},series:[{type:'bar',barMaxWidth:12,data:tornVals.map((v,i)=>({value:v,itemStyle:{color:tornColors[i],borderRadius:v>=0?[0,3,3,0]:[3,0,0,3]}}))}]};
+  const tornOpt={tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},grid:{left:isMobileViewport()?95:120,right:16,bottom:18,top:6,containLabel:false},xAxis:{type:'value',minInterval:1,splitNumber:isMobileViewport()?4:5,axisLabel:{color:'#5F7078',fontSize:isMobileViewport()?7:8,formatter:v=>fmtAxis(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},yAxis:{type:'category',data:tornCats,axisLabel:{color:'#5F7078',fontSize:8,width:isMobileViewport()?88:112,overflow:'truncate'},inverse:true,axisTick:{show:false}},series:[{type:'bar',barMaxWidth:12,data:tornVals.map((v,i)=>({value:v,itemStyle:{color:tornColors[i],borderRadius:v>=0?[0,3,3,0]:[3,0,0,3]}}))}]};
   const tornTable={headers:['Category','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','YoY %'],rows:finCategories.map(c=>[c.cat,fmtFull(c.cy),fmtFull(c.py),fmtFull(c.cy-c.py),c.py?fmtPct((c.cy-c.py)/Math.abs(c.py)*100):'—'])};
 
   const GaugeSVG=({value,label,py})=>{
@@ -1911,7 +1944,7 @@ function FinRevCosts() {
   const costCats=finCategories.filter(c=>c.cat!=='Revenue');
   const costPctPeriods=['2025 (Jan–Jun)','2026 (Jan–Mar)'];
   const costPctSeries=costCats.map((c,i)=>({name:c.cat,type:'line',symbol:'circle',symbolSize:6,lineStyle:{width:2,color:PALETTE[i%PALETTE.length]},itemStyle:{color:PALETTE[i%PALETTE.length]},data:[revPY?+(c.py/revPY*100).toFixed(2):0,revCY?+(c.cy/revCY*100).toFixed(2):0]}));
-  const costPctOpt={tooltip:{...TOOLTIP_STYLE,trigger:'axis',formatter:p=>`<strong>${p[0].axisValue}</strong><br/>`+p.map(i=>`${i.marker} ${i.seriesName}: ${i.value.toFixed(1).replace('.',','  )}%`).join('<br/>')},legend:{top:0,textStyle:{color:'#5F7078',fontSize:9},itemWidth:10,itemHeight:10},grid:{left:44,right:20,bottom:24,top:34,containLabel:true},xAxis:{type:'category',data:costPctPeriods,axisLabel:{color:'#5F7078',fontSize:9},axisTick:{show:false}},yAxis:{type:'value',axisLabel:{color:'#5F7078',fontSize:8,formatter:v=>v+'%'},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},series:costPctSeries};
+  const costPctOpt={tooltip:{...TOOLTIP_STYLE,trigger:'axis',formatter:p=>`<strong>${p[0].axisValue}</strong><br/>`+p.map(i=>`${i.marker} ${i.seriesName}: ${i.value.toFixed(1).replace('.',','  )}%`).join('<br/>')},legend:{top:0,textStyle:{color:'#5F7078',fontSize:9},itemWidth:10,itemHeight:10},grid:{left:44,right:20,bottom:isMobileViewport()?46:24,top:34,containLabel:true},xAxis:{type:'category',data:costPctPeriods,axisLabel:catAxisLabel(2,9,true),axisTick:{show:false}},yAxis:{type:'value',axisLabel:{color:'#5F7078',fontSize:8,formatter:v=>v+'%'},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},series:costPctSeries};
   const costPctTbl={headers:['Category','2025 (Jan–Jun) %','2026 (Jan–Mar) %','Change (pts)'],rows:costCats.map(c=>{const pctPY=revPY?(c.py/revPY*100):0;const pctCY=revCY?(c.cy/revCY*100):0;return[c.cat,fmtPct(pctPY),fmtPct(pctCY),fmtPct(pctCY-pctPY)];})};
 
   return (
@@ -2017,8 +2050,14 @@ function ScrollHint({ watchKey, disabled }) {
       <div className={`scroll-fade${show ? '' : ' hidden'}`} aria-hidden="true" />
       <button
         className={`scroll-hint${show ? '' : ' hidden'}`}
-        aria-label="Scroll down for more"
-        onClick={() => window.scrollBy({ top: Math.round(window.innerHeight * 0.7), behavior: 'smooth' })}
+        aria-label="Scroll to bottom of page"
+        onClick={() => {
+          // Jump straight to the last element of the current page, rather
+          // than a fixed-fraction hop, so one tap always reaches the end.
+          const doc = document.documentElement;
+          const target = doc.scrollHeight - window.innerHeight;
+          window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+        }}
       >▼</button>
     </>
   );
@@ -2142,6 +2181,33 @@ export default function App() {
     raf=requestAnimationFrame(tick);
     return()=>cancelAnimationFrame(raf);
   },[collapsed]);
+
+  /* Fixes charts rendering "zoomed out" on initial load/login and after a
+     page switch: ECharts measures its container's pixel size at mount, but
+     on mobile the real viewport (address bar height, safe-area insets,
+     font loading) can still be settling a moment later. A forced resize()
+     pass shortly after mount/page-change — repeated a few times — makes
+     every chart snap to its true final size instead of staying baked in
+     at a stale, wider measurement. */
+  const resizeAllCharts=useCallback(()=>{
+    liveChartInstances.forEach(inst=>{try{inst.resize();}catch{}});
+  },[]);
+  useEffect(()=>{
+    if(!authed)return;
+    const delays=[50,150,350,600,1000];
+    const timers=delays.map(ms=>setTimeout(resizeAllCharts,ms));
+    window.addEventListener('resize',resizeAllCharts);
+    window.addEventListener('orientationchange',resizeAllCharts);
+    return()=>{
+      timers.forEach(clearTimeout);
+      window.removeEventListener('resize',resizeAllCharts);
+      window.removeEventListener('orientationchange',resizeAllCharts);
+    };
+  },[authed,resizeAllCharts]);
+  useEffect(()=>{
+    const t=setTimeout(resizeAllCharts,120);
+    return()=>clearTimeout(t);
+  },[page,resizeAllCharts]);
 
   const [time,setTime]=useState(new Date());
 

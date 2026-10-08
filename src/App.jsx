@@ -2000,7 +2000,7 @@ function FinLedger() {
                 <input className="ledger-search" placeholder="Search account # or description…" value={q} onChange={e=>setQ(e.target.value)}/>
                 <span className="ledger-count">{fmtN(filtered.length)} / {fmtN(finLines.length)}</span>
               </div>
-              <div className="ledger-cats">{cats.map(c=>(<button key={c} className={`filter-chip${cat===c?' active':''}`} style={{fontSize:9,padding:'2px 7px'}} onClick={()=>setCat(c)}>{c}</button>))}</div>
+              <div className="ledger-cats">{cats.map(c=>(<button key={c} className={`filter-chip${cat===c?' active':''}`} style={{fontSize:9,padding:'2px 7px'}} onClick={()=>setCat(prev => prev===c ? 'All' : c)} title={cat===c && c!=='All' ? `Clear filter (${c})` : `Filter: ${c}`}>{c}</button>))}</div>
               <div style={{flex:1,minHeight:0}}><InlineTable headers={['Acct','Category','Description','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','% of Turnover','Relative Difference']} rows={rows} height="100%"/></div>
             </div>
           </Panel>

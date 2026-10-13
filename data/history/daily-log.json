@@ -1,0 +1,940 @@
+[
+  {
+    "date": "2026-10-13",
+    "month": "Oct 26",
+    "kpi": {
+      "mtd_rev": 821245,
+      "daily_rev": 821245,
+      "mtd_orders": 283,
+      "daily_orders": 283,
+      "pipeline": 2912791,
+      "pipeline_future": 273604,
+      "proj_mtd": 1195589,
+      "turnover_mtd": 888324,
+      "open_mtd": 307.264,
+      "clients_total": 1466,
+      "top_rep": {
+        "n": "Johan Hoogendoorn",
+        "daily_rev": 303774
+      },
+      "top_cust": {
+        "n": "Nyakas Farm Kft.",
+        "daily_rev": 79135
+      }
+    },
+    "reps": [
+      {
+        "n": "Johan Hoogendoorn",
+        "mtd_rev": 303774,
+        "daily_rev": 303774,
+        "mtd_orders": 65,
+        "daily_orders": 65
+      },
+      {
+        "n": "Edo Steenbergen",
+        "mtd_rev": 166707,
+        "daily_rev": 166707,
+        "mtd_orders": 53,
+        "daily_orders": 53
+      },
+      {
+        "n": "Karen Hoogendoorn",
+        "mtd_rev": 99086,
+        "daily_rev": 99086,
+        "mtd_orders": 30,
+        "daily_orders": 30
+      },
+      {
+        "n": "Orsi Hongarije",
+        "mtd_rev": 79295,
+        "daily_rev": 79295,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Brugt Pilat",
+        "mtd_rev": 50604,
+        "daily_rev": 50604,
+        "mtd_orders": 42,
+        "daily_orders": 42
+      },
+      {
+        "n": "Sharon Harberink",
+        "mtd_rev": 49498,
+        "daily_rev": 49498,
+        "mtd_orders": 24,
+        "daily_orders": 24
+      },
+      {
+        "n": "Bärbel Achelpöhler",
+        "mtd_rev": 41008,
+        "daily_rev": 41008,
+        "mtd_orders": 18,
+        "daily_orders": 18
+      },
+      {
+        "n": "Beeke Gerdes",
+        "mtd_rev": 28862,
+        "daily_rev": 28862,
+        "mtd_orders": 27,
+        "daily_orders": 27
+      },
+      {
+        "n": "Unknown",
+        "mtd_rev": 1877,
+        "daily_rev": 1877,
+        "mtd_orders": 8,
+        "daily_orders": 8
+      },
+      {
+        "n": "Webshop",
+        "mtd_rev": 535,
+        "daily_rev": 535,
+        "mtd_orders": 13,
+        "daily_orders": 13
+      }
+    ],
+    "customers": [
+      {
+        "n": "Nyakas Farm Kft.",
+        "mtd_rev": 79135,
+        "daily_rev": 79135,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Landwirtschaftsbetrieb Griepentrog KG",
+        "mtd_rev": 78800,
+        "daily_rev": 78800,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Milchhof Kötitz GmbH & Co.KG",
+        "mtd_rev": 70950,
+        "daily_rev": 70950,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Jordans Milchhof GmbH & Co. KG",
+        "mtd_rev": 41878,
+        "daily_rev": 41878,
+        "mtd_orders": 4,
+        "daily_orders": 4
+      },
+      {
+        "n": "Gut Hohen Luckow Milch GmbH & Co KG",
+        "mtd_rev": 38602,
+        "daily_rev": 38602,
+        "mtd_orders": 4,
+        "daily_orders": 4
+      },
+      {
+        "n": "Timmer Viehhandlung GmbH & Co. KG",
+        "mtd_rev": 32712,
+        "daily_rev": 32712,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Agrargesellschaft Kreckow mbH",
+        "mtd_rev": 31000,
+        "daily_rev": 31000,
+        "mtd_orders": 4,
+        "daily_orders": 4
+      },
+      {
+        "n": "Gut Trossin VGmbH",
+        "mtd_rev": 29930,
+        "daily_rev": 29930,
+        "mtd_orders": 5,
+        "daily_orders": 5
+      },
+      {
+        "n": "Milchhof Diera KG",
+        "mtd_rev": 27986,
+        "daily_rev": 27986,
+        "mtd_orders": 7,
+        "daily_orders": 7
+      },
+      {
+        "n": "Gut Pritzier Milchproduktion GmbH",
+        "mtd_rev": 23969,
+        "daily_rev": 23969,
+        "mtd_orders": 5,
+        "daily_orders": 5
+      },
+      {
+        "n": "Wollschow-Menkiner Agrar GmbH & Co. KG",
+        "mtd_rev": 22000,
+        "daily_rev": 22000,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Agrofarm Flämingrand GmbH",
+        "mtd_rev": 19779,
+        "daily_rev": 19779,
+        "mtd_orders": 5,
+        "daily_orders": 5
+      },
+      {
+        "n": "Kevin Anhamm",
+        "mtd_rev": 19320,
+        "daily_rev": 19320,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Milchprod. Boerman Lossatal GmbH & Co KG",
+        "mtd_rev": 17636,
+        "daily_rev": 17636,
+        "mtd_orders": 4,
+        "daily_orders": 4
+      },
+      {
+        "n": "Ottens Hoff GbR",
+        "mtd_rev": 14425,
+        "daily_rev": 14425,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Landboden Glasin TP KG / Treuhand GmbH & Co KG",
+        "mtd_rev": 13928,
+        "daily_rev": 13928,
+        "mtd_orders": 6,
+        "daily_orders": 6
+      },
+      {
+        "n": "Lune-Milch GmbH & Co. KG",
+        "mtd_rev": 13335,
+        "daily_rev": 13335,
+        "mtd_orders": 4,
+        "daily_orders": 4
+      },
+      {
+        "n": "Agrargesellschaft Jürgenshagen mbH",
+        "mtd_rev": 12761,
+        "daily_rev": 12761,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Milchhof Zinna",
+        "mtd_rev": 11192,
+        "daily_rev": 11192,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Poppelgaard p/s",
+        "mtd_rev": 11118,
+        "daily_rev": 11118,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Aalberts-Krap GmbH",
+        "mtd_rev": 10672,
+        "daily_rev": 10672,
+        "mtd_orders": 5,
+        "daily_orders": 5
+      },
+      {
+        "n": "Peter Mescher",
+        "mtd_rev": 10534,
+        "daily_rev": 10534,
+        "mtd_orders": 8,
+        "daily_orders": 8
+      },
+      {
+        "n": "Martin Dahmen GbR",
+        "mtd_rev": 9959,
+        "daily_rev": 9959,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Milchhof Vietlübbe GmbH",
+        "mtd_rev": 7648,
+        "daily_rev": 7648,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Delisse V.O.F.",
+        "mtd_rev": 7558,
+        "daily_rev": 7558,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "W. van Dijk b.v. - Hijken",
+        "mtd_rev": 6714,
+        "daily_rev": 6714,
+        "mtd_orders": 4,
+        "daily_orders": 4
+      },
+      {
+        "n": "Landbouwbedrijf Boer",
+        "mtd_rev": 6675,
+        "daily_rev": 6675,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Melkveehouderij Mandeveld c.v.",
+        "mtd_rev": 6550,
+        "daily_rev": 6550,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Milchhof Steinbeck",
+        "mtd_rev": 6450,
+        "daily_rev": 6450,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Lutum & Hövelmann KG",
+        "mtd_rev": 5394,
+        "daily_rev": 5394,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Krayenborg / Lienau GbR",
+        "mtd_rev": 5200,
+        "daily_rev": 5200,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Mts H.J.J. Elshof en T. Elshof-Witteveen",
+        "mtd_rev": 4596,
+        "daily_rev": 4596,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Melkveebedrijf Groeneveld",
+        "mtd_rev": 4204,
+        "daily_rev": 4204,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Milchgut Bortewitz GmbH",
+        "mtd_rev": 4200,
+        "daily_rev": 4200,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Melkveehouderij Meijers-van den Heuvel",
+        "mtd_rev": 4054,
+        "daily_rev": 4054,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Wiechers Landbouw BV",
+        "mtd_rev": 3762,
+        "daily_rev": 3762,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Mts. B.A.W. Vernooij en W. Bijstra-Vernooij",
+        "mtd_rev": 3675,
+        "daily_rev": 3675,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Aeres Farms Dronten",
+        "mtd_rev": 3500,
+        "daily_rev": 3500,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "VOF Oosterink",
+        "mtd_rev": 3500,
+        "daily_rev": 3500,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Melkveebedrijf Marsman",
+        "mtd_rev": 3500,
+        "daily_rev": 3500,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Van Rossem",
+        "mtd_rev": 3500,
+        "daily_rev": 3500,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Agrargenossenschaft Elbniederung Eutzsch e.G.",
+        "mtd_rev": 3416,
+        "daily_rev": 3416,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Rinderzucht Marquardt Holstein-Wagyu",
+        "mtd_rev": 3400,
+        "daily_rev": 3400,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Melkveebedrijf Boode",
+        "mtd_rev": 3388,
+        "daily_rev": 3388,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Katharina Bleis",
+        "mtd_rev": 3385,
+        "daily_rev": 3385,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Ole Carstens",
+        "mtd_rev": 3332,
+        "daily_rev": 3332,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Thies Brügmann",
+        "mtd_rev": 3332,
+        "daily_rev": 3332,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Mts Damhuis",
+        "mtd_rev": 3325,
+        "daily_rev": 3325,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Mts D. en D.D. Bouwman",
+        "mtd_rev": 3325,
+        "daily_rev": 3325,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Kwanten LV",
+        "mtd_rev": 3325,
+        "daily_rev": 3325,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Mts Heida",
+        "mtd_rev": 3325,
+        "daily_rev": 3325,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Mts Kok-Oude Lansink",
+        "mtd_rev": 3325,
+        "daily_rev": 3325,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Milchviehbetrieb Diekhof GmbH & Co. KG",
+        "mtd_rev": 3292,
+        "daily_rev": 3292,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Karl-Wilhelm Pohl",
+        "mtd_rev": 3225,
+        "daily_rev": 3225,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Tramsen GbR",
+        "mtd_rev": 3225,
+        "daily_rev": 3225,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Plönnigs & Valdiek GbR",
+        "mtd_rev": 3150,
+        "daily_rev": 3150,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Mts Vergeer",
+        "mtd_rev": 2980,
+        "daily_rev": 2980,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Scholten-Meilink Gbr",
+        "mtd_rev": 2629,
+        "daily_rev": 2629,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Ralf-Günther Ritz",
+        "mtd_rev": 2332,
+        "daily_rev": 2332,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Agrar GmbH Schlieben",
+        "mtd_rev": 2102,
+        "daily_rev": 2102,
+        "mtd_orders": 7,
+        "daily_orders": 7
+      },
+      {
+        "n": "Impa Altkirchen GmbH",
+        "mtd_rev": 2076,
+        "daily_rev": 2076,
+        "mtd_orders": 6,
+        "daily_orders": 6
+      },
+      {
+        "n": "Milan GmbH",
+        "mtd_rev": 1884,
+        "daily_rev": 1884,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Melkveebedrijf Meijer",
+        "mtd_rev": 1750,
+        "daily_rev": 1750,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Maatschap Scholtenhave",
+        "mtd_rev": 1750,
+        "daily_rev": 1750,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "L.J. Klijn en K. Postma",
+        "mtd_rev": 1662,
+        "daily_rev": 1662,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Melkvee- en geitenbedrijf Vandenberghe CommVlo",
+        "mtd_rev": 1499,
+        "daily_rev": 1499,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Simons GbR",
+        "mtd_rev": 1347,
+        "daily_rev": 1347,
+        "mtd_orders": 5,
+        "daily_orders": 5
+      },
+      {
+        "n": "Dornumer Küstenmilch GbR",
+        "mtd_rev": 1119,
+        "daily_rev": 1119,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Mts Averdijk-Verhoef",
+        "mtd_rev": 1096,
+        "daily_rev": 1096,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Andrea Peters",
+        "mtd_rev": 1065,
+        "daily_rev": 1065,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Van der Aa GbR",
+        "mtd_rev": 1056,
+        "daily_rev": 1056,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Sven Wussow",
+        "mtd_rev": 909,
+        "daily_rev": 909,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "J. Oost en C.K. Oost-Bolle",
+        "mtd_rev": 858,
+        "daily_rev": 858,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "LWB Wolfgang Damm",
+        "mtd_rev": 817,
+        "daily_rev": 817,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Isarnho Farms Prall Marxen GbR",
+        "mtd_rev": 616,
+        "daily_rev": 616,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Melkveehouderij Wieten",
+        "mtd_rev": 593,
+        "daily_rev": 593,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Mts. Zwambag-Gerritsen",
+        "mtd_rev": 581,
+        "daily_rev": 581,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "V.O.F. Stadman",
+        "mtd_rev": 540,
+        "daily_rev": 540,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "J.M. Lawerman",
+        "mtd_rev": 525,
+        "daily_rev": 525,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Hof Kristian Naethbohm",
+        "mtd_rev": 399,
+        "daily_rev": 399,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Mts Berghuis-Nijland",
+        "mtd_rev": 350,
+        "daily_rev": 350,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Agroz Koecomfort",
+        "mtd_rev": 350,
+        "daily_rev": 350,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Lucas Hatzmann",
+        "mtd_rev": 350,
+        "daily_rev": 350,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Lars Martens",
+        "mtd_rev": 336,
+        "daily_rev": 336,
+        "mtd_orders": 4,
+        "daily_orders": 4
+      },
+      {
+        "n": "Lübars Agrar GmbH",
+        "mtd_rev": 304,
+        "daily_rev": 304,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Ludger Honermann",
+        "mtd_rev": 302,
+        "daily_rev": 302,
+        "mtd_orders": 6,
+        "daily_orders": 6
+      },
+      {
+        "n": "Thier Milchvieh GbR",
+        "mtd_rev": 300,
+        "daily_rev": 300,
+        "mtd_orders": 4,
+        "daily_orders": 4
+      },
+      {
+        "n": "Agrargenossenschaft Trebitz eG",
+        "mtd_rev": 295,
+        "daily_rev": 295,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Lawi Agrar GmbH Hirschfeld",
+        "mtd_rev": 284,
+        "daily_rev": 284,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Henning Grewing",
+        "mtd_rev": 271,
+        "daily_rev": 271,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Melkveehouderij MG Martens",
+        "mtd_rev": 265,
+        "daily_rev": 265,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Mts Niehof-Velthuis",
+        "mtd_rev": 252,
+        "daily_rev": 252,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Hoeve Elzendamme commvlo",
+        "mtd_rev": 230,
+        "daily_rev": 230,
+        "mtd_orders": 9,
+        "daily_orders": 9
+      },
+      {
+        "n": "Jünck Brun Milchvieh GBR",
+        "mtd_rev": 215,
+        "daily_rev": 215,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Bühring KG",
+        "mtd_rev": 211,
+        "daily_rev": 211,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Landwirtschaftbetrieb Koschella & Holle GbR",
+        "mtd_rev": 206,
+        "daily_rev": 206,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Agrargenossenschaft Blankenhain e.G.",
+        "mtd_rev": 206,
+        "daily_rev": 206,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Mayr Franz",
+        "mtd_rev": 204,
+        "daily_rev": 204,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "GbR Wallstawe",
+        "mtd_rev": 199,
+        "daily_rev": 199,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "V.O.F. Vendrig",
+        "mtd_rev": 195,
+        "daily_rev": 195,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Melkveebedrijf Wagelaar-Denneboom",
+        "mtd_rev": 195,
+        "daily_rev": 195,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Zorgboerderij het Hof",
+        "mtd_rev": 175,
+        "daily_rev": 175,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Milchviehhof Klosterfelde eGbR",
+        "mtd_rev": 166,
+        "daily_rev": 166,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "KFT Pro-Feed",
+        "mtd_rev": 160,
+        "daily_rev": 160,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Thomas Dankerl",
+        "mtd_rev": 146,
+        "daily_rev": 146,
+        "mtd_orders": 4,
+        "daily_orders": 4
+      },
+      {
+        "n": "Melkveebedrijf Kok",
+        "mtd_rev": 125,
+        "daily_rev": 125,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Helming Milchhof GmbH",
+        "mtd_rev": 119,
+        "daily_rev": 119,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Helfenberger",
+        "mtd_rev": 114,
+        "daily_rev": 114,
+        "mtd_orders": 4,
+        "daily_orders": 4
+      },
+      {
+        "n": "Mts Vos-Brand",
+        "mtd_rev": 105,
+        "daily_rev": 105,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Mts J. en H. Oldenwening",
+        "mtd_rev": 100,
+        "daily_rev": 100,
+        "mtd_orders": 6,
+        "daily_orders": 6
+      },
+      {
+        "n": "Sebastian Koppe",
+        "mtd_rev": 87,
+        "daily_rev": 87,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Mts van der Gun",
+        "mtd_rev": 85,
+        "daily_rev": 85,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Maatschap Tolner",
+        "mtd_rev": 75,
+        "daily_rev": 75,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Lölfer-Guhle GbR",
+        "mtd_rev": 64,
+        "daily_rev": 64,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Mts S. en J. Schaap",
+        "mtd_rev": 62,
+        "daily_rev": 62,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Melkveebedrijf Familie Bosch",
+        "mtd_rev": 10,
+        "daily_rev": 10,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Maatschap Kleinsman-Enting",
+        "mtd_rev": 4,
+        "daily_rev": 4,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Mts Lansink",
+        "mtd_rev": 4,
+        "daily_rev": 4,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Landschaftspflege-Agrarhöfe Kaltensundheim/Röhn Gm",
+        "mtd_rev": -31,
+        "daily_rev": -31,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Sönke Thomsen",
+        "mtd_rev": -100,
+        "daily_rev": -100,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      }
+    ]
+  }
+]

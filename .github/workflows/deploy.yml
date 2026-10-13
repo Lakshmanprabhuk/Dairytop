@@ -2,8 +2,11 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]   # change if your default branch has a different name
-  workflow_dispatch:     # lets you trigger a deploy manually from the Actions tab
+    branches: [main]
+    paths-ignore:
+      - 'data/history/**'
+      - 'scripts/**'
+  workflow_dispatch:
 
 permissions:
   contents: read

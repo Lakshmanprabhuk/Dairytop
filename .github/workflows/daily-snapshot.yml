@@ -1,0 +1,40 @@
+name: Daily snapshot
+
+on:
+  schedule:
+    - cron: '0 3 * * *'     # 03:00 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run snapshot
+        run: node scripts/today.mjs
+
+      - name: Commit log
+        run: |
+          git config user.name  "dt-bot"
+          git config user.email "bot@dairytop.local"
+          git add data/history/daily-log.json
+          if git diff --staged --quiet; then
+            echo "No change — today's row already matches."
+          else
+            git commit -m "chore(snapshot): $(date -u +%F)"
+            git push
+          fi

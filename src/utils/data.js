@@ -10269,7 +10269,7 @@ export const projectedMTD = 1195589;
 export const turnoverMTD = 888324;
 // Open_Order_Value_MTD — open order lines with wens_datum in the current
 // month, due today or earlier, unblocked. Verified against Power BI (€381,001).
-export const openOrderValueMTD = 307.264;
+export const openOrderValueMTD = 307264;
 
 export const salesmanCategorySales = [
   {salesman:'Beeke Gerdes',category:'Kalverhuisvesting',rev:148012,qty:31,orders:7,monthly:[{m:'Apr 26',rev:-500,qty:1,orders:1}, {m:'May 26',rev:3962,qty:3,orders:1}, {m:'Jun 26',rev:83050,qty:9,orders:1}, {m:'Jul 26',rev:34384,qty:15,orders:2}, {m:'Aug 26',rev:23258,qty:1,orders:1}, {m:'Sep 26',rev:3858,qty:2,orders:1}]},

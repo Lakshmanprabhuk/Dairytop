@@ -2,8 +2,6 @@ name: Daily snapshot
 
 
 on:
-  push:                    # <-- Add this line
-    branches: [main] 
   schedule:
     - cron: '0 3 * * *'     # 03:00 UTC daily
   workflow_dispatch:

@@ -2056,5 +2056,236 @@
         "daily_orders": 2
       }
     ]
+  },
+  {
+    "date": "2026-10-16",
+    "month": "Oct 26",
+    "kpi": {
+      "mtd_rev": 916561,
+      "daily_rev": 0,
+      "mtd_orders": 337,
+      "daily_orders": 0,
+      "pipeline": 2912942,
+      "pipeline_future": 273604,
+      "proj_mtd": 1223977,
+      "turnover_mtd": 916561,
+      "open_mtd": 307416,
+      "clients_total": 1472,
+      "top_rep": {
+        "n": "Johan Hoogendoorn",
+        "daily_rev": 304953
+      },
+      "top_cust": {
+        "n": "Landwirtschaftsbetrieb Griepentrog KG",
+        "daily_rev": 79979
+      }
+    },
+    "reps": [
+      {
+        "n": "Johan Hoogendoorn",
+        "mtd_rev": 304953,
+        "daily_rev": 304953,
+        "mtd_orders": 70,
+        "daily_orders": 70
+      },
+      {
+        "n": "Orsi Hongarije",
+        "mtd_rev": 146374,
+        "daily_rev": 146374,
+        "mtd_orders": 5,
+        "daily_orders": 5
+      },
+      {
+        "n": "Brugt Pilat",
+        "mtd_rev": 69530,
+        "daily_rev": 69530,
+        "mtd_orders": 57,
+        "daily_orders": 57
+      },
+      {
+        "n": "Sharon Harberink",
+        "mtd_rev": 56630,
+        "daily_rev": 56630,
+        "mtd_orders": 32,
+        "daily_orders": 32
+      },
+      {
+        "n": "Bärbel Achelpöhler",
+        "mtd_rev": 41402,
+        "daily_rev": 41402,
+        "mtd_orders": 23,
+        "daily_orders": 23
+      },
+      {
+        "n": "Webshop",
+        "mtd_rev": 1140,
+        "daily_rev": 1140,
+        "mtd_orders": 32,
+        "daily_orders": 32
+      }
+    ],
+    "customers": [
+      {
+        "n": "Landwirtschaftsbetrieb Griepentrog KG",
+        "mtd_rev": 79979,
+        "daily_rev": 79979,
+        "mtd_orders": 7,
+        "daily_orders": 7
+      },
+      {
+        "n": "CLA Milk Kft.",
+        "mtd_rev": 67080,
+        "daily_rev": 67080,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Agrarisch Bedrijf Noorderbos C.V.",
+        "mtd_rev": 4046,
+        "daily_rev": 4046,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Melkveebedrijf Hofman V.o.f",
+        "mtd_rev": 3500,
+        "daily_rev": 3500,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "G.J. Hofsteenge, Bawitt",
+        "mtd_rev": 3500,
+        "daily_rev": 3500,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Mts Bolhuis-van Unen",
+        "mtd_rev": 3500,
+        "daily_rev": 3500,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Melkfeebedriuw Bakker",
+        "mtd_rev": 3378,
+        "daily_rev": 3378,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "V.O.F. Neefjes-van Dam",
+        "mtd_rev": 3330,
+        "daily_rev": 3330,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Sneul VOF",
+        "mtd_rev": 1905,
+        "daily_rev": 1905,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Mts Kooistra",
+        "mtd_rev": 1750,
+        "daily_rev": 1750,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "De heer A.W. Brinkman",
+        "mtd_rev": 723,
+        "daily_rev": 723,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Marc Furken",
+        "mtd_rev": 279,
+        "daily_rev": 279,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Tony Anton Uphues",
+        "mtd_rev": 223,
+        "daily_rev": 223,
+        "mtd_orders": 4,
+        "daily_orders": 4
+      },
+      {
+        "n": "Melkveebedrijf Holterhof",
+        "mtd_rev": 175,
+        "daily_rev": 175,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Melkveebedrijf Hoving",
+        "mtd_rev": 125,
+        "daily_rev": 125,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "Agrarhof Klaas Nagelfeld",
+        "mtd_rev": 115,
+        "daily_rev": 115,
+        "mtd_orders": 2,
+        "daily_orders": 2
+      },
+      {
+        "n": "Andre Ehlers",
+        "mtd_rev": 102,
+        "daily_rev": 102,
+        "mtd_orders": 4,
+        "daily_orders": 4
+      },
+      {
+        "n": "Seahorse",
+        "mtd_rev": 96,
+        "daily_rev": 96,
+        "mtd_orders": 5,
+        "daily_orders": 5
+      },
+      {
+        "n": "V.O.F. van Benthem",
+        "mtd_rev": 92,
+        "daily_rev": 92,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Martin Moser",
+        "mtd_rev": 91,
+        "daily_rev": 91,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Biologisch Melkveebedrijf Nieuwe Weme",
+        "mtd_rev": 65,
+        "daily_rev": 65,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      },
+      {
+        "n": "Melkveehouderij Thijn",
+        "mtd_rev": 62,
+        "daily_rev": 62,
+        "mtd_orders": 1,
+        "daily_orders": 1
+      },
+      {
+        "n": "V.O.F. Reitsma",
+        "mtd_rev": 0,
+        "daily_rev": 0,
+        "mtd_orders": 3,
+        "daily_orders": 3
+      }
+    ]
   }
 ]

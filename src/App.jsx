@@ -6,10 +6,15 @@ import ChatBot from './ChatBot.jsx';
 
 import {
   monthly,
+  weekly,
   salesreps as salesrepsRaw,
+  salesrepsWeekly as salesrepsWeeklyRaw,
   categories as categoriesRaw,
+  categoriesWeekly as categoriesWeeklyRaw,
   customers as customersRaw,
+  customersWeekly as customersWeeklyRaw,
   products as productsRaw,
+  productsWeekly as productsWeeklyRaw,
   salesmanCategorySales,
   tonnagePerSalesman,
   totalTonnageByCategory,
@@ -84,7 +89,6 @@ function withCrosshair(option, yFormatter = fmt) {
   };
 }
 
-/* DataZoom disabled on mobile so touch-drag scrolls the page */
 function withDataZoom(option) {
   if (isMobileViewport()) return option;
   return {
@@ -100,9 +104,6 @@ function withDataZoom(option) {
   };
 }
 
-/* Responsive category-axis label config: shrinks font and, when there are
-   enough categories (or the labels are long) to risk overlap on a narrow
-   mobile panel, rotates them so they never clash. */
 function catAxisLabel(count, baseFontSize, forceRotate) {
   const mobile = isMobileViewport();
   const fs = baseFontSize || 9;
@@ -116,6 +117,86 @@ function catAxisLabel(count, baseFontSize, forceRotate) {
     margin: crowded ? 10 : 8,
   };
 }
+
+/* ── TIME GRANULARITY HELPERS ─────────────────────────────────── */
+/* 'Apr 26' -> '26' */
+function yearSuffixFromLabel(label) {
+  const parts = String(label).trim().split(' ');
+  return parts[parts.length - 1];
+}
+/* 'Apr 26' -> '2026' */
+function yearFullFromLabel(label) {
+  return '20' + yearSuffixFromLabel(label);
+}
+
+/* How granular is the user's selection for each year?
+   Weekly if any weeks are ticked, monthly if months are ticked, otherwise yearly. */
+function perYearFinestGrain(filter) {
+  const years = filter.years || [];
+  const map = {};
+  years.forEach(y => {
+    const wCount = (filter.eeks || filter.weeks?.[y] || []).length;
+    const mCount = (filter.months?.[y] || []).length;
+    if (wCount > 0) map[y] = 'weekly';
+    else if (mCount > 0) map[y] = 'monthly';
+    else map[y] = 'yearly';
+  });
+  return map;
+}
+
+/* Coarsest grain that all selected years can support. */
+function effGrainFor(filter) {
+  const map = perYearFinestGrain(filter);
+  const vals = Object.values(map);
+  if (vals.length === 0) return 'monthly';
+  const rank = { weekly: 3, monthly: 2, yearly: 1 };
+  const min = Math.min(...vals.map(v => rank[v]));
+  return Object.keys(rank).find(k => rank[k] === min);
+}
+
+/* Yearly bars, respecting weekly ticks when present. */
+function deriveYearlyFromFilter(filter, fm) {
+  const map = perYearFinestGrain(filter);
+  const buckets = {};
+  const ensure = (y) => {
+    const full = '20' + y;
+    if (!buckets[full]) buckets[full] = { year: full, rev: 0, orders: 0 };
+    return buckets[full];
+  };
+  Object.entries(map).forEach(([y, grain]) => {
+    if (grain === 'weekly') {
+      const set = new Set(filter.weeks?.[y] || []);
+      weekly.forEach(w => {
+        if (set.has(w.w)) { const b = ensure(y); b.rev += w.rev || 0; b.orders += w.orders || 0; }
+      });
+    } else {
+      fm.forEach(m => {
+        if (m.m.endsWith(y)) { const b = ensure(y); b.rev += m.rev || 0; b.orders += m.orders || 0; }
+      });
+    }
+  });
+  return Object.values(buckets).sort((a, b) => a.year.localeCompare(b.year));
+}
+
+/* 'dd/mm/yy' -> 'Apr 26' */
+function weekOwnerMonth(weekRow) {
+  const parts = String(weekRow.start).split('/');
+  const mo = parseInt(parts[1], 10);
+  const yy = parts[2];
+  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${names[mo - 1]} ${yy}`;
+}
+
+/* { 'Apr 26': ['W15 26', ...] } */
+const WEEKS_BY_MONTH = (() => {
+  const map = {};
+  weekly.forEach(w => {
+    const m = weekOwnerMonth(w);
+    if (!map[m]) map[m] = [];
+    map[m].push(w.w);
+  });
+  return map;
+})();
 
 /* ── CSS ─────────────────────────────────────────────────────── */
 const css = `
@@ -258,8 +339,8 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   box-shadow:none;
   transition:margin .32s cubic-bezier(.34,1.3,.44,1),border-radius .32s cubic-bezier(.34,1.3,.44,1);
 }
-.tb-row1{display:contents;}/* on desktop, children flow normally in the flex topbar */
-.tb-titlewrap{}/* no special styles on desktop */
+.tb-row1{display:contents;}
+.tb-titlewrap{}
 .tb-title{font-size:14.5px;font-weight:700;color:var(--text);letter-spacing:-.1px;}
 .tb-sub{font-size:10.5px;color:var(--muted);margin-top:1px;display:flex;align-items:center;gap:5px;}
 .tb-sep{color:var(--border2);}
@@ -504,12 +585,10 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
     height:auto;width:100%;max-width:100vw;
     overflow-y:auto;overflow-x:hidden;
     -webkit-overflow-scrolling:touch;
-    overscroll-behavior-x:none; /* stop the page from being swiped sideways */
+    overscroll-behavior-x:none;
   }
   .app{height:auto;min-height:100vh;min-height:100dvh;overflow:visible;max-width:100vw;}
   .main{overflow:visible;min-height:0;max-width:100vw;}
-  /* Belt-and-braces: nothing in the content column may force the page wider
-     than the viewport (this is what causes the "zoomed out" look). */
   .page-area,.charts-row,.charts-col,.chart-panel,.kpi-strip,
   .topbar,.filter-bar,.tb-row1,.tb-search{
     max-width:100%;
@@ -527,8 +606,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   .sidebar.collapsed .nav-label,
   .sidebar.collapsed .sb-footer-stats,
   .sidebar.collapsed .logout-btn-label{display:block !important;}
-  /* On mobile the sidebar is always a full drawer — push logo content
-     right so it never hides behind the mob-toggle (☰/✕) button */
   .sidebar .sb-logo,
   .sidebar.collapsed .sb-logo{
     padding-left:54px !important;
@@ -545,22 +622,19 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   .mob-overlay{z-index:200;}
   .mob-overlay.open{display:block;}
 
-  /* ── TOPBAR: flex-column, two rows max ── */
   .topbar,
   .sidebar.collapsed ~ .main .topbar{
-    position:relative;   /* not sticky on mobile — avoids stacking/overlap glitches */
+    position:relative;
     top:auto;z-index:60;
     margin:0;border-radius:0;border:none;
     border-bottom:1px solid var(--border);
     display:flex;flex-direction:column;
-    /* left pad clears the ☰ hamburger (38px wide + 12px left + 4px gap = 54px) */
     padding:6px 10px 6px 54px;
     height:auto;gap:4px;
     box-shadow:none;background:var(--surface);
     align-items:stretch;
   }
 
-  /* ── ROW 1: page title (left) + action pills (right) ── */
   .tb-row1{
     display:flex;align-items:center;
     justify-content:space-between;
@@ -568,22 +642,18 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   }
   .tb-titlewrap{flex:1;min-width:0;overflow:hidden;}
 
-  /* Title: single line, truncates if very long */
   .tb-title{
     font-size:13px;font-weight:700;color:var(--text);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
     letter-spacing:-.1px;
   }
-  /* Subtitle: wrap allowed, small text */
   .tb-sub{
     font-size:9px;color:var(--muted);
     display:flex;align-items:center;flex-wrap:wrap;
     gap:3px;margin-top:1px;line-height:1.3;
   }
-  /* Hide · separators on mobile — space is tight */
   .tb-sep{display:none;}
 
-  /* Action pills row — always single line */
   .tb-right{
     display:flex;align-items:center;
     gap:4px;flex-shrink:0;flex-wrap:nowrap;
@@ -604,20 +674,17 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
     font-size:8px !important;padding:2px 5px !important;gap:3px !important;
   }
 
-  /* ── ROW 2: search bar — only on non-overview pages ── */
   .tb-search{width:100%;}
   .tb-search input{
     width:100% !important;
-    font-size:16px; /* 16px prevents iOS auto-zoom */
+    font-size:16px;
     padding:6px 10px 6px 28px;
     border-radius:8px;height:34px;
   }
   .tb-search input:focus{width:100% !important;}
 
-  /* Overview has no search row → no bottom gap needed */
   .topbar-overview{padding-bottom:6px;}
 
-  /* ── FILTER BAR: flows directly after topbar in document order ── */
   .filter-bar,
   .sidebar.collapsed ~ .main .filter-bar{
     position:relative !important;
@@ -632,7 +699,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
     border-bottom:1px solid var(--border);
     overflow:visible;
   }
-  /* Row 1: label + year chips + clear button */
   .filter-chips{
     display:flex;gap:5px;align-items:center;
     overflow-x:auto;flex-wrap:nowrap;
@@ -642,7 +708,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   .filter-chip{font-size:9px;padding:3px 8px;min-height:auto;flex-shrink:0;}
   .filter-label{font-size:9px;flex-shrink:0;}
   .filter-clear{padding:3px 7px;font-size:8px;flex-shrink:0;}
-  /* Row 2: last update + last invoice — shown on mobile */
   .filter-meta{
     display:flex !important;
     flex-direction:row;
@@ -693,10 +758,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   .gauge-val{font-size:16px;}
   .ledger-search{font-size:10px;}
   .ledger-count{font-size:8px;}
-
-  /* tb-print-btn, tb-time, live-badge are intentionally SHOWN on mobile — see topbar spec */
-
-  /* filter-bar: position:relative — handled in mobile block above */
 
   .page-area,
   .sidebar.collapsed ~ .main .page-area{padding:12px !important;}
@@ -832,7 +893,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   .cp-skeleton{display:none !important;}
 }
 
-/* ── MOBILE RESPONSIVENESS FIXES (appended last) ── */
 .scroll-hint,.scroll-fade{display:none;}
 
 @media(max-width:900px){
@@ -856,8 +916,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 
   .filter-bar{overflow:visible;}
   .filter-chips{overflow-x:auto !important;overflow-y:hidden !important;-webkit-overflow-scrolling:touch;}
-
-  /* tb-right / tb-search layout is handled by the grid topbar rules above */
 
   .page-area,.page-area.fin-scroll,
   .sidebar.collapsed ~ .main .page-area{padding-bottom:100px !important;}
@@ -1129,17 +1187,19 @@ function downloadCSV(filename, headers, rows) {
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
-function ExportExcelButton({ filename, headers, rows }) {
+function ExportExcelButton({ filename, headers, rows, grain }) {
+  const prefix = grain ? `${grain}_` : '';
+  const finalName = prefix && !filename.startsWith(prefix) ? prefix + filename : filename;
   const handleExport = () => {
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Data');
-    XLSX.writeFile(wb, filename);
+    XLSX.writeFile(wb, finalName);
   };
   return (
     <span style={{display:'inline-flex',gap:5}}>
       <button className="panel-btn" onClick={handleExport} title="Export to Excel">⬇ Excel</button>
-      <button className="panel-btn" style={{color:'var(--accent2)',background:'rgba(64,188,243,0.08)',borderColor:'rgba(64,188,243,0.25)'}} onClick={() => downloadCSV(filename, headers, rows)} title="Export to CSV">⬇ CSV</button>
+      <button className="panel-btn" style={{color:'var(--accent2)',background:'rgba(64,188,243,0.08)',borderColor:'rgba(64,188,243,0.25)'}} onClick={() => downloadCSV(finalName, headers, rows)} title="Export to CSV">⬇ CSV</button>
     </span>
   );
 }
@@ -1148,13 +1208,17 @@ function ExportExcelButton({ filename, headers, rows }) {
 function DateFilterBar({ filter, setFilter }) {
   const years = [...new Set(monthly.map(m => m.m.split(' ')[1]))].sort();
   const [expandedYear, setExpandedYear] = useState(null);
+  const [expandedMonth, setExpandedMonth] = useState(null);
   const popRef = useRef(null);
 
   useEffect(() => {
     const handler = (e) => {
-      if (popRef.current && !popRef.current.contains(e.target)) setExpandedYear(null);
+      if (popRef.current && !popRef.current.contains(e.target)) {
+        setExpandedYear(null);
+        setExpandedMonth(null);
+      }
     };
-    const closeOnScroll = () => setExpandedYear(null);
+    const closeOnScroll = () => { setExpandedYear(null); setExpandedMonth(null); };
     document.addEventListener('mousedown', handler);
     document.addEventListener('touchstart', handler, { passive: true });
     window.addEventListener('scroll', closeOnScroll, { passive: true });
@@ -1165,40 +1229,108 @@ function DateFilterBar({ filter, setFilter }) {
     };
   }, []);
 
+  // Reset nested month expansion when the year popover switches
+  useEffect(() => { setExpandedMonth(null); }, [expandedYear]);
+
   const toggleYear = (yr) => {
-    const newYears = filter.years.includes(yr) ? filter.years.filter(y=>y!==yr) : [...filter.years,yr];
-    const newMonths = {...filter.months};
-    if (!newYears.includes(yr)) delete newMonths[yr];
-    setFilter({years:newYears,months:newMonths});
+    const isActive = filter.years.includes(yr);
+    if (isActive) {
+      const newYears = filter.years.filter(y => y !== yr);
+      const newMonths = { ...filter.months }; delete newMonths[yr];
+      const newWeeks = { ...filter.weeks }; delete newWeeks[yr];
+      setFilter({ years: newYears, months: newMonths, weeks: newWeeks });
+    } else {
+      setFilter({
+        years: [...filter.years, yr],
+        months: { ...filter.months, [yr]: filter.months[yr] || [] },
+        weeks: { ...filter.weeks, [yr]: filter.weeks[yr] || [] }
+      });
+    }
   };
 
   const toggleMonth = (yr, m) => {
     const ym = filter.months[yr] || [];
-    const newYm = ym.includes(m) ? ym.filter(x=>x!==m) : [...ym,m];
-    setFilter({...filter,months:{...filter.months,[yr]:newYm}});
+    const isTicked = ym.includes(m);
+    const newYm = isTicked ? ym.filter(x => x !== m) : [...ym, m];
+
+    let weeksForYear = filter.weeks?.[yr] || [];
+    if (isTicked) {
+      const monthWeeks = WEEKS_BY_MONTH[m] || [];
+      weeksForYear = weeksForYear.filter(w => !monthWeeks.includes(w));
+    }
+
+    setFilter({
+      ...filter,
+      months: { ...filter.months, [yr]: newYm },
+      weeks: { ...filter.weeks, [yr]: weeksForYear }
+    });
+  };
+
+  const toggleWeek = (yr, weekLabel, ownerMonth) => {
+    const currentWeeks = filter.weeks?.[yr] || [];
+    const isTicked = currentWeeks.includes(weekLabel);
+    const newWeeks = isTicked ? currentWeeks.filter(w => w !== weekLabel) : [...currentWeeks, weekLabel];
+
+    const currentMonths = filter.months?.[yr] || [];
+    let newMonths = currentMonths;
+
+    if (!isTicked) {
+      // Auto-tick the parent month
+      if (!currentMonths.includes(ownerMonth)) newMonths = [...currentMonths, ownerMonth];
+    } else {
+      // Unticking a week — if no other week of this month remains, drop the month
+      const weeksOfMonth = WEEKS_BY_MONTH[ownerMonth] || [];
+      const stillTicked = weeksOfMonth.some(w => newWeeks.includes(w));
+      if (!stillTicked) newMonths = currentMonths.filter(m => m !== ownerMonth);
+    }
+
+    setFilter({
+      ...filter,
+      months: { ...filter.months, [yr]: newMonths },
+      weeks: { ...filter.weeks, [yr]: newWeeks }
+    });
   };
 
   const selectAllMonths = (yr) => {
     const allMonths = monthly.filter(m => m.m.includes(yr)).map(m => m.m);
-    setFilter({...filter, months:{...filter.months,[yr]:allMonths}});
+    setFilter({ ...filter, months: { ...filter.months, [yr]: allMonths } });
+  };
+  const clearMonths = (yr) => {
+    setFilter({
+      ...filter,
+      months: { ...filter.months, [yr]: [] },
+      weeks: { ...filter.weeks, [yr]: [] }
+    });
   };
 
-  const clearMonths = (yr) => {
-    setFilter({...filter, months:{...filter.months,[yr]:[]}});
-  };
+  const eff = effGrainFor(filter);
+  const hasBothYears = filter.years.includes('25') && filter.years.includes('26');
+  const y26HasWeeks = (filter.weeks?.['26'] || []).length > 0;
+  const showCrossYearNotice = hasBothYears && y26HasWeeks && eff !== 'weekly';
+  const showWeeklyBadge = eff === 'weekly';
 
   return (
     <div className="filter-bar" ref={popRef} style={{ position:'relative', overflow:'visible', zIndex:100 }}>
       <span className="filter-label">🔍 Filter</span>
+      {showWeeklyBadge && (
+        <span className="cp-tag" style={{ background:'rgba(64,188,243,0.10)', color:'var(--accent2)', borderColor:'rgba(64,188,243,0.30)' }}>
+          Weekly view
+        </span>
+      )}
       <div className="filter-chips" style={{ display:'flex', gap:'6px', flexWrap:'nowrap', alignItems:'center', overflow:'visible', padding:'4px 0', flex:1, minWidth:0, position:'relative' }}>
         {years.map(yr => {
           const active = filter.years.includes(yr);
           const mc = (filter.months[yr]||[]).length;
+          const wc = (filter.weeks?.[yr]||[]).length;
           const isExpanded = expandedYear === yr;
+          const summary = [
+            mc > 0 ? `${mc}m` : null,
+            wc > 0 ? `${wc}w` : null
+          ].filter(Boolean).join(' · ');
           return (
             <div key={yr} style={{ position:'relative', display:'inline-flex', alignItems:'center', gap:3, zIndex: isExpanded ? 9999 : 1 }}>
               <button className={`filter-chip${active?' active':''}`} onClick={() => toggleYear(yr)} style={{ whiteSpace:'nowrap' }}>
-                {active ? '☑' : '☐'} 20{yr}{active && mc > 0 ? ` (${mc}m)` : ''}
+                {active ? '☑' : '☐'} 20{yr}{active && summary ? ` (${summary})` : ''}
               </button>
               {active && (
                 <button style={{ padding:'2px 5px', border:'1px solid var(--border)', borderRadius:4, background:'var(--surface3)', cursor:'pointer', fontSize:9, color:'var(--muted)', flexShrink:0 }}
@@ -1208,12 +1340,12 @@ function DateFilterBar({ filter, setFilter }) {
               )}
               {isExpanded && (
                 <div
-                  style={{ position:'fixed', marginTop:'4px', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:10, zIndex:99999, boxShadow:'0 8px 32px rgba(0,0,0,0.25)', minWidth:220, maxWidth:320, maxHeight:350, overflowY:'auto', transform:'translateY(4px)' }}
+                  style={{ position:'fixed', marginTop:'4px', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:10, zIndex:99999, boxShadow:'0 8px 32px rgba(0,0,0,0.25)', minWidth:240, maxWidth:340, maxHeight:420, overflowY:'auto', transform:'translateY(4px)' }}
                   onClick={(e) => e.stopPropagation()}
                   ref={(el) => {
                     if (el) {
                       const rect = el.parentElement.getBoundingClientRect();
-                      const w = el.offsetWidth || 260;
+                      const w = el.offsetWidth || 280;
                       el.style.top = (rect.bottom + 4) + 'px';
                       el.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8)) + 'px';
                     }
@@ -1223,16 +1355,64 @@ function DateFilterBar({ filter, setFilter }) {
                     <button onClick={() => selectAllMonths(yr)} style={{ padding:'3px 10px', border:'1px solid var(--accent)', borderRadius:4, background:'rgba(64,188,243,0.08)', color:'var(--accent2)', cursor:'pointer', fontSize:10, fontWeight:600, fontFamily:'inherit' }}>Select All</button>
                     <button onClick={() => clearMonths(yr)} style={{ padding:'3px 10px', border:'1px solid var(--muted)', borderRadius:4, background:'transparent', color:'var(--muted)', cursor:'pointer', fontSize:10, fontFamily:'inherit' }}>Clear</button>
                   </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:2, maxHeight:200, overflowY:'auto' }}>
+                  <div style={{ display:'flex', flexDirection:'column', gap:1, maxHeight:300, overflowY:'auto' }}>
                     {monthly.filter(m => m.m.includes(yr)).map(({m}) => {
                       const sel = (filter.months[yr]||[]).includes(m);
+                      const monthWeeks = yr === '26' ? (WEEKS_BY_MONTH[m] || []) : [];
+                      const hasWeeks = monthWeeks.length > 0;
+                      const isMonthExpanded = expandedMonth === m;
+                      const tickedWeeks = filter.weeks?.[yr] || [];
+
                       return (
-                        <label key={m} style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 6px', borderRadius:4, cursor:'pointer', background: sel ? 'rgba(64,188,243,.08)' : 'transparent', fontSize:10, fontFamily:'inherit', transition:'background .14s' }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = sel ? 'rgba(64,188,243,.15)' : 'rgba(64,188,243,.05)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = sel ? 'rgba(64,188,243,.08)' : 'transparent'}>
-                          <input type="checkbox" checked={sel} onChange={() => toggleMonth(yr, m)} style={{ width:12, height:12, cursor:'pointer', accentColor:'var(--accent)', flexShrink:0 }} />
-                          <span style={{ whiteSpace:'nowrap' }}>{m}</span>
-                        </label>
+                        <div key={m}>
+                          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                            <label style={{
+                              flex:1, display:'flex', alignItems:'center', gap:6,
+                              padding:'4px 8px', borderRadius:4, cursor:'pointer',
+                              background: sel ? 'rgba(64,188,243,.08)' : 'transparent',
+                              fontSize:11, fontFamily:'inherit', transition:'background .14s'
+                            }}
+                              onMouseEnter={(e) => e.currentTarget.style.background = sel ? 'rgba(64,188,243,.15)' : 'rgba(64,188,243,.05)'}
+                              onMouseLeave={(e) => e.currentTarget.style.background = sel ? 'rgba(64,188,243,.08)' : 'transparent'}>
+                              <input type="checkbox" checked={sel} onChange={() => toggleMonth(yr, m)}
+                                style={{ width:12, height:12, cursor:'pointer', accentColor:'var(--accent)', flexShrink:0 }} />
+                              <span style={{ whiteSpace:'nowrap' }}>{m}</span>
+                            </label>
+                            {hasWeeks && (
+                              <button onClick={() => setExpandedMonth(isMonthExpanded ? null : m)}
+                                title={isMonthExpanded ? 'Hide weeks' : 'Show weeks'}
+                                style={{
+                                  border:'none', background:'transparent', cursor:'pointer',
+                                  fontSize:10, color:'var(--muted)', padding:'2px 6px', borderRadius:4,
+                                  fontFamily:'inherit'
+                                }}>
+                                {isMonthExpanded ? '▾' : '▸'}
+                              </button>
+                            )}
+                          </div>
+                          {isMonthExpanded && (
+                            <div style={{ paddingLeft:22, display:'flex', flexDirection:'column', gap:1, marginTop:2, marginBottom:4 }}>
+                              {monthWeeks.map(w => {
+                                const wTicked = tickedWeeks.includes(w);
+                                return (
+                                  <label key={w} style={{
+                                    display:'flex', alignItems:'center', gap:6,
+                                    padding:'3px 6px', borderRadius:4, cursor:'pointer',
+                                    fontSize:10.5, fontFamily:'inherit',
+                                    background: wTicked ? 'rgba(64,188,243,.10)' : 'transparent',
+                                    transition:'background .14s'
+                                  }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = wTicked ? 'rgba(64,188,243,.18)' : 'rgba(64,188,243,.05)'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = wTicked ? 'rgba(64,188,243,.10)' : 'transparent'}>
+                                    <input type="checkbox" checked={wTicked} onChange={() => toggleWeek(yr, w, m)}
+                                      style={{ width:11, height:11, cursor:'pointer', accentColor:'var(--accent)', flexShrink:0 }} />
+                                    <span style={{ color: wTicked ? 'var(--accent2)' : 'var(--muted)', fontWeight: wTicked ? 600 : 500 }}>{w}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -1244,14 +1424,33 @@ function DateFilterBar({ filter, setFilter }) {
         {filter.years.length > 0 && (
           <>
             <div className="filter-divider"/>
-            <button className="filter-clear" onClick={() => setFilter({years:[],months:{}})} style={{ flexShrink:0 }}>✕ Clear</button>
+            <button className="filter-clear" onClick={() => setFilter({years:[],months:{},weeks:{}})} style={{ flexShrink:0 }}>✕ Clear</button>
           </>
+        )}
+        {showCrossYearNotice && (
+          <span style={{ fontSize:9, color:'var(--amber)', fontWeight:600, whiteSpace:'nowrap', marginLeft:'auto', paddingRight:6 }}>
+            ⚠ 2025 has no weekly data — 2026 shown at {eff} level
+          </span>
         )}
       </div>
       <div className="filter-meta">
         <div className="filter-meta-row">Last update: <strong>{lastUpdated}</strong></div>
         <div className="filter-meta-row">Last invoice: <strong>{maxFactuurDatum}</strong></div>
       </div>
+    </div>
+  );
+}
+
+/* ── KPI NOTE (small reminder above the KPI strip) ───────────── */
+function KpiNote() {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, marginBottom:-2 }}>
+      <span className="cp-tag" style={{ background:'rgba(64,188,243,0.08)', color:'var(--accent2)', borderColor:'rgba(64,188,243,0.25)' }}>
+        Period-aware
+      </span>
+      <span style={{ fontSize:10, color:'var(--muted)' }}>
+        KPIs match your selected period
+      </span>
     </div>
   );
 }
@@ -1410,33 +1609,51 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
   );
 }
 
-function Revenue({ fm, label }) {
-  const totalRev=fm.reduce((s,m)=>s+m.rev,0);
-  const totalOrders=fm.reduce((s,m)=>s+m.orders,0);
-  const best=fm.length?fm.reduce((b,c)=>c.rev>b.rev?c:b,fm[0]):null;
-  const avg=fm.length?totalRev/fm.length:0;
+function Revenue({ fm, label, effGrain, filter }) {
+  const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
+  const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
+  const useYearly = effGrain === 'yearly';
+
+  const periods = useMemo(() => {
+    if (useWeekly) {
+      const set = new Set(tickedWeeks);
+      return weekly.filter(w => set.has(w.w)).map(w => ({ key: w.w, rev: w.rev, orders: w.orders }));
+    }
+    if (useYearly) {
+      return deriveYearlyFromFilter(filter, fm).map(y => ({ key: y.year, rev: y.rev, orders: y.orders }));
+    }
+    return fm.map(m => ({ key: m.m, rev: m.rev, orders: m.orders }));
+  }, [useWeekly, useYearly, tickedWeeks, fm, filter]);
+
+  const periodLabel = useWeekly ? 'Week' : useYearly ? 'Year' : 'Month';
+
+  const totalRev=periods.reduce((s,m)=>s+m.rev,0);
+  const totalOrders=periods.reduce((s,m)=>s+m.orders,0);
+  const best=periods.length?periods.reduce((b,c)=>c.rev>b.rev?c:b,periods[0]):null;
+  const avg=periods.length?totalRev/periods.length:0;
   const [selectedMonth,setSelectedMonth]=useState(null);
   const [showPrevOverlay,setShowPrevOverlay]=useState(false);
   const prevPeriod=useMemo(()=>{
+    if(useWeekly || useYearly) return [];
     if(!fm.length)return[];
     const startIdx=monthly.findIndex(m=>m.m===fm[0].m);
     if(startIdx<=0)return[];
     const from=Math.max(0,startIdx-fm.length);
     return monthly.slice(from,startIdx);
-  },[fm]);
-  const canShowPrev=prevPeriod.length>0;
+  },[fm, useWeekly, useYearly]);
+  const canShowPrev=!useWeekly && !useYearly && prevPeriod.length>0;
   const prevTotal=prevPeriod.reduce((s,m)=>s+m.rev,0);
   const periodDelta=(canShowPrev&&prevTotal)?((totalRev-prevTotal)/prevTotal)*100:null;
 
   const barOpt=withDataZoom(withCrosshair({
     tooltip:{trigger:'axis',formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;p.forEach(s=>{html+=`${s.marker} ${s.seriesName}: ${s.value!=null?fmtFull(s.value):'—'}<br/>`;});return html;}},
     legend:showPrevOverlay&&canShowPrev?{bottom:0,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false}:undefined,
-    grid:{left:'3%',right:'4%',bottom:isMobileViewport()&&fm.length>3?'28%':(showPrevOverlay&&canShowPrev?'18%':'12%'),top:'8%',containLabel:true},
-    xAxis:{type:'category',data:fm.map(d=>d.m),axisLabel:catAxisLabel(fm.length,9)},
+    grid:{left:'3%',right:'4%',bottom:isMobileViewport()&&periods.length>3?'28%':(showPrevOverlay&&canShowPrev?'18%':'12%'),top:'8%',containLabel:true},
+    xAxis:{type:'category',data:periods.map(d=>d.key),axisLabel:catAxisLabel(periods.length,9)},
     yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     series:[
-      {name:'Current period',type:'bar',data:fm.map(d=>({value:d.rev,itemStyle:{color:selectedMonth&&selectedMonth!==d.m?'rgba(8,145,178,0.2)':'rgba(8,145,178,0.75)',borderRadius:[3,3,0,0]}})),barMaxWidth:28},
-      ...(showPrevOverlay&&canShowPrev?[{name:'Previous period',type:'line',data:fm.map((_,i)=>prevPeriod[i]?prevPeriod[i].rev:null),smooth:true,symbol:'circle',symbolSize:5,lineStyle:{color:'#E5A93D',width:2,type:'dashed'},itemStyle:{color:'#E5A93D'}}]:[])
+      {name:'Current period',type:'bar',data:periods.map(d=>({value:d.rev,itemStyle:{color:selectedMonth&&selectedMonth!==d.key?'rgba(8,145,178,0.2)':'rgba(8,145,178,0.75)',borderRadius:[3,3,0,0]}})),barMaxWidth:28},
+      ...(showPrevOverlay&&canShowPrev?[{name:'Previous period',type:'line',data:periods.map((_,i)=>prevPeriod[i]?prevPeriod[i].rev:null),smooth:true,symbol:'circle',symbolSize:5,lineStyle:{color:'#E5A93D',width:2,type:'dashed'},itemStyle:{color:'#E5A93D'}}]:[])
     ]
   }));
 
@@ -1445,7 +1662,7 @@ function Revenue({ fm, label }) {
       ↔ {showPrevOverlay?'Hide':'vs'} Previous period
     </button>
   );
-  const revenueInsight=(()=>{const parts=[];if(periodDelta!=null)parts.push(`Revenue ${periodDelta>=0?'up':'down'} ${Math.abs(periodDelta).toFixed(1)}% vs the previous ${fm.length}-month period`);if(best)parts.push(`best month: ${best.m} (${fmtFull(best.rev)})`);return parts.length?parts.join(' · '):null;})();
+  const revenueInsight=(()=>{const parts=[];if(periodDelta!=null)parts.push(`Revenue ${periodDelta>=0?'up':'down'} ${Math.abs(periodDelta).toFixed(1)}% vs the previous period`);if(best)parts.push(`Best ${periodLabel.toLowerCase()}: ${best.key} (${fmtFull(best.rev)})`);return parts.length?parts.join(' · '):null;})();
 
   const m25=fm.filter(m=>m.m.includes('25')),m26=fm.filter(m=>m.m.includes('26'));
   const order=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1465,40 +1682,61 @@ function Revenue({ fm, label }) {
   }));
   const ordersOpt=withDataZoom(withCrosshair({
     tooltip:{trigger:'axis',formatter:p=>`<strong>${p[0].name}</strong><br/>Orders: ${fmtN(p[0].value)}`},
-    grid:{left:'3%',right:'4%',bottom:isMobileViewport()&&fm.length>3?'28%':'12%',top:'8%',containLabel:true},
-    xAxis:{type:'category',data:fm.map(d=>d.m),axisLabel:catAxisLabel(fm.length,9),axisLine:{lineStyle:{color:'#DDE6E9'}}},
+    grid:{left:'3%',right:'4%',bottom:isMobileViewport()&&periods.length>3?'28%':'12%',top:'8%',containLabel:true},
+    xAxis:{type:'category',data:periods.map(d=>d.key),axisLabel:catAxisLabel(periods.length,9),axisLine:{lineStyle:{color:'#DDE6E9'}}},
     yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtN(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    series:[{type:'line',data:fm.map(d=>d.orders),step:'middle',symbol:'circle',symbolSize:(val,params)=>{const m=fm[params.dataIndex]?.m;return selectedMonth&&selectedMonth===m?8:5;},lineStyle:{color:'#0369A1',width:2},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(3,105,161,.18)'},{offset:1,color:'rgba(3,105,161,.01)'}]}},itemStyle:{color:'#0369A1',borderColor:'#fff',borderWidth:1.5},emphasis:{itemStyle:{color:'#0369A1'}}}]
+    series:[{type:'line',data:periods.map(d=>d.orders),step:'middle',symbol:'circle',symbolSize:(val,params)=>{const m=periods[params.dataIndex]?.key;return selectedMonth&&selectedMonth===m?8:5;},lineStyle:{color:'#0369A1',width:2},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(3,105,161,.18)'},{offset:1,color:'rgba(3,105,161,.01)'}]}},itemStyle:{color:'#0369A1',borderColor:'#fff',borderWidth:1.5},emphasis:{itemStyle:{color:'#0369A1'}}}]
   },fmtN));
 
-  const barTbl={headers:['Month','Revenue','Orders','Avg Order Value'],rows:fm.map(m=>[m.m,fmtFull(m.rev),fmtN(m.orders),fmtFull(Math.round(m.rev/(m.orders||1)))])};
-  const ordTbl={headers:['Month','Orders'],rows:fm.map(m=>[m.m,fmtN(m.orders)])};
-  const handleMonthClick=(p)=>{const month=fm[p.dataIndex]?.m;setSelectedMonth(selectedMonth===month?null:month);};
+  const barTbl={headers:[periodLabel,'Revenue','Orders','Avg Order Value'],rows:periods.map(m=>[m.key,fmtFull(m.rev),fmtN(m.orders),fmtFull(Math.round(m.rev/(m.orders||1)))])};
+  const ordTbl={headers:[periodLabel,'Orders'],rows:periods.map(m=>[m.key,fmtN(m.orders)])};
+  const handleMonthClick=(p)=>{const month=periods[p.dataIndex]?.key;setSelectedMonth(selectedMonth===month?null:month);};
+
+  const showYearOverlay = !useWeekly && !useYearly;
+  const granTag = useWeekly ? 'W' : useYearly ? 'Y' : 'M';
 
   return (
     <div className="page-area" key="revenue">
+      <KpiNote/>
       <div className="kpi-strip">
         <div className="kpi-card blue"><div className="kpi-lbl">Total Revenue</div><div className="kpi-val sm">{fmtFull(totalRev)}</div><div className="kpi-chg">{fmtN(totalOrders)} transactions</div></div>
-        <div className="kpi-card teal"><div className="kpi-lbl">Months Shown</div><div className="kpi-val sm">{fm.length}</div><div className="kpi-chg">Active period</div></div>
-        <div className="kpi-card green"><div className="kpi-lbl">Best Month</div><div className="kpi-val sm">{best?best.m:'—'}</div><div className="kpi-chg">{best?fmtFull(best.rev):''}</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">Avg Monthly</div><div className="kpi-val sm">{fmtFull(avg)}</div><div className="kpi-chg">{fm.length}-month average</div></div>
+        <div className="kpi-card teal"><div className="kpi-lbl">{periodLabel}s Shown</div><div className="kpi-val sm">{periods.length}</div><div className="kpi-chg">Active period</div></div>
+        <div className="kpi-card green"><div className="kpi-lbl">Best {periodLabel}</div><div className="kpi-val sm">{best?best.key:'—'}</div><div className="kpi-chg">{best?fmtFull(best.rev):''}</div></div>
+        <div className="kpi-card amber"><div className="kpi-lbl">Avg / {periodLabel}</div><div className="kpi-val sm">{fmtFull(avg)}</div><div className="kpi-chg">{periods.length}-{periodLabel.toLowerCase()} average</div></div>
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Monthly Revenue" subtitle={label} tag={`${fm.length}m`} flex={1} controls={prevToggleControl} tableHeaders={barTbl.headers} tableRows={barTbl.rows} insight={revenueInsight}><EC option={barOpt} onEvents={{'click':handleMonthClick}}/></Panel>
-          <Panel title="2025 vs 2026" subtitle="Year overlay" flex={1}><EC option={cmpOpt}/></Panel>
+          <Panel title="Revenue Over Time" subtitle={`${label} · ${periods.length} ${periodLabel.toLowerCase()}${periods.length===1?'':'s'}`} tag={`${periods.length}${granTag}`} flex={1} controls={prevToggleControl} tableHeaders={barTbl.headers} tableRows={barTbl.rows} insight={revenueInsight}><EC option={barOpt} onEvents={{'click':handleMonthClick}}/></Panel>
+          {showYearOverlay && <Panel title="2025 vs 2026" subtitle="Year overlay" flex={1}><EC option={cmpOpt}/></Panel>}
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Order Volume" subtitle="Monthly transactions" flex={1} tableHeaders={ordTbl.headers} tableRows={ordTbl.rows}><EC option={ordersOpt} onEvents={{'click':handleMonthClick}}/></Panel>
+          <Panel title="Order Volume" subtitle={`Per ${periodLabel.toLowerCase()}`} flex={1} tableHeaders={ordTbl.headers} tableRows={ordTbl.rows}><EC option={ordersOpt} onEvents={{'click':handleMonthClick}}/></Panel>
         </div>
       </div>
     </div>
   );
 }
 
-function SalesReps({ fm, label, highlightQuery }) {
-  const months=fm.map(m=>m.m);
-  const reps=useMemo(()=>{const g={};salesrepsRaw.filter(r=>months.includes(r.m)).forEach(r=>{const k=r.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};g[k].rev+=r.rev;g[k].qty+=r.qty;g[k].orders+=r.orders;});return Object.values(g).sort((a,b)=>b.rev-a.rev);},[months]);
+function SalesReps({ fm, label, highlightQuery, effGrain, filter }) {
+  const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
+  const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
+  const useYearly = effGrain === 'yearly';
+  const months = fm.map(m => m.m);
+  const periodLabel = useWeekly ? 'Week' : useYearly ? 'Year' : 'Month';
+
+  const reps=useMemo(()=>{
+    let rows;
+    if (useWeekly) {
+      const set = new Set(tickedWeeks);
+      rows = salesrepsWeeklyRaw.filter(r => set.has(r.w));
+    } else {
+      rows = salesrepsRaw.filter(r=>months.includes(r.m));
+    }
+    const g={};
+    rows.forEach(r=>{const k=r.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};g[k].rev+=r.rev;g[k].qty+=r.qty;g[k].orders+=r.orders;});
+    return Object.values(g).sort((a,b)=>b.rev-a.rev);
+  },[months, useWeekly, tickedWeeks]);
+
   const totalRev=reps.reduce((s,r)=>s+r.rev,0);
   const top3=reps.slice(0,3);
   const [selRep,setSelRep]=useState(null);
@@ -1516,6 +1754,7 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
   const leaderboardRows=selRep?tbl.rows.filter(r=>r[1]===selRep):tbl.rows;
   const repsInsight=reps[0]?`${reps[0].n} leads with ${fmtFull(reps[0].rev)}${totalRev>0?` (${(reps[0].rev/totalRev*100).toFixed(0)}% of shown revenue)`:''}`  :null;
 
+  // Sales-per-rep-by-category stays monthly only (no weekly source)
   const smPeriods=useMemo(()=>{const seen=new Set();salesmanCategorySales.forEach(s=>(s.monthly||[]).forEach(mo=>seen.add(mo.m)));return[...seen];},[]);
   const [smPeriod,setSmPeriod]=useState('All');
   const smRevFor=(rec,period)=>{if(!rec)return 0;if(period==='All')return rec.rev;const mo=(rec.monthly||[]).find(m=>m.m===period);return mo?mo.rev:0;};
@@ -1556,6 +1795,7 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
 
   return (
     <div className="page-area" key="reps">
+      <KpiNote/>
       <div className="kpi-strip">
         <div className="kpi-card blue"><div className="kpi-lbl">#1 — {top3[0]?.n?.split(' ')[0]||'—'}</div><div className="kpi-val sm">{fmtFull(top3[0]?.rev||0)}</div><div className="kpi-chg">{fmtN(top3[0]?.orders||0)} orders</div></div>
         <div className="kpi-card teal"><div className="kpi-lbl">#2 — {top3[1]?.n?.split(' ')[0]||'—'}</div><div className="kpi-val sm">{fmtFull(top3[1]?.rev||0)}</div><div className="kpi-chg">{fmtN(top3[1]?.orders||0)} orders</div></div>
@@ -1564,7 +1804,7 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Omzet per Verkoper" subtitle={label} flex={1} controls={<ExportExcelButton filename="omzet_per_verkoper.xlsx" headers={tbl.headers} rows={tbl.rows}/>} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={repsInsight}><EC option={barOpt} onEvents={{'click':handleRepClick}}/></Panel>
+          <Panel title="Omzet per Verkoper" subtitle={`${label} · ${periodLabel.toLowerCase()}-based`} flex={1} controls={<ExportExcelButton grain={effGrain} filename="omzet_per_verkoper.xlsx" headers={tbl.headers} rows={tbl.rows}/>} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={repsInsight}><EC option={barOpt} onEvents={{'click':handleRepClick}}/></Panel>
           <Panel title="Verkoper Leaderboard" subtitle={selRep?'Filtered · click the chart to change':'Ranked by revenue · click a bar above to drill in'} flex={1}>
             <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
               {selRep&&(<div className="drill-chip">Showing: {selRep}<button onClick={()=>setSelRep(null)} title="Clear selection">✕</button></div>)}
@@ -1573,7 +1813,7 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Sales per Verkoper by Category" subtitle="Stacked by category" flex={1} controls={<>{smPeriodControl}<ExportExcelButton filename="sales_per_verkoper_by_category.xlsx" headers={smTbl.headers} rows={smTbl.rows}/></>} tableHeaders={smTbl.headers} tableRows={smTbl.rows}><EC option={smOpt}/></Panel>
+          <Panel title="Sales per Verkoper by Category" subtitle="Stacked by category · monthly periods" flex={1} controls={<>{smPeriodControl}<ExportExcelButton filename="sales_per_verkoper_by_category.xlsx" headers={smTbl.headers} rows={smTbl.rows}/></>} tableHeaders={smTbl.headers} tableRows={smTbl.rows}><EC option={smOpt}/></Panel>
           <Panel title="Veevoeder & Melkpoeder" subtitle={vmSalesman==='All'?'Revenue vs tonnage':`Revenue vs tonnage — ${vmSalesman}`} flex={1} controls={vmControls} tableHeaders={vmTbl.headers} tableRows={vmTbl.rows}><EC option={vmOpt}/></Panel>
         </div>
       </div>
@@ -1581,10 +1821,29 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
   );
 }
 
-function Customers({ fm, label, highlightQuery }) {
+function Customers({ fm, label, highlightQuery, effGrain, filter }) {
+  const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
+  const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
   const months=fm.map(m=>m.m);
-  const totalRevenue=fm.reduce((s,m)=>s+m.rev,0);
-  const custs=useMemo(()=>{const g={};customersRaw.filter(c=>months.includes(c.m)).forEach(c=>{if(!g[c.n])g[c.n]={n:c.n,rev:0,orders:0};g[c.n].rev+=c.rev;g[c.n].orders+=c.orders;});return Object.values(g).sort((a,b)=>b.rev-a.rev);},[months]);
+  const periodLabel = useWeekly ? 'Week' : effGrain === 'yearly' ? 'Year' : 'Month';
+
+  const totalRevenue = useWeekly
+    ? (() => { const set = new Set(tickedWeeks); return customersWeeklyRaw.filter(c => set.has(c.w)).reduce((s,c)=>s+c.rev,0); })()
+    : fm.reduce((s,m)=>s+m.rev,0);
+
+  const custs=useMemo(()=>{
+    let rows;
+    if (useWeekly) {
+      const set = new Set(tickedWeeks);
+      rows = customersWeeklyRaw.filter(c => set.has(c.w));
+    } else {
+      rows = customersRaw.filter(c=>months.includes(c.m));
+    }
+    const g={};
+    rows.forEach(c=>{if(!g[c.n])g[c.n]={n:c.n,rev:0,orders:0};g[c.n].rev+=c.rev;g[c.n].orders+=c.orders;});
+    return Object.values(g).sort((a,b)=>b.rev-a.rev);
+  },[months, useWeekly, tickedWeeks]);
+
   const top15=custs.slice(0,15);
   const top15Rev=top15.reduce((s,c)=>s+c.rev,0);
   const itemsPerPage=15;
@@ -1619,6 +1878,7 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
 
   return (
     <div className="page-area" key="customers">
+      <KpiNote/>
       <div className="kpi-strip">
         <div className="kpi-card blue"><div className="kpi-lbl">Total Customers</div><div className="kpi-val sm">{totalClients.toLocaleString('de-DE')}</div><div className="kpi-chg">Billing accounts</div></div>
         <div className="kpi-card sky"><div className="kpi-lbl">Top Customer</div><div className="kpi-val sm">{custs[0]?.n?.slice(0,16)||'—'}</div><div className="kpi-chg">{fmtFull(custs[0]?.rev||0)}</div></div>
@@ -1627,7 +1887,7 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Customers by Revenue" subtitle={label} flex={1} controls={<ExportExcelButton filename="customers_by_revenue.xlsx" headers={fullTbl.headers} rows={fullTbl.rows}/>} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={customersInsight}>
+          <Panel title="Customers by Revenue" subtitle={`${label} · ${periodLabel.toLowerCase()}-based`} flex={1} controls={<ExportExcelButton grain={effGrain} filename="customers_by_revenue.xlsx" headers={fullTbl.headers} rows={fullTbl.rows}/>} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={customersInsight}>
             <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
               <div style={{flex:1,minHeight:0}}><EC option={barOpt}/></div>
               <PaginationControls/>
@@ -1642,9 +1902,25 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
   );
 }
 
-function Products({ fm, label, highlightQuery }) {
+function Products({ fm, label, highlightQuery, effGrain, filter }) {
+  const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
+  const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
   const months=fm.map(m=>m.m);
-  const prods=useMemo(()=>{const g={};productsRaw.filter(p=>months.includes(p.m)).forEach(p=>{const k=p.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};g[k].rev+=p.rev;g[k].qty+=p.qty;g[k].orders+=p.orders;});return Object.values(g).sort((a,b)=>b.rev-a.rev);},[months]);
+  const periodLabel = useWeekly ? 'Week' : effGrain === 'yearly' ? 'Year' : 'Month';
+
+  const prods=useMemo(()=>{
+    let rows;
+    if (useWeekly) {
+      const set = new Set(tickedWeeks);
+      rows = productsWeeklyRaw.filter(p => set.has(p.w));
+    } else {
+      rows = productsRaw.filter(p=>months.includes(p.m));
+    }
+    const g={};
+    rows.forEach(p=>{const k=p.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};g[k].rev+=p.rev;g[k].qty+=p.qty;g[k].orders+=p.orders;});
+    return Object.values(g).sort((a,b)=>b.rev-a.rev);
+  },[months, useWeekly, tickedWeeks]);
+
   const totalRev=prods.reduce((s,p)=>s+p.rev,0);
   const top5Rev=prods.slice(0,5).reduce((s,p)=>s+p.rev,0);
   const productsInsight=prods.length?`Top product: ${prods[0].n}${totalRev>0?` (${(prods[0].rev/totalRev*100).toFixed(0)}% of revenue)`:''} · Top 5 lines make up ${totalRev>0?(top5Rev/totalRev*100).toFixed(0):0}% of total`:null;
@@ -1706,6 +1982,7 @@ function Products({ fm, label, highlightQuery }) {
 
   return (
     <div className="page-area" key="products">
+      <KpiNote/>
       <div className="kpi-strip">
         <div className="kpi-card blue"><div className="kpi-lbl">#1 Product</div><div className="kpi-val sm">{prods[0]?.n?.split(' - ')[0]||'—'}</div><div className="kpi-chg">{fmtFull(prods[0]?.rev||0)} · {totalRev>0?((prods[0]?.rev||0)/totalRev*100).toFixed(0):0}% share</div></div>
         <div className="kpi-card teal"><div className="kpi-lbl">#2 Product</div><div className="kpi-val sm">{prods[1]?.n?.split(' - ')[0]||'—'}</div><div className="kpi-chg">{fmtFull(prods[1]?.rev||0)} · {totalRev>0?((prods[1]?.rev||0)/totalRev*100).toFixed(0):0}% share</div></div>
@@ -1714,7 +1991,7 @@ function Products({ fm, label, highlightQuery }) {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Top Products by Revenue" subtitle={label} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows} defaultView={highlightQuery?'table':'chart'} searchableTable tableInitialQuery={highlightQuery} insight={productsInsight}>
+          <Panel title="Top Products by Revenue" subtitle={`${label} · ${periodLabel.toLowerCase()}-based`} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows} defaultView={highlightQuery?'table':'chart'} searchableTable tableInitialQuery={highlightQuery} insight={productsInsight}>
             <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
               <div style={{flex:1,minHeight:0}}><EC option={barOpt} onEvents={{'click':handleBarClick}}/></div>
               <PaginationControls/>
@@ -1734,9 +2011,25 @@ function Products({ fm, label, highlightQuery }) {
   );
 }
 
-function Categories({ fm, label, highlightQuery }) {
+function Categories({ fm, label, highlightQuery, effGrain, filter }) {
+  const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
+  const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
   const months=fm.map(m=>m.m);
-  const cats=useMemo(()=>{const g={};categoriesRaw.filter(c=>months.includes(c.m)).forEach(c=>{const k=c.n.trim();if(!g[k])g[k]={n:k,rev:0,orders:0};g[k].rev+=c.rev;g[k].orders+=c.orders;});return Object.values(g).sort((a,b)=>b.rev-a.rev);},[months]);
+  const periodLabel = useWeekly ? 'Week' : effGrain === 'yearly' ? 'Year' : 'Month';
+
+  const cats=useMemo(()=>{
+    let rows;
+    if (useWeekly) {
+      const set = new Set(tickedWeeks);
+      rows = categoriesWeeklyRaw.filter(c => set.has(c.w));
+    } else {
+      rows = categoriesRaw.filter(c=>months.includes(c.m));
+    }
+    const g={};
+    rows.forEach(c=>{const k=c.n.trim();if(!g[k])g[k]={n:k,rev:0,orders:0};g[k].rev+=c.rev;g[k].orders+=c.orders;});
+    return Object.values(g).sort((a,b)=>b.rev-a.rev);
+  },[months, useWeekly, tickedWeeks]);
+
   const totalRev=cats.reduce((s,c)=>s+c.rev,0);
   const donutData=cats.map((d,i)=>({name:d.n,value:d.rev,itemStyle:{color:PALETTE[i%PALETTE.length]}}));
   const donutOpt={tooltip:{...TOOLTIP_STYLE,trigger:'item',formatter:p=>`${p.name}: ${fmtFull(p.value)} (${p.percent}%)`},legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:9},type:'scroll',selectedMode:false},series:[{type:'pie',radius:['48%','70%'],center:['50%','44%'],data:donutData,itemStyle:{borderRadius:3,borderColor:'#fff',borderWidth:2},label:{show:false},emphasis:{scaleSize:6}}]};
@@ -1749,6 +2042,7 @@ function Categories({ fm, label, highlightQuery }) {
 
   return (
     <div className="page-area" key="cats">
+      <KpiNote/>
       <div className="kpi-strip">
         <div className="kpi-card blue"><div className="kpi-lbl">Top Category</div><div className="kpi-val sm">{cats[0]?.n||'—'}</div><div className="kpi-chg">{fmtFull(cats[0]?.rev||0)} · {totalRev>0?((cats[0]?.rev||0)/totalRev*100).toFixed(0):0}%</div></div>
         <div className="kpi-card teal"><div className="kpi-lbl">{cats[1]?.n||'—'}</div><div className="kpi-val sm">{fmtFull(cats[1]?.rev||0)}</div><div className="kpi-chg">{totalRev>0?((cats[1]?.rev||0)/totalRev*100).toFixed(1):0}% share</div></div>
@@ -1757,7 +2051,7 @@ function Categories({ fm, label, highlightQuery }) {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Category Revenue" subtitle={selectedCat?'Filtered · click the donut to change':label} flex={1}>
+          <Panel title="Category Revenue" subtitle={selectedCat?'Filtered · click the donut to change':`${label} · ${periodLabel.toLowerCase()}-based`} flex={1}>
             <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
               {selectedCat&&(<div className="drill-chip">Showing: {selectedCat}<button onClick={()=>setSelectedCat(null)} title="Clear selection">✕</button></div>)}
               <div style={{flex:1,minHeight:0}}><InlineTable headers={tbl.headers} rows={catRows} height="100%"/></div>
@@ -1772,9 +2066,25 @@ function Categories({ fm, label, highlightQuery }) {
   );
 }
 
-function Channels({ fm, label }) {
+function Channels({ fm, label, effGrain, filter }) {
+  const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
+  const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
   const months=fm.map(m=>m.m);
-  const ch=useMemo(()=>{const f=salesrepsRaw.filter(s=>months.includes(s.m));const ws=f.filter(s=>s.n==='Webshop');const dr=f.filter(s=>s.n!=='Webshop');return{dRev:dr.reduce((s,r)=>s+r.rev,0),wRev:ws.reduce((s,r)=>s+r.rev,0),dOrd:dr.reduce((s,r)=>s+r.orders,0),wOrd:ws.reduce((s,r)=>s+r.orders,0)};},[months]);
+  const periodLabel = useWeekly ? 'Week' : effGrain === 'yearly' ? 'Year' : 'Month';
+
+  const ch=useMemo(()=>{
+    let f;
+    if (useWeekly) {
+      const set = new Set(tickedWeeks);
+      f = salesrepsWeeklyRaw.filter(s => set.has(s.w));
+    } else {
+      f = salesrepsRaw.filter(s=>months.includes(s.m));
+    }
+    const ws=f.filter(s=>s.n==='Webshop');
+    const dr=f.filter(s=>s.n!=='Webshop');
+    return {dRev:dr.reduce((s,r)=>s+r.rev,0),wRev:ws.reduce((s,r)=>s+r.rev,0),dOrd:dr.reduce((s,r)=>s+r.orders,0),wOrd:ws.reduce((s,r)=>s+r.orders,0)};
+  },[months, useWeekly, tickedWeeks]);
+
   const total=ch.dRev+ch.wRev;
   const dAOV=ch.dOrd>0?Math.round(ch.dRev/ch.dOrd):0;
   const wAOV=ch.wOrd>0?Math.round(ch.wRev/ch.wOrd):0;
@@ -1795,6 +2105,7 @@ function Channels({ fm, label }) {
 
   return (
     <div className="page-area" key="channels">
+      <KpiNote/>
       <div className="kpi-strip">
         <div className="kpi-card blue"><div className="kpi-lbl">Direct Sales</div><div className="kpi-val sm">{fmtFull(ch.dRev)}</div><div className="kpi-chg">{total>0?((ch.dRev/total)*100).toFixed(1):0}% · {fmtN(ch.dOrd)} orders</div></div>
         <div className="kpi-card green"><div className="kpi-lbl">Webshop</div><div className="kpi-val sm">{fmtFull(ch.wRev)}</div><div className="kpi-chg">{total>0?((ch.wRev/total)*100).toFixed(1):0}% · {fmtN(ch.wOrd)} orders</div></div>
@@ -1803,7 +2114,7 @@ function Channels({ fm, label }) {
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:1.2}}>
-          <Panel title="Channel Revenue Share" subtitle={label} flex={1} tableHeaders={['Channel','Revenue','Share','Orders','AOV']} tableRows={[['Direct Sales',fmtFull(ch.dRev),total>0?((ch.dRev/total)*100).toFixed(1).replace('.',','  )+'%':'—',fmtN(ch.dOrd),fmtFull(dAOV)],['Webshop',fmtFull(ch.wRev),total>0?((ch.wRev/total)*100).toFixed(1).replace('.',','  )+'%':'—',fmtN(ch.wOrd),fmtFull(wAOV)]]} insight={channelsInsight}><EC option={donutOpt} onEvents={{'click':handleDonutClick,'legendselectchanged':handleDonutLegend}}/></Panel>
+          <Panel title="Channel Revenue Share" subtitle={`${label} · ${periodLabel.toLowerCase()}-based`} flex={1} tableHeaders={['Channel','Revenue','Share','Orders','AOV']} tableRows={[['Direct Sales',fmtFull(ch.dRev),total>0?((ch.dRev/total)*100).toFixed(1).replace('.',','  )+'%':'—',fmtN(ch.dOrd),fmtFull(dAOV)],['Webshop',fmtFull(ch.wRev),total>0?((ch.wRev/total)*100).toFixed(1).replace('.',','  )+'%':'—',fmtN(ch.wOrd),fmtFull(wAOV)]]} insight={channelsInsight}><EC option={donutOpt} onEvents={{'click':handleDonutClick,'legendselectchanged':handleDonutLegend}}/></Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
           <Panel title="Order Volume" subtitle="By channel" flex={1}><EC option={ordOpt} onEvents={{'click':handleChannelClick}}/></Panel>
@@ -2052,8 +2363,6 @@ function ScrollHint({ watchKey, disabled }) {
         className={`scroll-hint${show ? '' : ' hidden'}`}
         aria-label="Scroll to bottom of page"
         onClick={() => {
-          // Jump straight to the last element of the current page, rather
-          // than a fixed-fraction hop, so one tap always reaches the end.
           const doc = document.documentElement;
           const target = doc.scrollHeight - window.innerHeight;
           window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
@@ -2168,7 +2477,20 @@ export default function App() {
   const SESSION_PAGE_KEY='dairytop_last_page';
   const SESSION_FILTER_KEY='dairytop_last_filter';
   const [page,setPage]=useState(()=>sessionStorage.getItem(SESSION_PAGE_KEY)||'overview');
-  const [filter,setFilter]=useState(()=>{try{const saved=sessionStorage.getItem(SESSION_FILTER_KEY);return saved?JSON.parse(saved):{years:[],months:{}};}catch{return{years:[],months:{}};}});
+  const [filter,setFilter]=useState(()=>{
+    try{
+      const saved=sessionStorage.getItem(SESSION_FILTER_KEY);
+      if(saved){
+        const parsed=JSON.parse(saved);
+        return {
+          years: parsed.years || [],
+          months: parsed.months || {},
+          weeks: parsed.weeks || {}
+        };
+      }
+    }catch{}
+    return {years:[],months:{},weeks:{}};
+  });
   const [sideOpen,setSideOpen]=useState(false);
 
   const SIDEBAR_COLLAPSE_KEY='dairytop_sidebar_collapsed';
@@ -2182,13 +2504,6 @@ export default function App() {
     return()=>cancelAnimationFrame(raf);
   },[collapsed]);
 
-  /* Fixes charts rendering "zoomed out" on initial load/login and after a
-     page switch: ECharts measures its container's pixel size at mount, but
-     on mobile the real viewport (address bar height, safe-area insets,
-     font loading) can still be settling a moment later. A forced resize()
-     pass shortly after mount/page-change — repeated a few times — makes
-     every chart snap to its true final size instead of staying baked in
-     at a stale, wider measurement. */
   const resizeAllCharts=useCallback(()=>{
     liveChartInstances.forEach(inst=>{try{inst.resize();}catch{}});
   },[]);
@@ -2211,7 +2526,6 @@ export default function App() {
 
   const [time,setTime]=useState(new Date());
 
-  /* Page change: persist + scroll to top on mobile */
   useEffect(()=>{
     sessionStorage.setItem(SESSION_PAGE_KEY,page);
     window.scrollTo({top:0});
@@ -2219,7 +2533,6 @@ export default function App() {
 
   useEffect(()=>{try{sessionStorage.setItem(SESSION_FILTER_KEY,JSON.stringify(filter));}catch{}},[filter]);
 
-  /* Lock scroll while mobile drawer is open */
   useEffect(()=>{
     document.documentElement.classList.toggle('no-scroll',sideOpen);
     return()=>document.documentElement.classList.remove('no-scroll');
@@ -2291,7 +2604,16 @@ export default function App() {
 
   const filterLabel=useMemo(()=>{
     if(!filter.years||filter.years.length===0)return'Full period';
-    return filter.years.map(y=>{const m=filter.months[y];return m&&m.length?`20${y} (${m.length}m)`:`20${y} (all)`;}).join(', ');
+    const eff = effGrainFor(filter);
+    return filter.years.map(y=>{
+      const m=filter.months[y];
+      const w=filter.weeks?.[y];
+      const parts = [];
+      if (m && m.length) parts.push(`${m.length}m`);
+      if (w && w.length) parts.push(`${w.length}w`);
+      const suffix = parts.length ? ` (${parts.join(' · ')})` : (eff==='yearly' ? ' (all)' : '');
+      return `20${y}${suffix}`;
+    }).join(', ');
   },[filter]);
 
   const dateRange=useMemo(()=>{if(fm.length===0)return'No data';return`${fm[0].m} – ${fm[fm.length-1].m}`;},[fm]);
@@ -2299,8 +2621,10 @@ export default function App() {
 
   if(!authed)return(<><style>{css}</style><Login onLogin={handleLogin}/></>);
 
+  const effGrain = effGrainFor(filter);
+
   const renderPage=()=>{
-    const props={fm,label:filterLabel};
+    const props={fm,label:filterLabel,effGrain,filter};
     const searchProps={highlightQuery};
     switch(page){
       case'overview':return<Overview/>;
@@ -2334,7 +2658,6 @@ export default function App() {
 
         <div className="main">
           <div className={`topbar${page==='overview'?' topbar-overview':''}`}>
-            {/* Row 1: title+subtitle (left) + actions (right) */}
             <div className="tb-row1">
               <div className="tb-titlewrap">
                 <div className="tb-title">{PAGE_NAMES[page]}</div>
@@ -2353,7 +2676,6 @@ export default function App() {
                 <div className="live-badge"><span className="blink-dot"/>Live</div>
               </div>
             </div>
-            {/* Row 2: full-width search — hidden on overview */}
             {page!=='overview'&&(
               <div className="tb-search" ref={searchRef}>
                 <span className="tb-search-icon">🔍</span>
@@ -2382,7 +2704,7 @@ export default function App() {
         </div>
 
         <ChatBot
-          context={{page,pageName:PAGE_NAMES[page],filterLabel,dateRange}}
+          context={{page,pageName:PAGE_NAMES[page],filterLabel,dateRange,effectiveGrain:effGrain}}
           suggestedQuestions={SUGGESTED_QUESTIONS[page]||SUGGESTED_QUESTIONS.default}
           userName={formatDisplayName(userName)}
         />

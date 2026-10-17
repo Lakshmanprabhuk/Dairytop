@@ -52,7 +52,7 @@ def get_drive_service():
 
 def download_latest_zip(service):
     results = service.files().list(
-        q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/zip' and trashed=false",
+        q=f"'{DRIVE_FOLDER_ID}' in parents and (mimeType='application/zip' or mimeType='application/x-zip-compressed' or name contains '.zip') and trashed=false",
         orderBy="modifiedTime desc",
         pageSize=1,
         fields="files(id,name,modifiedTime)"

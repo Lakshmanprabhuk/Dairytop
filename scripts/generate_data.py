@@ -11,6 +11,7 @@ import os
 import io
 import json
 import zipfile
+import re
 from datetime import datetime
 from collections import defaultdict
 
@@ -79,7 +80,9 @@ def extract_zip(zip_buf):
         for name in zf.namelist():
             if not name.endswith(".csv"):
                 continue
-            tbl = os.path.splitext(os.path.basename(name))[0].lower()
+                        # Strip date suffix e.g. stat_2026-10-14 → stat
+            base = os.path.splitext(os.path.basename(name))[0].lower()
+            tbl = re.sub(r'_\d{4}-\d{2}-\d{2}$', '', base)
             with zf.open(name) as f:
                 try:
                     tables[tbl] = pd.read_csv(f, encoding="utf-8",  low_memory=False)

@@ -461,23 +461,21 @@ def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
         df["perc"] = 0
 
     # ── Salesman via bridge ───────────────────────────────────────────────────
-    if "rel_k_rel__vert" in tables and "rel_v_vert" in tables:
-        rkr = tables["rel_k_rel__vert"].copy()
-        rkr["id"]         = pd.to_numeric(rkr["id"],         errors="coerce")
-        rkr["id_rel"]     = pd.to_numeric(rkr["id_rel"],     errors="coerce")
-        rkr["id_rel__vert"] = pd.to_numeric(rkr["id_rel__vert"], errors="coerce")
-        # First row per customer (lowest id = original logic)
-        bridge = (rkr.sort_values("id")
-                     .groupby("id_rel")
-                     .first()
-                     .reset_index()[["id_rel","id_rel__vert"]])
+    if "rel_k_rel__vert" in tables:
+        bridge = tables["rel_k_rel__vert"].copy()
+        bridge["id_rel"] = pd.to_numeric(bridge["id_rel"], errors="coerce")
+        bridge["id_rel__vert"] = pd.to_numeric(bridge["id_rel__vert"], errors="coerce")
+        bridge = bridge.sort_values("id").groupby("id_rel").first().reset_index()
+        
+        if "rel_v_vert" in tables:
+            rep = tables["rel_v_vert"][["id","naam_volledig"]].copy() 
+            rep["id"] = pd.to_numeric(rep["id"], errors="coerce")
+            rep = rep.rename(columns={"id":"_rep_id","naam_volledig":"salesman"})
+            bridge = bridge.merge(rep, left_on="id_rel__vert", right_on="_rep_id", how="left")
+        else:
+            bridge["salesman"] = "Unknown"
 
-        rep = tables["rel_v_vert"][["id","naam_volledig"]].copy()
-        rep["id"] = pd.to_numeric(rep["id"], errors="coerce")
-        rep = rep.rename(columns={"id":"_rep_id","naam_volledig":"salesman"})
-
-        df = df.merge(bridge, left_on="id_rel__fac", right_on="id_rel", how="left")
-        df = df.merge(rep,    left_on="id_rel__vert", right_on="_rep_id", how="left")
+        df = df.merge(bridge[["id_rel", "salesman"]], left_on="id_rel__fac", right_on="id_rel", how="left")
     else:
         df["salesman"] = "Unknown"
 

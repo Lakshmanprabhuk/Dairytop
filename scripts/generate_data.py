@@ -2,9 +2,9 @@
 # DairyTop — data.js generator
 # Replaces Microsoft Fabric notebook. Runs in GitHub Actions.
 # Sources:
-#   PART1 → static_data/DT_Portal_Export_*.xlsx  (never changes)
-#   PART2 → stat.csv  (from zip on Google Drive)
-#   PART3 → derived invoice_audit_live from raw CSVs in zip
+#   PART1 → static_data/DT_Portal_Export_*.xlsx + derived live data
+#   PART2 → stat.csv (from zip)
+#   PART3 → derived invoice_audit_live from raw CSVs
 # =============================================================================
 
 import os
@@ -12,6 +12,8 @@ import io
 import json
 import zipfile
 import re
+import unicodedata
+from dotenv import load_dotenv
 from datetime import datetime
 from collections import defaultdict
 
@@ -21,9 +23,9 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
-
+load_dotenv()
 DRIVE_FOLDER_ID    = os.environ["DRIVE_FOLDER_ID"]
-GDRIVE_CREDENTIALS = os.environ["GDRIVE_CREDENTIALS"]
+GDRIVE_CREDENTIALS = os.environ.get("GDRIVE_CREDENTIALS", "local")
 
 SCRIPTS_DIR     = os.path.dirname(os.path.abspath(__file__))
 STATIC_DATA_DIR = os.path.join(SCRIPTS_DIR, "static_data")
@@ -33,17 +35,37 @@ STATIC_XLSX = [
     os.path.join(STATIC_DATA_DIR, "DT_Portal_Export_2025.xlsx"),
     os.path.join(STATIC_DATA_DIR, "DT_Portal_Export_Q1_2026.xlsx"),
 ]
-STATIC_JS_PATH = os.path.join(STATIC_DATA_DIR, "static.js")
+STATIC_JS_PATH  = os.path.join(STATIC_DATA_DIR, "static.js")
+REL_V_VERT_PATH = os.path.join(STATIC_DATA_DIR, "rel_v_vert.csv")
 
 TONNAGE_CATS = {"Melkpoeder", "Veevoeders", "Aanvullende Veevoeders"}
 
 FACTOR_MAP = {1: 1, 2: 100, 4: 5, 5: 20, 6: 25}
 
+MONTH_NAMES = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
+               7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
+
+XLSX_COL_MAP = {
+    "Klant":        "customer_name",
+    "Verkoper":     "salesman_name",
+    "Omschrijving": "product_name",
+    "Artikelgroep": "product_group",
+    "Totaalbedrag": "Revenue",
+    "Tonnage":      "Tonnage",
+    "Aantal":       "Aantal",
+    "Factuurmaand": "invoice_month",
+    "Factuurjaar":  "invoice_year",
+    "Factuurdatum": "factuur_datum",
+}
 
 # ─── GOOGLE DRIVE ────────────────────────────────────────────────────────────
-
 def get_drive_service():
-    creds_info = json.loads(GDRIVE_CREDENTIALS)
+    creds_file = os.path.join(
+        SCRIPTS_DIR,
+        os.environ["GDRIVE_CREDENTIALS_FILE"]
+    )
+    with open(creds_file, "r") as f:
+        creds_info = json.load(f)
     creds = service_account.Credentials.from_service_account_info(
         creds_info,
         scopes=["https://www.googleapis.com/auth/drive.readonly"]
@@ -65,7 +87,7 @@ def download_latest_zip(service):
     print(f"  → Downloading: {f['name']}  (modified {f['modifiedTime']})")
     req = service.files().get_media(fileId=f["id"])
     buf = io.BytesIO()
-    dl = MediaIoBaseDownload(buf, req)
+    dl  = MediaIoBaseDownload(buf, req)
     done = False
     while not done:
         _, done = dl.next_chunk()
@@ -74,33 +96,33 @@ def download_latest_zip(service):
 
 
 def extract_zip(zip_buf):
-    """Return dict of {table_name_lower: DataFrame} for every CSV in the zip."""
     tables = {}
     with zipfile.ZipFile(zip_buf) as zf:
         for name in zf.namelist():
             if not name.endswith(".csv"):
                 continue
-                        # Strip date suffix e.g. stat_2026-10-14 → stat
             base = os.path.splitext(os.path.basename(name))[0].lower()
-            tbl = re.sub(r'_\d{4}-\d{2}-\d{2}$', '', base)
+            tbl  = re.sub(r'_\d{4}-\d{2}-\d{2}$', '', base)
             with zf.open(name) as f:
                 try:
                     tables[tbl] = pd.read_csv(f, encoding="utf-8",  low_memory=False)
                 except UnicodeDecodeError:
                     tables[tbl] = pd.read_csv(f, encoding="latin-1", low_memory=False)
-    print(f"  → Tables extracted: {sorted(tables.keys())}")
+    print(f"  → Tables extracted: {len(tables)}")
     return tables
 
 
 # ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 def js_escape(v: object) -> str:
+    s = str(v)
+    # Remove control characters but keep unicode letters
+    s = "".join(c for c in s if not unicodedata.category(c).startswith("C"))
     return (
-        str(v)
+        s
         .replace("\\", "\\\\")
         .replace("'",  "\\'")
-        .replace("\n", " ")
-        .replace("\r", " ")
+        .replace('"',  '\\"')
     )
 
 
@@ -124,53 +146,9 @@ def build_export(name: str, df: pd.DataFrame, cols) -> str:
 
 
 def fn(n) -> str:
-    """Format number for PART3 JS: drop unnecessary .0"""
     if isinstance(n, float):
         return str(int(n)) if n == int(n) else str(n)
     return str(n)
-
-
-# ─── PART 1 — Static xlsx → monthly/daily/weekly KPIs ───────────────────────
-
-XLSX_COL_MAP = {
-    "Klant":        "customer_name",
-    "Verkoper":     "salesman_name",
-    "Omschrijving": "product_name",
-    "Artikelgroep": "product_group",
-    "Totaalbedrag": "Revenue",
-    "Tonnage":      "Tonnage",
-    "Aantal":       "Aantal",
-    "Factuurmaand": "invoice_month",
-    "Factuurjaar":  "invoice_year",
-    "Factuurdatum": "factuur_datum",
-}
-
-MONTH_NAMES = {1:"Jan",2:"Feb",3:"Mar",4:"Apr",5:"May",6:"Jun",
-               7:"Jul",8:"Aug",9:"Sep",10:"Oct",11:"Nov",12:"Dec"}
-
-
-def load_static_excel() -> pd.DataFrame:
-    frames = []
-    for path in STATIC_XLSX:
-        xls = pd.ExcelFile(path)
-        df  = xls.parse(xls.sheet_names[0])
-        frames.append(df)
-    raw = pd.concat(frames, ignore_index=True)
-    raw = raw.rename(columns=XLSX_COL_MAP)
-
-    raw["Revenue"]       = pd.to_numeric(raw["Revenue"],       errors="coerce").fillna(0)
-    raw["Aantal"]        = pd.to_numeric(raw["Aantal"],        errors="coerce").fillna(0)
-    raw["invoice_month"] = pd.to_numeric(raw["invoice_month"], errors="coerce")
-    raw["invoice_year"]  = pd.to_numeric(raw["invoice_year"],  errors="coerce")
-    raw = raw.dropna(subset=["invoice_year", "invoice_month"]).copy()
-    raw["invoice_year"]  = raw["invoice_year"].astype(int)
-    raw["invoice_month"] = raw["invoice_month"].astype(int)
-
-    for col in ["customer_name", "salesman_name", "product_name", "product_group"]:
-        raw[col] = raw[col].fillna("Unknown").astype(str).str.strip()
-
-    raw["factuur_datum"] = pd.to_datetime(raw.get("factuur_datum"), errors="coerce")
-    return raw
 
 
 def _add_time_dims(df: pd.DataFrame) -> pd.DataFrame:
@@ -183,8 +161,8 @@ def _add_time_dims(df: pd.DataFrame) -> pd.DataFrame:
     df["day_label"]  = df["factuur_datum"].dt.strftime("%d/%m/%y")
     df["day_iso"]    = df["factuur_datum"].dt.strftime("%Y-%m-%d")
     iso              = df["factuur_datum"].dt.isocalendar()
-    df["iso_year"]   = pd.to_numeric(iso["year"], errors="coerce")
-    df["iso_week"]   = pd.to_numeric(iso["week"], errors="coerce")
+    df["iso_year"]   = pd.to_numeric(iso["year"],  errors="coerce")
+    df["iso_week"]   = pd.to_numeric(iso["week"],  errors="coerce")
     df["week_label"] = (
         "W" + df["iso_week"].astype("Int64").astype(str).str.zfill(2)
         + " " + df["iso_year"].astype("Int64").astype(str).str[-2:]
@@ -196,34 +174,94 @@ def _add_time_dims(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def build_part1(pdf_src: pd.DataFrame) -> str:
-    pdf_src  = _add_time_dims(pdf_src)
+# ─── LOAD EXCEL FILES ────────────────────────────────────────────────────────
+
+def load_static_excel() -> pd.DataFrame:
+    frames = []
+    for path in STATIC_XLSX:
+        xls = pd.ExcelFile(path)
+        for sheet in xls.sheet_names:
+            frames.append(xls.parse(sheet))
+    df = pd.concat(frames, ignore_index=True)
+    df = df.rename(columns=XLSX_COL_MAP)
+    return df
+
+
+# ─── PART 1 ──────────────────────────────────────────────────────────────────
+
+def build_part1(pdf_xlsx: pd.DataFrame, df_live: pd.DataFrame) -> str:
+    """
+    PART1: concat xlsx (2025 + Q1 2026) with live (Apr-Oct 26).
+    For the live period:
+      - Revenue = line_rev_delivered_excl  (per-line, matches Fabric legacy)
+      - Aantal  = 0                        (Fabric showed 0 for live period)
+    """
+
+    src = pdf_xlsx.copy()
+
+    if not df_live.empty:
+        live = df_live.copy()
+        live = live.rename(columns={
+            "salesman":                "salesman_name",
+            "line_rev_delivered_excl": "Revenue",
+        })
+        live["Aantal"]        = 0   # ← Fabric showed qty=0 for live period
+        live["invoice_month"] = live["factuur_datum"].dt.month
+        live["invoice_year"]  = live["factuur_datum"].dt.year
+
+        common = [c for c in src.columns if c in live.columns]
+        pdf_src = pd.concat([src, live[common]], ignore_index=True)
+    else:
+        pdf_src = src
+
+    # ── Type coercion ─────────────────────────────────────────────────────────
+    pdf_src["Revenue"]       = pd.to_numeric(pdf_src["Revenue"],       errors="coerce").fillna(0)
+    pdf_src["Aantal"]        = pd.to_numeric(pdf_src["Aantal"],        errors="coerce").fillna(0)
+    pdf_src["invoice_month"] = pd.to_numeric(pdf_src["invoice_month"], errors="coerce")
+    pdf_src["invoice_year"]  = pd.to_numeric(pdf_src["invoice_year"],  errors="coerce")
+    pdf_src = pdf_src.dropna(subset=["invoice_year", "invoice_month"]).copy()
+    pdf_src["invoice_year"]  = pdf_src["invoice_year"].astype(int)
+    pdf_src["invoice_month"] = pdf_src["invoice_month"].astype(int)
+
+    for col in ["customer_name", "salesman_name", "product_name", "product_group"]:
+        pdf_src[col] = pdf_src[col].fillna("Unknown").astype(str).str.strip()
+
+    pdf_src["factuur_datum"] = pd.to_datetime(pdf_src.get("factuur_datum"), errors="coerce")
+
+    # ── Time dimensions ───────────────────────────────────────────────────────
+    pdf_src   = _add_time_dims(pdf_src)
     pdf_dated = pdf_src.dropna(subset=["factuur_datum"]).copy()
 
-    # ── Monthly aggregations ──────────────────────────────────────────────────
+    # ── Aggregations ──────────────────────────────────────────────────────────
     monthly = (
-        pdf_src.groupby(["invoice_year","invoice_month","month_label"], as_index=False)
-        .agg(rev=("Revenue","sum"), orders=("Revenue","size"))
-        .sort_values(["invoice_year","invoice_month"])
+        pdf_src.groupby(["invoice_year", "invoice_month", "month_label"], as_index=False)
+        .agg(rev=("Revenue", "sum"), orders=("Revenue", "size"))
+        .sort_values(["invoice_year", "invoice_month"])
     )
     salesreps = (
-        pdf_src.groupby(["salesman_name","month_label"], as_index=False)
-        .agg(rev=("Revenue","sum"), qty=("Aantal","sum"), orders=("Revenue","size"))
+        pdf_src.groupby(["salesman_name", "month_label"], as_index=False)
+        .agg(rev=("Revenue", "sum"), qty=("Aantal", "sum"), orders=("Revenue", "size"))
         .sort_values("rev", ascending=False)
     )
+
+    for col in ["customer_name", "salesman_name", "product_name", "product_group"]:
+        pdf_src[col] = pdf_src[col].fillna("Unknown").astype(str).str.strip()
+
     customers = (
-        pdf_src.groupby(["customer_name","month_label"], as_index=False)
-        .agg(rev=("Revenue","sum"), orders=("Revenue","size"))
-        .sort_values("rev", ascending=False)
+        pdf_src.groupby(["customer_name", "month_label"], as_index=False)
+        .agg(rev=("Revenue", "sum"), orders=("Revenue", "size"))
     )
+    customers = customers[customers["customer_name"] != "Unknown"]  # ← add this
+    customers = customers.sort_values("rev", ascending=False)
+
     products = (
-        pdf_src.groupby(["product_name","month_label"], as_index=False)
-        .agg(rev=("Revenue","sum"), qty=("Aantal","sum"), orders=("Revenue","size"))
+        pdf_src.groupby(["product_name", "month_label"], as_index=False)
+        .agg(rev=("Revenue", "sum"), qty=("Aantal", "sum"), orders=("Revenue", "size"))
         .sort_values("rev", ascending=False)
     )
     categories = (
-        pdf_src.groupby(["product_group","month_label"], as_index=False)
-        .agg(rev=("Revenue","sum"), orders=("Revenue","size"))
+        pdf_src.groupby(["product_group", "month_label"], as_index=False)
+        .agg(rev=("Revenue", "sum"), orders=("Revenue", "size"))
         .sort_values("rev", ascending=False)
     )
     unique_customers = (
@@ -247,19 +285,18 @@ def build_part1(pdf_src: pd.DataFrame) -> str:
         row_to_js(r, [("n","product_group","s"),("m","month_label","s"),("rev","rev","i"),("orders","orders","i")])
         for _, r in categories.iterrows()) + "\n];"
 
-    # ── Day / Week (only if dates exist in xlsx) ──────────────────────────────
     if pdf_dated.empty:
-        day_week_exports = {k: f"export const {k} = [];" for k in [
+        dw = {k: f"export const {k} = [];" for k in [
             "daily","weekly","salesrepsDaily","salesrepsWeekly",
             "customersDaily","customersWeekly","productsDaily","productsWeekly",
             "categoriesDaily","categoriesWeekly"
         ]}
     else:
-        daily = (pdf_dated.groupby(["day_iso","day_label"], as_index=False)
-                 .agg(rev=("Revenue","sum"), orders=("Revenue","size")).sort_values("day_iso"))
-        weekly = (pdf_dated.groupby(["iso_year","iso_week","week_label"], as_index=False)
-                  .agg(rev=("Revenue","sum"), orders=("Revenue","size"), week_start=("week_start","min"))
-                  .sort_values(["iso_year","iso_week"]))
+        daily   = (pdf_dated.groupby(["day_iso","day_label"], as_index=False)
+                   .agg(rev=("Revenue","sum"), orders=("Revenue","size")).sort_values("day_iso"))
+        weekly  = (pdf_dated.groupby(["iso_year","iso_week","week_label"], as_index=False)
+                   .agg(rev=("Revenue","sum"), orders=("Revenue","size"), week_start=("week_start","min"))
+                   .sort_values(["iso_year","iso_week"]))
         weekly["week_end"]     = weekly["week_start"] + pd.Timedelta(days=6)
         weekly["week_start_s"] = weekly["week_start"].dt.strftime("%d/%m/%y")
         weekly["week_end_s"]   = weekly["week_end"].dt.strftime("%d/%m/%y")
@@ -281,7 +318,7 @@ def build_part1(pdf_src: pd.DataFrame) -> str:
         ca_weekly = (pdf_dated.groupby(["product_group","iso_year","iso_week","week_label"], as_index=False)
                      .agg(rev=("Revenue","sum"), orders=("Revenue","size")).sort_values(["product_group","iso_year","iso_week"]))
 
-        day_week_exports = {
+        dw = {
             "daily":            build_export("daily", daily, [("d","day_label","s"),("iso","day_iso","s"),("rev","rev","i"),("orders","orders","i")]),
             "weekly":           build_export("weekly", weekly, [("w","week_label","s"),("start","week_start_s","s"),("end","week_end_s","s"),("rev","rev","i"),("orders","orders","i")]),
             "salesrepsDaily":   build_export("salesrepsDaily", sr_daily, [("n","salesman_name","s"),("d","day_label","s"),("iso","day_iso","s"),("rev","rev","i"),("qty","qty","i"),("orders","orders","i")]),
@@ -299,23 +336,23 @@ def build_part1(pdf_src: pd.DataFrame) -> str:
 
     return "\n\n".join([
         monthly_js, salesreps_js, customers_js, products_js, categories_js,
-        day_week_exports["daily"], day_week_exports["weekly"],
-        day_week_exports["salesrepsDaily"], day_week_exports["salesrepsWeekly"],
-        day_week_exports["customersDaily"], day_week_exports["customersWeekly"],
-        day_week_exports["productsDaily"],  day_week_exports["productsWeekly"],
-        day_week_exports["categoriesDaily"],day_week_exports["categoriesWeekly"],
+        dw["daily"], dw["weekly"],
+        dw["salesrepsDaily"], dw["salesrepsWeekly"],
+        dw["customersDaily"], dw["customersWeekly"],
+        dw["productsDaily"],  dw["productsWeekly"],
+        dw["categoriesDaily"], dw["categoriesWeekly"],
         f"export const totalClients = {unique_customers};",
         f"export const lastUpdated = '{datetime.now().strftime('%d/%m/%Y')}';",
         f"export const maxFactuurDatum = '{mfd_s}';",
     ])
 
 
-# ─── PART 2 — Open Order KPIs (from stat.csv in zip) ────────────────────────
+# ─── PART 2 ──────────────────────────────────────────────────────────────────
 
 def build_part2(tables: dict) -> str:
     stat = tables.get("stat")
     if stat is None:
-        print("  ⚠ stat.csv not found — PART2 will use zeroes")
+        print("  ⚠ No stat table found — PART2 will use zeroes")
         return "\n".join([
             "// ── Open Order KPIs ──",
             "export const openOrderValueFuture = 273604;",
@@ -327,15 +364,15 @@ def build_part2(tables: dict) -> str:
 
     stat = stat.copy()
 
-    # Numeric coerce
-    for col in ["bestel_aantal","aflever_aantal","prijs","algkort","betkort","beskort","blokkeren","id_art_prijskode"]:
+    for col in ["bestel_aantal","aflever_aantal","prijs","algkort","betkort",
+                "beskort","blokkeren","id_art_prijskode"]:
         if col in stat.columns:
             stat[col] = pd.to_numeric(stat[col], errors="coerce").fillna(0)
     for col in ["wens_datum","factuur_datum"]:
         if col in stat.columns:
             stat[col] = pd.to_datetime(stat[col], errors="coerce")
 
-    stat["Factor"] = stat["id_art_prijskode"].map(FACTOR_MAP).fillna(1).replace(0, 1)
+    stat["Factor"]   = stat["id_art_prijskode"].map(FACTOR_MAP).fillna(1).replace(0, 1)
     stat["open_qty"] = stat["bestel_aantal"] - stat["aflever_aantal"]
 
     unit_val = (
@@ -344,8 +381,8 @@ def build_part2(tables: dict) -> str:
         - stat.get("betkort", pd.Series(0, index=stat.index)).fillna(0)
         - stat.get("beskort", pd.Series(0, index=stat.index)).fillna(0)
     )
-    stat["line_val"] = unit_val * (stat["open_qty"] / stat["Factor"])
-    stat["rev_line"] = unit_val * (stat["aflever_aantal"] / stat["Factor"])
+    stat["line_val"] = unit_val * (stat["open_qty"]        / stat["Factor"])
+    stat["rev_line"] = unit_val * (stat["aflever_aantal"]  / stat["Factor"])
 
     today       = pd.Timestamp.today().normalize()
     month_start = today.replace(day=1)
@@ -366,7 +403,7 @@ def build_part2(tables: dict) -> str:
     revenue_mtd_val = float(
         stat.loc[stat["factuur_datum"].dt.month == today.month, "rev_line"].sum() or 0
     )
-    projected_mtd   = mtd_open_val + revenue_mtd_val
+    projected_mtd = mtd_open_val + revenue_mtd_val
 
     return "\n".join([
         "// ── Open Order KPIs ──",
@@ -378,22 +415,14 @@ def build_part2(tables: dict) -> str:
     ])
 
 
-# ─── DERIVE invoice_audit_live from raw CSVs ─────────────────────────────────
-
-def _safe_numeric_id(df: pd.DataFrame, col: str) -> pd.DataFrame:
-    if col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df
-
+# ─── DERIVE invoice_audit_live ────────────────────────────────────────────────
 
 def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
-    """Replicate the Invoice_Audit_live SparkSQL query in pandas."""
     if "stat" not in tables:
         raise KeyError("stat.csv is required but not found in the zip.")
 
     df = tables["stat"].copy()
 
-    # Filter blocked
     if "blokkeren" in df.columns:
         df["blokkeren"] = pd.to_numeric(df["blokkeren"], errors="coerce").fillna(0)
         df = df[df["blokkeren"] == 0].copy()
@@ -403,10 +432,10 @@ def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     df["factuur_datum"] = pd.to_datetime(df.get("factuur_datum"), errors="coerce")
-    df = _safe_numeric_id(df, "id_rel__fac")
-    df = _safe_numeric_id(df, "id_art")
-    df = _safe_numeric_id(df, "id_art_prijskode")
-    df = _safe_numeric_id(df, "id_alg_btwkode")
+
+    for col in ["id_rel__fac","id_art","id_art_prijskode","id_alg_btwkode"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # ── Customer name ─────────────────────────────────────────────────────────
     if "rel" in tables:
@@ -420,10 +449,9 @@ def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
     # ── Product + group ───────────────────────────────────────────────────────
     if "art" in tables:
         art = tables["art"][["id","naam_volledig","id_art_artikelgroep"]].copy()
-        art["id"] = pd.to_numeric(art["id"], errors="coerce")
-        art["id_art_artikelgroep"] = pd.to_numeric(art["id_art_artikelgroep"], errors="coerce")
+        art["id"]                 = pd.to_numeric(art["id"],                 errors="coerce")
+        art["id_art_artikelgroep"]= pd.to_numeric(art["id_art_artikelgroep"],errors="coerce")
         art = art.rename(columns={"id":"_art_id","naam_volledig":"product_name"})
-
         if "art_artikelgroep" in tables:
             grp = tables["art_artikelgroep"][["id","naam"]].copy()
             grp["id"] = pd.to_numeric(grp["id"], errors="coerce")
@@ -431,7 +459,6 @@ def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
             art = art.merge(grp, left_on="id_art_artikelgroep", right_on="_grp_id", how="left")
         else:
             art["product_group"] = "Unknown"
-
         df = df.merge(art[["_art_id","product_name","product_group"]],
                       left_on="id_art", right_on="_art_id", how="left")
     else:
@@ -441,7 +468,7 @@ def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
     # ── Pricing factor ────────────────────────────────────────────────────────
     if "art_prijskode" in tables:
         pk = tables["art_prijskode"][["id","factor"]].copy()
-        pk["id"] = pd.to_numeric(pk["id"], errors="coerce")
+        pk["id"]     = pd.to_numeric(pk["id"],     errors="coerce")
         pk["factor"] = pd.to_numeric(pk["factor"], errors="coerce").fillna(1).replace(0, 1)
         pk = pk.rename(columns={"id":"_pk_id"})
         df = df.merge(pk, left_on="id_art_prijskode", right_on="_pk_id", how="left")
@@ -452,7 +479,7 @@ def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
     # ── VAT ───────────────────────────────────────────────────────────────────
     if "alg_btwkode" in tables:
         vat = tables["alg_btwkode"][["id","perc"]].copy()
-        vat["id"] = pd.to_numeric(vat["id"], errors="coerce")
+        vat["id"]   = pd.to_numeric(vat["id"],   errors="coerce")
         vat["perc"] = pd.to_numeric(vat["perc"], errors="coerce").fillna(0)
         vat = vat.rename(columns={"id":"_vat_id"})
         df = df.merge(vat, left_on="id_alg_btwkode", right_on="_vat_id", how="left")
@@ -460,22 +487,35 @@ def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
     else:
         df["perc"] = 0
 
-    # ── Salesman via bridge ───────────────────────────────────────────────────
+    # ── Salesman via rel_v_vert (static CSV) + bridge ─────────────────────────
+    # rel_v_vert is a MariaDB View not included in the zip export.
+    # We keep it as a static CSV in static_data/rel_v_vert.csv.
+    # When the zip eventually includes it, this will auto-use the zip version.
+    rvv_path = REL_V_VERT_PATH
     if "rel_k_rel__vert" in tables:
         bridge = tables["rel_k_rel__vert"].copy()
-        bridge["id_rel"] = pd.to_numeric(bridge["id_rel"], errors="coerce")
+        bridge["id_rel"]       = pd.to_numeric(bridge["id_rel"],       errors="coerce")
         bridge["id_rel__vert"] = pd.to_numeric(bridge["id_rel__vert"], errors="coerce")
         bridge = bridge.sort_values("id").groupby("id_rel").first().reset_index()
-        
-        if "rel_v_vert" in tables:
-            rep = tables["rel_v_vert"][["id","naam_volledig"]].copy() 
-            rep["id"] = pd.to_numeric(rep["id"], errors="coerce")
-            rep = rep.rename(columns={"id":"_rep_id","naam_volledig":"salesman"})
-            bridge = bridge.merge(rep, left_on="id_rel__vert", right_on="_rep_id", how="left")
-        else:
-            bridge["salesman"] = "Unknown"
 
-        df = df.merge(bridge[["id_rel", "salesman"]], left_on="id_rel__fac", right_on="id_rel", how="left")
+        # Prefer static rel_v_vert.csv (has Orsi Hongarije);
+        # fall back to rel table (has Judit Hongarije instead)
+        if os.path.exists(rvv_path):
+            rvv = pd.read_csv(rvv_path)
+            rvv["id"] = pd.to_numeric(rvv["id"], errors="coerce")
+            rvv = rvv[["id","naam_volledig"]].rename(
+                columns={"id":"_rep_id","naam_volledig":"salesman"}
+            )
+            print("  → Salesman lookup: using static rel_v_vert.csv")
+        else:
+            # Fallback: use rel table (Judit instead of Orsi)
+            rvv = tables["rel"][["id","naam_volledig"]].copy()
+            rvv["id"] = pd.to_numeric(rvv["id"], errors="coerce")
+            rvv = rvv.rename(columns={"id":"_rep_id","naam_volledig":"salesman"})
+            print("  ⚠ rel_v_vert.csv not found — falling back to rel table")
+
+        bridge = bridge.merge(rvv, left_on="id_rel__vert", right_on="_rep_id", how="left")
+        df = df.merge(bridge[["id_rel","salesman"]], left_on="id_rel__fac", right_on="id_rel", how="left")
     else:
         df["salesman"] = "Unknown"
 
@@ -492,7 +532,7 @@ def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
     )
     df["line_rev_delivered_excl"] = unit_val * (df["aflever_aantal"] / df["factor"])
 
-    # Invoice-level total (replicates OVER(PARTITION BY factuur_nr))
+    # invoice_total = sum of all line revenues on same invoice (matches Fabric's OVER PARTITION BY factuur_nr)
     if "factuur_nr" in df.columns:
         df["invoice_total_delivered_excl_vat"] = (
             df.groupby("factuur_nr")["line_rev_delivered_excl"].transform("sum")
@@ -506,29 +546,41 @@ def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
     return df
 
 
-# ─── PART 3 — Tonnage / salesman-category (from derived invoice_audit_live) ──
+# ─── PART 3 ──────────────────────────────────────────────────────────────────
 
 def build_part3(df_live: pd.DataFrame) -> str:
+    """
+    PART3: salesmanCategorySales, tonnagePerSalesman, totalTonnageByCategory.
+    Uses invoice_total_delivered_excl_vat grouped by order_nr — matches Fabric exactly.
+    """
     df = df_live.copy()
     df["factuur_datum"] = pd.to_datetime(df.get("factuur_datum"), errors="coerce")
     df = df[df["factuur_datum"].notna()].copy()
 
     df["Factuur_Year"]        = df["factuur_datum"].dt.year.astype(int)
     df["Factuur_Month"]       = df["factuur_datum"].dt.month.astype(int)
-    df["Factuur_Month_Label"] = df["factuur_datum"].dt.strftime("%b") + " " + df["factuur_datum"].dt.strftime("%y")
-    df["Factuur_Day"]         = df["factuur_datum"].dt.strftime("%Y-%m-%d")
-    df["Day_Label"]           = df["factuur_datum"].dt.strftime("%d/%m/%y")
+    df["Factuur_Month_Label"] = (
+        df["factuur_datum"].dt.strftime("%b")
+        + " "
+        + df["factuur_datum"].dt.strftime("%y")
+    )
+    df["Factuur_Day"] = df["factuur_datum"].dt.strftime("%Y-%m-%d")
+    df["Day_Label"]   = df["factuur_datum"].dt.strftime("%d/%m/%y")
     iso = df["factuur_datum"].dt.isocalendar()
-    df["IsoYear"]     = iso["year"].astype("Int64")
-    df["IsoWeek"]     = iso["week"].astype("Int64")
-    df["Week_Label"]  = "W" + df["IsoWeek"].astype(str).str.zfill(2) + " " + df["IsoYear"].astype(str).str[-2:]
+    df["IsoYear"]    = iso["year"].astype("Int64")
+    df["IsoWeek"]    = iso["week"].astype("Int64")
+    df["Week_Label"] = (
+        "W" + df["IsoWeek"].astype(str).str.zfill(2)
+        + " " + df["IsoYear"].astype(str).str[-2:]
+    )
 
     for col in ["salesman","product_group"]:
         df[col] = df[col].fillna("").astype(str).str.strip().replace("", "Unknown")
-    df["aflever_aantal"]                  = pd.to_numeric(df["aflever_aantal"], errors="coerce").fillna(0)
+
+    df["aflever_aantal"]                   = pd.to_numeric(df["aflever_aantal"],                   errors="coerce").fillna(0)
     df["invoice_total_delivered_excl_vat"] = pd.to_numeric(df["invoice_total_delivered_excl_vat"], errors="coerce").fillna(0)
 
-    # Group by salesman / category / year / month / order_nr
+    # Group by order_nr — matches Fabric's method exactly
     grp = (
         df.groupby(["salesman","product_group","Factuur_Year","Factuur_Month","Factuur_Month_Label","order_nr"])
         .agg(qty=("aflever_aantal","sum"), rev=("invoice_total_delivered_excl_vat","sum"))
@@ -537,7 +589,6 @@ def build_part3(df_live: pd.DataFrame) -> str:
     grp["Factuur_Year"]  = grp["Factuur_Year"].astype(int)
     grp["Factuur_Month"] = grp["Factuur_Month"].astype(int)
 
-    # Month order for consistent series
     month_pairs = (
         grp[["Factuur_Year","Factuur_Month","Factuur_Month_Label"]]
         .drop_duplicates()
@@ -547,7 +598,6 @@ def build_part3(df_live: pd.DataFrame) -> str:
     month_order  = [(int(y), int(m)) for y, m, _ in month_pairs]
     month_labels = {(int(y), int(m)): lbl for y, m, lbl in month_pairs}
 
-    # Salesman × category × month accumulator
     scm: dict = defaultdict(lambda: {"rev": 0.0, "qty": 0.0, "orders": set()})
     for _, row in grp.iterrows():
         key = (row["salesman"], row["product_group"], int(row["Factuur_Year"]), int(row["Factuur_Month"]))
@@ -566,28 +616,35 @@ def build_part3(df_live: pd.DataFrame) -> str:
             if k in scm:
                 d = scm[k]
                 qty_v = d["qty"]
-                ml.append({"m": month_labels[(y,m)], "rev": round(d["rev"]),
-                            "qty": int(qty_v) if qty_v == int(qty_v) else qty_v,
-                            "orders": len(d["orders"])})
+                ml.append({
+                    "m":      month_labels[(y, m)],
+                    "rev":    round(d["rev"]),
+                    "qty":    int(qty_v) if qty_v == int(qty_v) else qty_v,
+                    "orders": len(d["orders"]),
+                })
                 tr += d["rev"]; tq += d["qty"]; to |= d["orders"]
         tqi = int(tq) if tq == int(tq) else tq
-        salesmanCategorySales.append({"salesman":s,"category":c,"rev":round(tr),"qty":tqi,"orders":len(to),"monthly":ml})
+        salesmanCategorySales.append({
+            "salesman": s, "category": c,
+            "rev": round(tr), "qty": tqi, "orders": len(to), "monthly": ml,
+        })
 
-    # Tonnage per salesman
+    # ── Tonnage per salesman ──────────────────────────────────────────────────
     tonnagePerSalesman = []
     for e in salesmanCategorySales:
         if e["category"] not in TONNAGE_CATS:
             continue
-        ml = [{"m": md["m"], "tonnage": round(md["qty"]/1000, 2), "revenue": md["rev"]} for md in e["monthly"]]
+        ml = [{"m": md["m"], "tonnage": round(md["qty"] / 1000, 2), "revenue": md["rev"]}
+              for md in e["monthly"]]
         tonnagePerSalesman.append({
             "salesman": e["salesman"], "category": e["category"],
-            "tonnage": round(e["qty"]/1000, 2), "revenue": e["rev"],
-            "orders": e["orders"], "monthly": ml
+            "tonnage":  round(e["qty"] / 1000, 2),
+            "revenue":  e["rev"], "orders": e["orders"], "monthly": ml,
         })
     cat_ord = {"Aanvullende Veevoeders": 0, "Melkpoeder": 1, "Veevoeders": 2}
     tonnagePerSalesman.sort(key=lambda x: (cat_ord.get(x["category"], 99), -x["tonnage"]))
 
-    # Total tonnage by category
+    # ── Total tonnage by category ─────────────────────────────────────────────
     cm: dict = defaultdict(lambda: {"rev": 0.0, "qty": 0.0, "orders": set()})
     for _, row in grp.iterrows():
         if row["product_group"] not in TONNAGE_CATS:
@@ -603,78 +660,108 @@ def build_part3(df_live: pd.DataFrame) -> str:
             key = (cat, y, m)
             if key in cm:
                 d = cm[key]
-                ml.append({"m": month_labels[(y,m)], "tonnage": round(d["qty"]/1000,2),
-                            "revenue": round(d["rev"]), "orders": len(d["orders"])})
+                ml.append({"m": month_labels[(y, m)], "tonnage": round(d["qty"] / 1000, 2),
+                           "revenue": round(d["rev"]), "orders": len(d["orders"])})
                 tr += d["rev"]; tq += d["qty"]; to |= d["orders"]
-        totalTonnageByCategory.append({"category":cat,"tonnage":round(tq/1000,2),"revenue":round(tr),"orders":len(to),"monthly":ml})
+        totalTonnageByCategory.append({
+            "category": cat, "tonnage": round(tq / 1000, 2),
+            "revenue": round(tr), "orders": len(to), "monthly": ml,
+        })
+
+    # ── Daily / weekly tonnage by category ───────────────────────────────────
+    df_t = df[df["product_group"].isin(TONNAGE_CATS)].copy()
+
+    live_day = (
+        df_t.groupby(["product_group","Factuur_Day","Day_Label"])
+        .agg(qty=("aflever_aantal","sum"), rev=("invoice_total_delivered_excl_vat","sum"))
+        .reset_index().sort_values(["product_group","Factuur_Day"])
+    )
+    live_week = (
+        df_t.groupby(["product_group","IsoYear","IsoWeek","Week_Label"])
+        .agg(qty=("aflever_aantal","sum"), rev=("invoice_total_delivered_excl_vat","sum"))
+        .reset_index().sort_values(["product_group","IsoYear","IsoWeek"])
+    )
 
     # ── Assemble JS ───────────────────────────────────────────────────────────
     lines = ["export const salesmanCategorySales = ["]
     for e in salesmanCategorySales:
-        ml = ", ".join(f"{{m:'{m['m']}',rev:{fn(m['rev'])},qty:{fn(m['qty'])},orders:{m['orders']}}}" for m in e["monthly"])
-        lines.append(f"  {{salesman:'{js_escape(e['salesman'])}',category:'{js_escape(e['category'])}',rev:{fn(e['rev'])},qty:{fn(e['qty'])},orders:{e['orders']},monthly:[{ml}]}},")
+        ml = ", ".join(
+            f"{{m:'{m['m']}',rev:{fn(m['rev'])},qty:{fn(m['qty'])},orders:{m['orders']}}}"
+            for m in e["monthly"]
+        )
+        lines.append(
+            f"  {{salesman:'{js_escape(e['salesman'])}',category:'{js_escape(e['category'])}',"
+            f"rev:{fn(e['rev'])},qty:{fn(e['qty'])},orders:{e['orders']},monthly:[{ml}]}},"
+        )
     lines.append("]\n")
 
     lines.append("export const tonnagePerSalesman = [")
     for e in tonnagePerSalesman:
-        ml = ", ".join(f"{{m:'{m['m']}',tonnage:{fn(m['tonnage'])},revenue:{fn(m['revenue'])}}}" for m in e["monthly"])
-        lines.append(f"  {{salesman:'{js_escape(e['salesman'])}',category:'{js_escape(e['category'])}',tonnage:{fn(e['tonnage'])},revenue:{fn(e['revenue'])},orders:{e['orders']},monthly:[{ml}]}},")
+        ml = ", ".join(
+            f"{{m:'{m['m']}',tonnage:{fn(m['tonnage'])},revenue:{fn(m['revenue'])}}}"
+            for m in e["monthly"]
+        )
+        lines.append(
+            f"  {{salesman:'{js_escape(e['salesman'])}',category:'{js_escape(e['category'])}',"
+            f"tonnage:{fn(e['tonnage'])},revenue:{fn(e['revenue'])},orders:{e['orders']},monthly:[{ml}]}},"
+        )
     lines.append("]\n")
 
     lines.append("export const totalTonnageByCategory = [")
     for e in totalTonnageByCategory:
-        ml = ", ".join(f"{{m:'{m['m']}',tonnage:{fn(m['tonnage'])},revenue:{fn(m['revenue'])},orders:{m['orders']}}}" for m in e["monthly"])
-        lines.append(f"  {{category:'{e['category']}',tonnage:{fn(e['tonnage'])},revenue:{fn(e['revenue'])},orders:{e['orders']},monthly:[{ml}]}},")
-    lines.append("]")
-
-    # Daily / weekly tonnage by category
-    df_t = df[df["product_group"].isin(TONNAGE_CATS)].copy()
-
-    live_day = (df_t.groupby(["product_group","Factuur_Day","Day_Label"])
-                .agg(qty=("aflever_aantal","sum"), rev=("invoice_total_delivered_excl_vat","sum"))
-                .reset_index().sort_values(["product_group","Factuur_Day"]))
-    lines.append("\nexport const tonnageDailyByCategory = [")
-    for _, r in live_day.iterrows():
-        tv = round((r["qty"] or 0)/1000, 2)
-        lines.append(f"  {{category:'{r['product_group']}',d:'{r['Day_Label']}',iso:'{r['Factuur_Day']}',tonnage:{fn(tv)},revenue:{round(r['rev'] or 0)}}},")
+        ml = ", ".join(
+            f"{{m:'{m['m']}',tonnage:{fn(m['tonnage'])},revenue:{fn(m['revenue'])},orders:{m['orders']}}}"
+            for m in e["monthly"]
+        )
+        lines.append(
+            f"  {{category:'{e['category']}',tonnage:{fn(e['tonnage'])},revenue:{fn(e['revenue'])},orders:{e['orders']},monthly:[{ml}]}},"
+        )
     lines.append("]\n")
 
-    live_week = (df_t.groupby(["product_group","IsoYear","IsoWeek","Week_Label"])
-                 .agg(qty=("aflever_aantal","sum"), rev=("invoice_total_delivered_excl_vat","sum"))
-                 .reset_index().sort_values(["product_group","IsoYear","IsoWeek"]))
+    lines.append("export const tonnageDailyByCategory = [")
+    for _, r in live_day.iterrows():
+        tv = round((r["qty"] or 0) / 1000, 2)
+        lines.append(
+            f"  {{category:'{r['product_group']}',d:'{r['Day_Label']}',"
+            f"iso:'{r['Factuur_Day']}',tonnage:{fn(tv)},revenue:{round(r['rev'] or 0)}}},"
+        )
+    lines.append("]\n")
+
     lines.append("export const tonnageWeeklyByCategory = [")
     for _, r in live_week.iterrows():
-        tv = round((r["qty"] or 0)/1000, 2)
-        lines.append(f"  {{category:'{r['product_group']}',w:'{r['Week_Label']}',tonnage:{fn(tv)},revenue:{round(r['rev'] or 0)}}},")
+        tv = round((r["qty"] or 0) / 1000, 2)
+        lines.append(
+            f"  {{category:'{r['product_group']}',w:'{r['Week_Label']}',"
+            f"tonnage:{fn(tv)},revenue:{round(r['rev'] or 0)}}},"
+        )
     lines.append("]")
 
     return "\n".join(lines)
 
 
-# ─── MAIN ─────────────────────────────────────────────────────────────────────
+# ─── MAIN ────────────────────────────────────────────────────────────────────
 
 def main():
     print("=== DairyTop data.js generator ===\n")
 
-    print("[1/6] Connecting to Google Drive...")
+    print("[1/5] Connecting to Google Drive...")
     service = get_drive_service()
 
-    print("[2/6] Downloading latest zip...")
+    print("[2/5] Downloading latest zip...")
     zip_buf = download_latest_zip(service)
 
-    print("[3/6] Extracting zip...")
+    print("[3/5] Extracting zip...")
     tables = extract_zip(zip_buf)
 
-    print("[4/6] Loading static Excel files...")
-    pdf_src = load_static_excel()
-    print(f"  → Rows loaded: {len(pdf_src)}")
+    print("[4/5] Loading static Excel files...")
+    pdf_xlsx = load_static_excel()
+    print(f"  → Rows loaded from xlsx: {len(pdf_xlsx)}")
 
-    print("[5/6] Deriving invoice_audit_live from raw CSVs...")
+    print("[5/5] Deriving invoice_audit_live & building data.js...")
     df_live = derive_invoice_audit_live(tables)
-    print(f"  → Rows derived: {len(df_live)}")
+    print(f"  → Live rows derived: {len(df_live)}")
 
-    print("[6/6] Building data.js...")
-    part1 = build_part1(pdf_src)
+    part1 = build_part1(pdf_xlsx, df_live)
     part2 = build_part2(tables)
     part3 = build_part3(df_live)
 

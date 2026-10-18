@@ -27,3 +27,6 @@ dist-ssr
 .env.local
 .vercel
 .env*
+gdrive_credentials.json
+scripts/gdrive_credentials.json
+check_zip.py

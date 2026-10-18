@@ -2,9 +2,9 @@ name: Generate data.js
 
 on:
   schedule:
-    - cron: '0 4 * * *'
-  workflow_dispatch:
-  
+    - cron: '30 4 * * *'   # 10:00 AM IST (04:30 UTC)
+    - cron: '30 12 * * *'  # 06:00 PM IST (12:30 UTC)
+  workflow_dispatch:        # manual trigger kept
 
 jobs:
   generate:
@@ -24,20 +24,19 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
-      - name: Generate data.js
+      - name: Write Google credentials
+        run: echo '${{ secrets.GDRIVE_CREDENTIALS }}' > scripts/gdrive_credentials.json
+
+      - name: Run generator
         env:
-          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+          GDRIVE_CREDENTIALS_FILE: gdrive_credentials.json
         run: python scripts/generate_data.py
 
       - name: Commit and push data.js
         run: |
-          git config user.name "github-actions[bot]"
+          git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }}
           git add src/utils/data.js
-          git diff --staged --quiet && echo "No changes to data.js" || \
-            git commit -m "chore: auto-update data.js [$(date -u '+%Y-%m-%d %H:%M UTC')]" && \
-            git push
-
-            
+          git diff --cached --quiet || git commit -m "chore: auto-update data.js [$(date -u '+%Y-%m-%d %H:%M UTC')]"
+          git push

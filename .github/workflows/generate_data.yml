@@ -4,7 +4,7 @@ on:
   schedule:
     - cron: '30 4 * * *'   # 10:00 AM IST (04:30 UTC)
     - cron: '30 12 * * *'  # 06:00 PM IST (12:30 UTC)
-  workflow_dispatch:        # manual trigger kept
+  workflow_dispatch:
 
 jobs:
   generate:
@@ -31,6 +31,7 @@ jobs:
         env:
           DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
           GDRIVE_CREDENTIALS_FILE: gdrive_credentials.json
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
         run: python scripts/generate_data.py
 
       - name: Commit and push data.js
@@ -38,5 +39,18 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add src/utils/data.js
-          git diff --cached --quiet || git commit -m "chore: auto-update data.js [$(date -u '+%Y-%m-%d %H:%M UTC')]"
+          git commit -m "chore: auto-update data.js [$(date -u '+%Y-%m-%d %H:%M UTC')]"
           git push
+
+      - name: Send email notification
+        if: success()
+        run: |
+          curl -s -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer ${{ secrets.RESEND_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "from": "DairyTop <onboarding@resend.dev>",
+              "to": ["lakshman@knit-works.com"],
+              "subject": "✅ DairyTop data.js updated",
+              "text": "data.js was successfully updated.\n\nCommit: https://github.com/Lakshmanprabhuk/Dairytop/commit/${{ github.sha }}\nRun: https://github.com/Lakshmanprabhuk/Dairytop/actions/runs/${{ github.run_id }}"
+            }'

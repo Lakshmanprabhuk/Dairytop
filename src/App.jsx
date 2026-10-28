@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from "react";
+ import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import ReactECharts from "echarts-for-react";
 import * as XLSX from 'xlsx';
@@ -13,8 +13,8 @@ import {
   categoriesWeekly as categoriesWeeklyRaw,
   customers as customersRaw,
   customersWeekly as customersWeeklyRaw,
-  products as productsRaw,
-  productsWeekly as productsWeeklyRaw,
+  products as _productsRaw,
+  productsWeekly as _productsWeeklyRaw,
   salesmanCategorySales,
   tonnagePerSalesman,
   totalTonnageByCategory,
@@ -36,8 +36,21 @@ import {
   finSummary,
   finCategories,
   finLines,
-  fmtPct
+  fmtPct,
+  debtorAsOf,
+  debtorKPI,
+  debtorAgeing,
+  debtorTrendlineCohort,
+  debtorTrendlineSnapshot,
+  debtorCustomers,
+  debtorOpenItems,
+  debtorQuarterlyYearly
 } from './utils/data.js';
+
+/* Strip trailing asterisks from product names (e.g. "Pro Elite 40 - GMO Controlled*" → "Pro Elite 40 - GMO Controlled") */
+const _normProductName = n => typeof n === 'string' ? n.replace(/\*+\s*$/, '').trimEnd() : n;
+const productsRaw = _productsRaw.map(p => ({...p, n: _normProductName(p.n)}));
+const productsWeeklyRaw = _productsWeeklyRaw.map(p => ({...p, n: _normProductName(p.n)}));
 
 function formatDisplayName(username) {
   if (!username) return '';
@@ -45,6 +58,18 @@ function formatDisplayName(username) {
   if (!first) return '';
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 }
+
+/* ── CATEGORY GROUPS ─────────────────────────────────────────── */
+const CATEGORY_GROUPS = {
+  'Melkpoeder & Veevoer':  ['Melkpoeder','Overig veevoer','Veevoeders','Aanvullende diervoeders','Aanvullende Veevoeders'],
+  'Kalverhuisvesting':     ['Kalverhuisvesting','CalfOtel'],
+  'Kalverbenodigdheden':   ['Milkbar','Kleine Kalverbenodigdheden','Overige Artikelen','Overige artikelen','Geen Groep'],
+  'Kalverpasteurs':        ['Perfect Udder'],
+};
+const GROUP_NAMES = Object.keys(CATEGORY_GROUPS);
+const CAT_TO_GROUP = {};
+GROUP_NAMES.forEach(g => CATEGORY_GROUPS[g].forEach(c => { CAT_TO_GROUP[c] = g; }));
+const GROUP_PALETTE = ['#40BCF3','#2E9B62','#E5A93D','#D95C5C'];
 
 /* ── MOBILE HELPER ───────────────────────────────────────────── */
 function isMobileViewport() {
@@ -67,8 +92,8 @@ function withCrosshair(option, yFormatter = fmt) {
   return {
     ...option,
     tooltip: {
-      ...option.tooltip,
       ...TOOLTIP_STYLE,
+      ...option.tooltip,
       axisPointer: {
         type: 'cross',
         crossStyle: { color: 'rgba(64,188,243,0.5)', width: 1, type: 'dashed' },
@@ -286,11 +311,14 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 }
 .nav-item:hover{background:rgba(64,188,243,0.10);color:rgba(255,255,255,0.90);}
 .nav-item.active{color:#fff;background:rgba(64,188,243,0.12);border-left-color:var(--accent);}
-.nav-icon{font-size:13px;width:16px;text-align:center;flex-shrink:0;opacity:.75;transition:transform .15s ease-out;}
+.nav-icon{width:22px;height:22px;flex-shrink:0;opacity:.82;transition:transform .15s ease-out,opacity .15s ease-out;display:flex;align-items:center;justify-content:center;}
+.nav-icon img{width:22px;height:22px;object-fit:contain;display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.18));}
+.nav-item.active .nav-icon{opacity:1;}
+.nav-item:hover .nav-icon{opacity:1;}
 .nav-item.hovered .nav-icon{transform:scale(1.12);opacity:1;}
 .nav-pip{margin-left:auto;width:5px;height:5px;border-radius:50%;background:var(--accent);opacity:.8;}
 .sidebar.collapsed .nav-item{justify-content:center;padding:11px 0;gap:0;}
-.sidebar.collapsed .nav-icon{font-size:16px;width:auto;}
+.sidebar.collapsed .nav-icon{width:22px;height:22px;}
 .sidebar.collapsed .nav-label{display:none;}
 .sidebar.collapsed .nav-pip{position:absolute;right:8px;top:50%;transform:translateY(-50%);margin-left:0;}
 .sb-footer{padding:10px 16px;border-top:1px solid rgba(255,255,255,0.07);background:rgba(0,0,0,0.12);}
@@ -794,6 +822,17 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   border-radius:var(--r-sm);padding:6px 10px;margin-bottom:7px;line-height:1.4;
 }
 .cp-insight-icon{flex-shrink:0;opacity:.9;font-size:11px;}
+.cp-expand-btn{background:none;border:1px solid var(--border);cursor:pointer;color:var(--muted);padding:2px 5px;border-radius:4px;line-height:1;font-size:12px;display:flex;align-items:center;justify-content:center;}
+.cp-expand-btn:hover{background:var(--row-hover);color:var(--fg);}
+.cfs-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(2px);}
+.cfs-panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;width:92vw;max-width:1300px;height:88vh;overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,0.35);}
+.cfs-hdr{display:flex;align-items:flex-start;gap:12px;padding:16px 20px 14px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.cfs-titles{flex:1;min-width:0;}
+.cfs-title{font-size:15px;font-weight:700;color:var(--fg);}
+.cfs-sub{font-size:11px;color:var(--muted);margin-top:3px;}
+.cfs-close{background:none;border:1px solid var(--border);cursor:pointer;font-size:16px;color:var(--muted);padding:3px 9px;border-radius:6px;line-height:1;flex-shrink:0;}
+.cfs-close:hover{background:var(--row-hover);color:var(--fg);}
+.cfs-body{flex:1;min-height:0;position:relative;padding:8px;}
 
 .delta{display:inline-flex;align-items:center;gap:2px;font-weight:700;font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:1px 6px;border-radius:20px;white-space:nowrap;}
 .delta.up{color:var(--green);background:rgba(46,155,98,0.10);}
@@ -1109,51 +1148,92 @@ function InlineTable({ headers, rows, height, searchable, initialQuery }) {
   );
 }
 
-function Panel({ title, subtitle, tag, controls, flex, height, style, className, children, defaultView = 'chart', tableHeaders, tableRows, insight, searchableTable, tableInitialQuery }) {
+function Panel({ title, subtitle, tag, controls, flex, height, style, className, children, defaultView = 'chart', tableHeaders, tableRows, insight, searchableTable, tableInitialQuery, headerExtra }) {
   const [view, setView] = useState(defaultView);
   const [ready, setReady] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => { const t = setTimeout(() => setReady(true), 260); return () => clearTimeout(t); }, []);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = e => { if (e.key === 'Escape') setFullscreen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
   const hasToggle = tableHeaders && tableRows;
   const panelStyle = { ...(height != null ? { flex: '0 0 auto', height } : flex ? { flex } : {}), ...style };
   const fixedVars = height != null ? { '--fin-fixed-h': typeof height === 'number' ? `${height}px` : height } : undefined;
-  return (
-    <div className={`chart-panel${className ? ' ' + className : ''}`} style={{ ...panelStyle, ...(fixedVars || {}) }}>
-      <div className="cp-head">
-        <div>
-          <div className="cp-title">{title}</div>
-          {subtitle && <div className="cp-sub">{subtitle}</div>}
+
+  const expandBtn = (
+    <button className="cp-expand-btn" title="Expand chart" onClick={()=>setFullscreen(true)}>
+      <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+        <path d="M1 5V2a1 1 0 0 1 1-1h3M9 1h3a1 1 0 0 1 1 1v3M13 9v3a1 1 0 0 1-1 1H9M5 13H2a1 1 0 0 1-1-1V9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      </svg>
+    </button>
+  );
+
+  const headerControls = (
+    <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap',marginLeft:8}}>
+      {controls}
+      {tag && <div className="cp-tag">{tag}</div>}
+      {hasToggle && (
+        <div className="view-tog">
+          <button className={`vt-btn${view==='chart'?' active':''}`} onClick={()=>setView('chart')}>
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1" y="7" width="3" height="6" rx="1" fill="currentColor"/><rect x="5.5" y="4" width="3" height="9" rx="1" fill="currentColor"/><rect x="10" y="1" width="3" height="12" rx="1" fill="currentColor"/></svg>
+            Chart
+          </button>
+          <button className={`vt-btn${view==='table'?' active':''}`} onClick={()=>setView('table')}>
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="2.5" rx="1" fill="currentColor"/><rect x="1" y="5.5" width="12" height="2" rx=".5" fill="currentColor" opacity=".6"/><rect x="1" y="9.5" width="12" height="2" rx=".5" fill="currentColor" opacity=".4"/></svg>
+            Table
+          </button>
         </div>
-        <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap'}}>
-          {controls}
-          {tag && <div className="cp-tag">{tag}</div>}
-          {hasToggle && (
-            <div className="view-tog">
-              <button className={`vt-btn${view==='chart'?' active':''}`} onClick={()=>setView('chart')}>
-                <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1" y="7" width="3" height="6" rx="1" fill="currentColor"/><rect x="5.5" y="4" width="3" height="9" rx="1" fill="currentColor"/><rect x="10" y="1" width="3" height="12" rx="1" fill="currentColor"/></svg>
-                Chart
-              </button>
-              <button className={`vt-btn${view==='table'?' active':''}`} onClick={()=>setView('table')}>
-                <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="2.5" rx="1" fill="currentColor"/><rect x="1" y="5.5" width="12" height="2" rx=".5" fill="currentColor" opacity=".6"/><rect x="1" y="9.5" width="12" height="2" rx=".5" fill="currentColor" opacity=".4"/></svg>
-                Table
-              </button>
+      )}
+      {expandBtn}
+    </div>
+  );
+
+  return (
+    <>
+      <div className={`chart-panel${className ? ' ' + className : ''}`} style={{ ...panelStyle, ...(fixedVars || {}) }}>
+        <div className="cp-head">
+          <div style={{flex:1,minWidth:0}}>
+            <div className="cp-title">{title}</div>
+            {subtitle && <div className="cp-sub">{subtitle}</div>}
+            {headerExtra && <div style={{marginTop:4}}>{headerExtra}</div>}
+          </div>
+          {headerControls}
+        </div>
+        {insight && <div className="cp-insight"><span className="cp-insight-icon">💡</span><span>{insight}</span></div>}
+        <div className="cp-body">
+          {!ready && view === 'chart' && (
+            <div className="cp-skeleton" aria-hidden="true">
+              <div className="cp-skeleton-bar" style={{height:'40%'}}/>
+              <div className="cp-skeleton-bar" style={{height:'70%'}}/>
+              <div className="cp-skeleton-bar" style={{height:'55%'}}/>
+              <div className="cp-skeleton-bar" style={{height:'85%'}}/>
+              <div className="cp-skeleton-bar" style={{height:'30%'}}/>
             </div>
           )}
+          {view === 'chart' ? children : <InlineTable headers={tableHeaders} rows={tableRows} height="100%" searchable={searchableTable} initialQuery={tableInitialQuery} />}
         </div>
       </div>
-      {insight && <div className="cp-insight"><span className="cp-insight-icon">💡</span><span>{insight}</span></div>}
-      <div className="cp-body">
-        {!ready && view === 'chart' && (
-          <div className="cp-skeleton" aria-hidden="true">
-            <div className="cp-skeleton-bar" style={{height:'40%'}}/>
-            <div className="cp-skeleton-bar" style={{height:'70%'}}/>
-            <div className="cp-skeleton-bar" style={{height:'55%'}}/>
-            <div className="cp-skeleton-bar" style={{height:'85%'}}/>
-            <div className="cp-skeleton-bar" style={{height:'30%'}}/>
+
+      {fullscreen && createPortal(
+        <div className="cfs-overlay" onClick={e=>{ if(e.target===e.currentTarget) setFullscreen(false); }}>
+          <div className="cfs-panel">
+            <div className="cfs-hdr">
+              <div className="cfs-titles">
+                <div className="cfs-title">{title}</div>
+                {subtitle && <div className="cfs-sub">{subtitle}</div>}
+              </div>
+              {controls && <div style={{display:'flex',alignItems:'center',gap:6}}>{controls}</div>}
+              <button className="cfs-close" onClick={()=>setFullscreen(false)} title="Close (Esc)">✕</button>
+            </div>
+            <div className="cfs-body">{children}</div>
           </div>
-        )}
-        {view === 'chart' ? children : <InlineTable headers={tableHeaders} rows={tableRows} height="100%" searchable={searchableTable} initialQuery={tableInitialQuery} />}
-      </div>
-    </div>
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
@@ -1528,8 +1608,8 @@ function Overview() {
         return html;
       }
     },
-    legend: { bottom:0, textStyle:{ color:'#5F7078', fontSize:10 }, icon:'roundRect', selectedMode:false },
-    grid: { left:'3%', right:'4%', bottom: isMobileViewport() && melkTonChartData.length>3 ? '26%' : '16%', top:'5%', containLabel:true },
+    legend: { bottom:2, textStyle:{ color:'#5F7078', fontSize:10 }, icon:'roundRect', selectedMode:false, padding:[0,8] },
+    grid: { left:'3%', right:'4%', bottom: isMobileViewport() && melkTonChartData.length>3 ? '28%' : '22%', top:'5%', containLabel:true },
     xAxis: { type:'category', data:melkTonChartData.map(d=>d.label), axisLabel:catAxisLabel(melkTonChartData.length,9) },
     yAxis: { type:'value', minInterval:0.1, axisLabel:{ color:'#5F7078', fontSize:9, formatter: v => v.toLocaleString('de-DE',{maximumFractionDigits:0})+' t' }, splitLine:{ lineStyle:{ color:'#F0F3F4' } } },
     series: [
@@ -1558,8 +1638,8 @@ function Overview() {
 
   const cmpOpt = withDataZoom({
     tooltip:{ ...TOOLTIP_STYLE, trigger:'axis', axisPointer:{type:'shadow'}, formatter:function(params){let html=`<strong>${params[0].name}</strong><br/>`;params.forEach(p=>{const val=p.value;html+=`${p.marker} ${p.seriesName}: ${val!=null?fmtFull(val):'—'}<br/>`;});return html;}},
-    legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false},
-    grid:{left:'3%',right:'4%',bottom:'16%',top:'5%',containLabel:true},
+    legend:{bottom:2,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false,padding:[0,8]},
+    grid:{left:'3%',right:'4%',bottom:'22%',top:'5%',containLabel:true},
     xAxis:{type:'category',data:last3WithPY.map(d=>d.name),axisLabel:catAxisLabel(last3WithPY.length,9)},
     yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
     series:[
@@ -1585,6 +1665,63 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
   const repTotalRev = repsLast3Months.reduce((s,r)=>s+r.rev,0);
   const repInsight = repsLast3Months[0] ? `Leading over last 3 months: ${repsLast3Months[0].n} with ${fmtFull(repsLast3Months[0].rev)}${repsLast3Months.length>1?` (${repTotalRev>0?(repsLast3Months[0].rev/repTotalRev*100).toFixed(0):0}% of last 3 months' revenue)`:''}` : null;
 
+  // Category trends chart: weekly (default) or monthly (CY vs PY)
+  const [catGrain, setCatGrain] = useState('weekly');
+
+  const catWeeklyOpt = useMemo(()=>{
+    const allWeeks = [...new Set(weekly.map(w=>w.w))].sort().slice(-12);
+    const series = [];
+    GROUP_NAMES.forEach((grp,gi)=>{
+      const cats = CATEGORY_GROUPS[grp];
+      const thisYear = allWeeks.map(wk=>
+        categoriesWeeklyRaw.filter(r=>r.w===wk&&cats.includes(r.n.trim())).reduce((s,r)=>s+r.rev,0)
+      );
+      series.push({name:`${grp}`,type:'line',data:thisYear,itemStyle:{color:GROUP_PALETTE[gi]},lineStyle:{width:2,type:'solid'},symbol:'circle',symbolSize:4});
+    });
+    return withCrosshair({
+      tooltip:{...TOOLTIP_STYLE,trigger:'axis',confine:false,appendToBody:true,extraCssText:'border-radius:10px;padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,0.3);max-width:none !important;width:auto !important;white-space:nowrap;overflow:visible;',formatter:p=>{const rows=p.filter(s=>s.value!=null&&s.value!==0);const half=Math.ceil(rows.length/2);const col=(arr)=>arr.map(s=>`<div style="display:flex;align-items:center;gap:4px;line-height:1.6;white-space:nowrap">${s.marker}<span style="font-size:10px;white-space:nowrap">${s.seriesName}: ${fmtFull(s.value)}</span></div>`).join('');return`<div style="font-size:11px;font-weight:700;margin-bottom:4px">${p[0].axisValue}</div><div style="display:flex;gap:16px;white-space:nowrap"><div>${col(rows.slice(0,half))}</div><div>${col(rows.slice(half))}</div></div>`;}},
+      legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:8},type:'scroll',itemWidth:10,itemHeight:10},
+      grid:{left:'2%',right:'2%',bottom:'22%',top:'8%',containLabel:true},
+      xAxis:{type:'category',data:allWeeks,axisLabel:{color:'#5F7078',fontSize:8,rotate:30,hideOverlap:true}},
+      yAxis:{type:'value',axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
+      series
+    });
+  },[]);
+
+  const catMonthlyOpt = useMemo(()=>{
+    // Find months present in both 2025 and 2026 by month number (1–12)
+    const monthNums25 = new Set(categoriesRaw.filter(r=>r.m&&r.m.endsWith('25')).map(r=>r.m.split(' ')[0]));
+    const monthNums26 = new Set(categoriesRaw.filter(r=>r.m&&r.m.endsWith('26')).map(r=>r.m.split(' ')[0]));
+    const monthOrder = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const commonMonths = monthOrder.filter(mn=>monthNums25.has(mn)&&monthNums26.has(mn));
+    const series = [];
+    GROUP_NAMES.forEach((grp,gi)=>{
+      const cats = CATEGORY_GROUPS[grp];
+      const cy = commonMonths.map(mn=>{
+        const key=`${mn} 26`;
+        return categoriesRaw.filter(r=>r.m===key&&cats.includes(r.n.trim())).reduce((s,r)=>s+r.rev,0);
+      });
+      const py = commonMonths.map(mn=>{
+        const key=`${mn} 25`;
+        return categoriesRaw.filter(r=>r.m===key&&cats.includes(r.n.trim())).reduce((s,r)=>s+r.rev,0);
+      });
+      series.push({name:`${grp} '26`,type:'line',data:cy,itemStyle:{color:GROUP_PALETTE[gi]},lineStyle:{width:2,type:'solid'},symbol:'circle',symbolSize:4,smooth:true});
+      series.push({name:`${grp} '25`,type:'line',data:py,itemStyle:{color:GROUP_PALETTE[gi]},lineStyle:{width:1.5,type:'dashed',opacity:0.6},symbol:'none',smooth:true});
+    });
+    return withCrosshair({
+      tooltip:{...TOOLTIP_STYLE,trigger:'axis',confine:false,appendToBody:true,extraCssText:'border-radius:10px;padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,0.3);max-width:none !important;width:auto !important;white-space:nowrap;overflow:visible;',formatter:p=>{const rows=p.filter(s=>s.value!=null&&s.value!==0);const half=Math.ceil(rows.length/2);const col=(arr)=>arr.map(s=>`<div style="display:flex;align-items:center;gap:4px;line-height:1.6;white-space:nowrap">${s.marker}<span style="font-size:10px;white-space:nowrap">${s.seriesName}: ${fmtFull(s.value)}</span></div>`).join('');return`<div style="font-size:11px;font-weight:700;margin-bottom:4px">${p[0].axisValue}</div><div style="display:flex;gap:16px;white-space:nowrap"><div>${col(rows.slice(0,half))}</div><div>${col(rows.slice(half))}</div></div>`;}},
+      legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:8},type:'scroll',itemWidth:10,itemHeight:10},
+      grid:{left:'2%',right:'2%',bottom:'22%',top:'8%',containLabel:true},
+      xAxis:{type:'category',data:commonMonths,axisLabel:{color:'#5F7078',fontSize:9}},
+      yAxis:{type:'value',axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
+      series
+    });
+  },[]);
+
+  const catSubtitle = catGrain==='weekly'
+    ? '4 groups · this year · prior year unavailable — click Monthly for CY vs PY'
+    : '4 groups · solid = 2026, dashed = 2025 · same month comparison';
+
   return (
     <div className="page-area" key="overview">
       <div className="kpi-strip">
@@ -1603,7 +1740,12 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
         </div>
       </div>
       <div className="charts-row" style={{flex:0.8}}>
-        <Panel title="Verkoper Prestaties" subtitle={`Last 3 months · through ${currentMonth||'—'}`} flex={1} tableHeaders={repTable.headers} tableRows={repTable.rows} insight={repInsight}><EC option={repOpt}/></Panel>
+        <Panel title="Category Trends" subtitle={catSubtitle} flex={1} controls={
+          <div className="view-tog">
+            <button className={`vt-btn${catGrain==='weekly'?' active':''}`} onClick={()=>setCatGrain('weekly')}>Weekly</button>
+            <button className={`vt-btn${catGrain==='monthly'?' active':''}`} onClick={()=>setCatGrain('monthly')}>Monthly</button>
+          </div>
+        }><EC option={catGrain==='weekly'?catWeeklyOpt:catMonthlyOpt}/></Panel>
       </div>
     </div>
   );
@@ -1670,8 +1812,8 @@ function Revenue({ fm, label, effGrain, filter }) {
   let cMonths=(m25.length&&m26.length)?n25.filter(m=>n26.includes(m)):[...new Set([...n25,...n26])];
   cMonths.sort((a,b)=>order.indexOf(a)-order.indexOf(b));
   const lineSeries=[];
-  if(m25.length)lineSeries.push({name:'2025',type:'line',data:cMonths.map(m=>m25.find(d=>d.m.startsWith(m))?.rev||null),lineStyle:{color:'#0891B2',width:2},itemStyle:{color:'#0891B2'},areaStyle:{color:'rgba(8,145,178,.07)'},smooth:true});
-  if(m26.length)lineSeries.push({name:'2026',type:'line',data:cMonths.map(m=>m26.find(d=>d.m.startsWith(m))?.rev||null),lineStyle:{color:'#73D4F2',width:2,type:'dashed'},itemStyle:{color:'#73D4F2'},areaStyle:{color:'rgba(115,212,242,.07)'},smooth:true});
+  if(m25.length)lineSeries.push({name:'2025',type:'line',data:cMonths.map(m=>m25.find(d=>d.m.startsWith(m))?.rev||null),lineStyle:{color:'#0891B2',width:2,type:'dashed'},itemStyle:{color:'#0891B2'},areaStyle:{color:'rgba(8,145,178,.07)'},smooth:true});
+  if(m26.length)lineSeries.push({name:'2026',type:'line',data:cMonths.map(m=>m26.find(d=>d.m.startsWith(m))?.rev||null),lineStyle:{color:'#73D4F2',width:2},itemStyle:{color:'#73D4F2'},areaStyle:{color:'rgba(115,212,242,.07)'},smooth:true});
   const cmpOpt=withDataZoom(withCrosshair({
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',formatter:p=>p.map(s=>`${s.marker} ${s.seriesName}: ${s.value?fmtFull(s.value):'—'}`).join('<br/>')},
     legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false},
@@ -1724,6 +1866,9 @@ function SalesReps({ fm, label, highlightQuery, effGrain, filter }) {
   const months = fm.map(m => m.m);
   const periodLabel = useWeekly ? 'Week' : useYearly ? 'Year' : 'Month';
 
+  const [excludeJohan, setExcludeJohan] = useState(false);
+  const [selRep,setSelRep]=useState(null);
+
   const reps=useMemo(()=>{
     let rows;
     if (useWeekly) {
@@ -1733,13 +1878,13 @@ function SalesReps({ fm, label, highlightQuery, effGrain, filter }) {
       rows = salesrepsRaw.filter(r=>months.includes(r.m));
     }
     const g={};
-    rows.forEach(r=>{const k=r.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};g[k].rev+=r.rev;g[k].qty+=r.qty;g[k].orders+=r.orders;});
+    const filtered = excludeJohan ? rows.filter(r => { const n=r.n.trim().toLowerCase(); return !n.startsWith('johan') && !n.startsWith('joahan'); }) : rows;
+    filtered.forEach(r=>{const k=r.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};g[k].rev+=r.rev;g[k].qty+=r.qty;g[k].orders+=r.orders;});
     return Object.values(g).sort((a,b)=>b.rev-a.rev);
-  },[months, useWeekly, tickedWeeks]);
+  },[months, useWeekly, tickedWeeks, excludeJohan]);
 
   const totalRev=reps.reduce((s,r)=>s+r.rev,0);
   const top3=reps.slice(0,3);
-  const [selRep,setSelRep]=useState(null);
 
   const barOpt=withDataZoom({
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{const pct=totalRev>0?(p[0].value/totalRev*100).toFixed(2).replace('.',',' ):'0';return `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)} (${pct}%)`;}},
@@ -1759,9 +1904,17 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
   const [smPeriod,setSmPeriod]=useState('All');
   const smRevFor=(rec,period)=>{if(!rec)return 0;if(period==='All')return rec.rev;const mo=(rec.monthly||[]).find(m=>m.m===period);return mo?mo.rev:0;};
   const smOrdersFor=(rec,period)=>{if(!rec)return 0;if(period==='All')return rec.orders;const mo=(rec.monthly||[]).find(m=>m.m===period);return mo?mo.orders:0;};
-  const smCats=useMemo(()=>[...new Set(salesmanCategorySales.map(s=>s.category))],[]);
-  const smOrder=useMemo(()=>{const totals={};salesmanCategorySales.forEach(s=>{if(s.salesman==='Unknown')return;totals[s.salesman]=(totals[s.salesman]||0)+smRevFor(s,smPeriod);});return Object.entries(totals).sort((a,b)=>b[1]-a[1]).map(([n])=>n);},[smPeriod]);
-  const smSeries=smCats.map((cat,i)=>({name:cat,type:'bar',stack:'total',data:smOrder.map(n=>{const rec=salesmanCategorySales.find(s=>s.salesman===n&&s.category===cat);return smRevFor(rec,smPeriod);}),itemStyle:{color:PALETTE[i%PALETTE.length]}}));
+  const smOrder=useMemo(()=>{const totals={};salesmanCategorySales.forEach(s=>{if(s.salesman==='Unknown')return;const nl=s.salesman.trim().toLowerCase();if(excludeJohan&&(nl.startsWith('johan')||nl.startsWith('joahan')))return;totals[s.salesman]=(totals[s.salesman]||0)+smRevFor(s,smPeriod);});return Object.entries(totals).sort((a,b)=>b[1]-a[1]).map(([n])=>n);},[smPeriod,excludeJohan]);
+  const smSeries=GROUP_NAMES.map((grp,gi)=>({
+    name: grp, type:'bar', stack:'total',
+    data: smOrder.map(n => {
+      const cats = CATEGORY_GROUPS[grp];
+      return salesmanCategorySales
+        .filter(s => s.salesman===n && cats.includes(s.category))
+        .reduce((sum, s) => sum + smRevFor(s, smPeriod), 0);
+    }),
+    itemStyle:{color:GROUP_PALETTE[gi]}
+  }));
   const smOpt=withDataZoom({
     tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;let sum=0;p.forEach(s=>{if(s.value){html+=`${s.marker} ${s.seriesName}: ${fmtFull(s.value)}<br/>`;sum+=s.value;}});html+=`<strong>Total: ${fmtFull(sum)}</strong>`;return html;}},
     legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:8},type:'scroll',itemWidth:10,itemHeight:10},
@@ -1770,32 +1923,54 @@ xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisL
     yAxis:{type:'category',data:smOrder.map(n=>n.split(' ')[0]),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
     series:smSeries
   });
-  const smTbl={headers:['Verkoper','Category','Revenue','Orders'],rows:[...salesmanCategorySales].filter(s=>s.salesman!=='Unknown').map(s=>({...s,_rev:smRevFor(s,smPeriod),_orders:smOrdersFor(s,smPeriod)})).filter(s=>smPeriod==='All'||s._rev!==0||s._orders!==0).sort((a,b)=>b._rev-a._rev).map(s=>[s.salesman,s.category,fmtFull(s._rev),fmtN(s._orders)])};
+  const smTbl={headers:['Verkoper','Category','Revenue','Orders'],rows:[...salesmanCategorySales].filter(s=>{if(s.salesman==='Unknown')return false;const nl=s.salesman.trim().toLowerCase();if(excludeJohan&&(nl.startsWith('johan')||nl.startsWith('joahan')))return false;return true;}).map(s=>({...s,_rev:smRevFor(s,smPeriod),_orders:smOrdersFor(s,smPeriod)})).filter(s=>smPeriod==='All'||s._rev!==0||s._orders!==0).sort((a,b)=>b._rev-a._rev).map(s=>[s.salesman,s.category,fmtFull(s._rev),fmtN(s._orders)])};
   const smPeriodControl=(<select className="panel-select" value={smPeriod} onChange={e=>setSmPeriod(e.target.value)}><option value="All">Full period</option>{smPeriods.map(p=><option key={p} value={p}>{p}</option>)}</select>);
 
-  const vmPeriods=useMemo(()=>{const seen=new Set();totalTonnageByCategory.forEach(c=>(c.monthly||[]).forEach(mo=>seen.add(mo.m)));return[...seen];},[]);
-  const [vmPeriod,setVmPeriod]=useState('All');
   const vmSalesmen=useMemo(()=>[...new Set(tonnagePerSalesman.map(t=>t.salesman))].filter(n=>n!=='Unknown').sort(),[]);
   const [vmSalesman,setVmSalesman]=useState('All');
   const VM_CATS=['Melkpoeder','Veevoeders'];
-  const vmData=useMemo(()=>{
+  const vmMonths=useMemo(()=>{const seen=new Set();totalTonnageByCategory.forEach(c=>(c.monthly||[]).forEach(mo=>seen.add(mo.m)));return[...seen].sort();},[]);
+  const vmMonthlyData=useMemo(()=>{
     const source=vmSalesman==='All'?totalTonnageByCategory:tonnagePerSalesman.filter(t=>t.salesman===vmSalesman);
-    return VM_CATS.map(cat=>{const rec=source.find(c=>c.category===cat);if(!rec)return{category:cat,revenue:0,tonnage:0,orders:0};if(vmPeriod==='All')return rec;const mo=(rec.monthly||[]).find(m=>m.m===vmPeriod);return{category:cat,revenue:mo?mo.revenue:0,tonnage:mo?mo.tonnage:0,orders:mo?(mo.orders??rec.orders):0};});
-  },[vmPeriod,vmSalesman]);
-  const vmOpt={
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;p.forEach(s=>{html+=`${s.marker} ${s.seriesName}: ${s.seriesName==='Tonnage'?fmtNum(s.value)+' t':fmtFull(s.value)}<br/>`;});return html;}},
-    legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10}},
-    grid:{left:'12%',right:'12%',bottom:'18%',top:'8%',containLabel:true},
-    xAxis:{type:'category',data:vmData.map(c=>c.category),axisLabel:catAxisLabel(2,10)},
-    yAxis:[{type:'value',name:'Revenue',nameTextStyle:{color:'#5F7078',fontSize:9},axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},{type:'value',name:'Tonnage',nameTextStyle:{color:'#5F7078',fontSize:9},axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtNum(v)},splitLine:{show:false}}],
-    series:[{name:'Revenue',type:'bar',data:vmData.map(c=>c.revenue),itemStyle:{color:'#40BCF3',borderRadius:[3,3,0,0]},barMaxWidth:50},{name:'Tonnage',type:'line',yAxisIndex:1,data:vmData.map(c=>c.tonnage),itemStyle:{color:'#1F3741'},lineStyle:{width:2},symbol:'circle',symbolSize:7}]
-  };
-  const vmTbl={headers:['Category','Revenue','Tonnage','Orders'],rows:vmData.map(c=>[c.category,fmtFull(c.revenue),fmtNum(c.tonnage)+' t',fmtN(c.orders)])};
-  const vmControls=(<><select className="panel-select" value={vmSalesman} onChange={e=>setVmSalesman(e.target.value)}><option value="All">All salesmen</option>{vmSalesmen.map(n=><option key={n} value={n}>{n}</option>)}</select><select className="panel-select" value={vmPeriod} onChange={e=>setVmPeriod(e.target.value)}><option value="All">Full period</option>{vmPeriods.map(p=><option key={p} value={p}>{p}</option>)}</select></>);
+    return vmMonths.map(mo=>{
+      const row={month:mo};
+      VM_CATS.forEach(cat=>{
+        const rec=source.find(c=>c.category===cat);
+        const m=rec?(rec.monthly||[]).find(x=>x.m===mo):null;
+        row[cat+'_rev']=m?m.revenue:0;
+        row[cat+'_ton']=m?m.tonnage:0;
+      });
+      return row;
+    });
+  },[vmSalesman]);
+  const vmOpt=withDataZoom({
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;p.forEach(s=>{html+=`${s.marker} ${s.seriesName}: ${s.seriesName.includes('Tonnage')?fmtNum(s.value)+' t':fmtFull(s.value)}<br/>`;});return html;}},
+    legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:9},type:'scroll',itemWidth:10,itemHeight:10},
+    grid:{left:'2%',right:'6%',bottom:'22%',top:'8%',containLabel:true},
+    xAxis:{type:'category',data:vmMonths,axisLabel:{color:'#5F7078',fontSize:8,rotate:30,hideOverlap:true}},
+    yAxis:[
+      {type:'value',name:'Revenue',nameTextStyle:{color:'#5F7078',fontSize:9},axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
+      {type:'value',name:'Tonnage (t)',nameTextStyle:{color:'#5F7078',fontSize:9},axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtNum(v)},splitLine:{show:false}}
+    ],
+    series:[
+      {name:'Melkpoeder Revenue',type:'bar',barGap:'10%',data:vmMonthlyData.map(r=>r['Melkpoeder_rev']),itemStyle:{color:'#40BCF3',borderRadius:[2,2,0,0]},barMaxWidth:18},
+      {name:'Veevoeders Revenue',type:'bar',data:vmMonthlyData.map(r=>r['Veevoeders_rev']),itemStyle:{color:'#2E9B62',borderRadius:[2,2,0,0]},barMaxWidth:18},
+      {name:'Melkpoeder Tonnage',type:'line',yAxisIndex:1,data:vmMonthlyData.map(r=>r['Melkpoeder_ton']),itemStyle:{color:'#1F3741'},lineStyle:{width:2,type:'solid'},symbol:'circle',symbolSize:5},
+      {name:'Veevoeders Tonnage',type:'line',yAxisIndex:1,data:vmMonthlyData.map(r=>r['Veevoeders_ton']),itemStyle:{color:'#666'},lineStyle:{width:2,type:'dashed'},symbol:'diamond',symbolSize:5}
+    ]
+  });
+  const vmTbl={headers:['Month','Melkpoeder Rev','Melkpoeder Ton','Veevoeders Rev','Veevoeders Ton'],rows:vmMonthlyData.map(r=>[r.month,fmtFull(r['Melkpoeder_rev']),fmtNum(r['Melkpoeder_ton'])+' t',fmtFull(r['Veevoeders_rev']),fmtNum(r['Veevoeders_ton'])+' t'])};
+  const vmControls=(<select className="panel-select" value={vmSalesman} onChange={e=>setVmSalesman(e.target.value)}><option value="All">All salesmen</option>{vmSalesmen.map(n=><option key={n} value={n}>{n}</option>)}</select>);
 
   return (
     <div className="page-area" key="reps">
-      <KpiNote/>
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:0}}>
+        <KpiNote/>
+        <button className={`cmp-toggle${excludeJohan?' active':''}`} onClick={()=>setExcludeJohan(v=>!v)}>
+          {excludeJohan ? '✓ Johan excluded' : 'Exclude Johan'}
+        </button>
+        {excludeJohan && <span style={{fontSize:10,color:'var(--muted)'}}>Johan's rows hidden from all charts and table</span>}
+      </div>
       <div className="kpi-strip">
         <div className="kpi-card blue"><div className="kpi-lbl">#1 — {top3[0]?.n?.split(' ')[0]||'—'}</div><div className="kpi-val sm">{fmtFull(top3[0]?.rev||0)}</div><div className="kpi-chg">{fmtN(top3[0]?.orders||0)} orders</div></div>
         <div className="kpi-card teal"><div className="kpi-lbl">#2 — {top3[1]?.n?.split(' ')[0]||'—'}</div><div className="kpi-val sm">{fmtFull(top3[1]?.rev||0)}</div><div className="kpi-chg">{fmtN(top3[1]?.orders||0)} orders</div></div>
@@ -2016,7 +2191,9 @@ function Categories({ fm, label, highlightQuery, effGrain, filter }) {
   const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
   const months=fm.map(m=>m.m);
   const periodLabel = useWeekly ? 'Week' : effGrain === 'yearly' ? 'Year' : 'Month';
+  const [drillGroup, setDrillGroup] = useState(null);
 
+  // Aggregate all raw category rows into {name, rev, orders}
   const cats=useMemo(()=>{
     let rows;
     if (useWeekly) {
@@ -2030,36 +2207,74 @@ function Categories({ fm, label, highlightQuery, effGrain, filter }) {
     return Object.values(g).sort((a,b)=>b.rev-a.rev);
   },[months, useWeekly, tickedWeeks]);
 
-  const totalRev=cats.reduce((s,c)=>s+c.rev,0);
-  const donutData=cats.map((d,i)=>({name:d.n,value:d.rev,itemStyle:{color:PALETTE[i%PALETTE.length]}}));
+  // Group-level aggregation
+  const groups=useMemo(()=>{
+    const g={};
+    GROUP_NAMES.forEach((grp,gi)=>{g[grp]={n:grp,rev:0,orders:0,color:GROUP_PALETTE[gi]};});
+    cats.forEach(c=>{const grp=CAT_TO_GROUP[c.n]||'Kalverbenodigdheden';if(g[grp]){g[grp].rev+=c.rev;g[grp].orders+=c.orders;}});
+    return GROUP_NAMES.map(n=>g[n]).sort((a,b)=>b.rev-a.rev);
+  },[cats]);
+
+  // Sub-categories within drilled group
+  const subCats=useMemo(()=>{
+    if(!drillGroup) return [];
+    const members=CATEGORY_GROUPS[drillGroup]||[];
+    return cats.filter(c=>members.includes(c.n)).sort((a,b)=>b.rev-a.rev);
+  },[drillGroup, cats]);
+
+  const displayItems = drillGroup ? subCats : groups;
+  const totalRev = displayItems.reduce((s,c)=>s+c.rev, 0);
+
+  const barOpt=withDataZoom({
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${p[0].marker} ${fmtFull(p[0].value)}`},
+    grid:{left:'2%',right:'6%',bottom:'18%',top:'5%',containLabel:true},
+    xAxis:{type:'value',axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
+    yAxis:{type:'category',data:displayItems.map(d=>d.n),axisLabel:{color:'#5F7078',fontSize:9,width:100,overflow:'truncate'},inverse:true},
+    series:[{type:'bar',data:displayItems.map((d,i)=>({value:d.rev,itemStyle:{color:drillGroup?PALETTE[i%PALETTE.length]:d.color}})),barMaxWidth:28,itemStyle:{borderRadius:[0,3,3,0]}}]
+  });
+
+  const donutData=displayItems.map((d,i)=>({name:d.n,value:d.rev,itemStyle:{color:drillGroup?PALETTE[i%PALETTE.length]:d.color}}));
   const donutOpt={tooltip:{...TOOLTIP_STYLE,trigger:'item',formatter:p=>`${p.name}: ${fmtFull(p.value)} (${p.percent}%)`},legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:9},type:'scroll',selectedMode:false},series:[{type:'pie',radius:['48%','70%'],center:['50%','44%'],data:donutData,itemStyle:{borderRadius:3,borderColor:'#fff',borderWidth:2},label:{show:false},emphasis:{scaleSize:6}}]};
-  const tbl={headers:['#','Category','Revenue','Orders','Share'],rows:cats.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),((d.rev/totalRev)*100).toFixed(1).replace('.',','  )+'%'])};
-  const [selectedCat,setSelectedCat]=useState(highlightQuery||null);
-  useEffect(()=>{if(highlightQuery)setSelectedCat(highlightQuery);},[highlightQuery]);
-  const handleCatDonutClick=(p)=>setSelectedCat(prev=>prev===p.name?null:p.name);
-  const catRows=selectedCat?tbl.rows.filter(r=>r[1]===selectedCat):tbl.rows;
-  const catsInsight=cats[0]?`${cats[0].n} leads with ${fmtFull(cats[0].rev)}${totalRev>0?` (${(cats[0].rev/totalRev*100).toFixed(0)}% share)`:''}`  :null;
+
+  const tbl={headers:['#',drillGroup?'Sub-category':'Group','Revenue','Orders','Share'],rows:displayItems.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),totalRev>0?((d.rev/totalRev)*100).toFixed(1).replace('.',','  )+'%':'—'])};
+  const catsInsight=groups[0]?`${groups[0].n} leads with ${fmtFull(groups[0].rev)}${groups.reduce((s,g)=>s+g.rev,0)>0?` (${(groups[0].rev/groups.reduce((s,g)=>s+g.rev,0)*100).toFixed(0)}% share)`:''}`  :null;
+
+  const handleBarClick=(p)=>{
+    if(!drillGroup){const g=groups[p.dataIndex];if(g)setDrillGroup(g.n);}
+  };
+  const handleDonutClick=(p)=>{
+    if(!drillGroup){const g=groups.find(x=>x.n===p.name);if(g)setDrillGroup(g.n);}
+  };
+
+  const breadcrumb = drillGroup ? (
+    <div style={{display:'flex',alignItems:'center',gap:6,padding:'4px 0 2px'}}>
+      <button onClick={()=>setDrillGroup(null)} style={{display:'flex',alignItems:'center',gap:4,background:'var(--surface2,#EEF3F6)',border:'1px solid var(--border,#DDE6E9)',borderRadius:6,padding:'3px 10px 3px 7px',fontSize:11,color:'var(--text,#1F3741)',cursor:'pointer',fontWeight:500,lineHeight:1.4}}>
+        <span style={{fontSize:13,lineHeight:1}}>←</span> All groups
+      </button>
+      <span style={{color:'var(--muted,#5F7078)',fontSize:11}}>›</span>
+      <span style={{fontSize:11,fontWeight:600,color:'var(--accent,#0891B2)',background:'rgba(8,145,178,.08)',borderRadius:5,padding:'3px 9px'}}>{drillGroup}</span>
+    </div>
+  ) : null;
 
   return (
     <div className="page-area" key="cats">
       <KpiNote/>
       <div className="kpi-strip">
-        <div className="kpi-card blue"><div className="kpi-lbl">Top Category</div><div className="kpi-val sm">{cats[0]?.n||'—'}</div><div className="kpi-chg">{fmtFull(cats[0]?.rev||0)} · {totalRev>0?((cats[0]?.rev||0)/totalRev*100).toFixed(0):0}%</div></div>
-        <div className="kpi-card teal"><div className="kpi-lbl">{cats[1]?.n||'—'}</div><div className="kpi-val sm">{fmtFull(cats[1]?.rev||0)}</div><div className="kpi-chg">{totalRev>0?((cats[1]?.rev||0)/totalRev*100).toFixed(1):0}% share</div></div>
-        <div className="kpi-card navy"><div className="kpi-lbl">{cats[2]?.n||'—'}</div><div className="kpi-val sm">{fmtFull(cats[2]?.rev||0)}</div><div className="kpi-chg">{totalRev>0?((cats[2]?.rev||0)/totalRev*100).toFixed(1):0}% share</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">Categories</div><div className="kpi-val sm">{cats.length}</div><div className="kpi-chg">Active groups</div></div>
+        <div className="kpi-card blue"><div className="kpi-lbl">Top {drillGroup?'Sub-cat':'Group'}</div><div className="kpi-val sm">{displayItems[0]?.n||'—'}</div><div className="kpi-chg">{fmtFull(displayItems[0]?.rev||0)} · {totalRev>0?((displayItems[0]?.rev||0)/totalRev*100).toFixed(0):0}%</div></div>
+        <div className="kpi-card teal"><div className="kpi-lbl">{displayItems[1]?.n||'—'}</div><div className="kpi-val sm">{fmtFull(displayItems[1]?.rev||0)}</div><div className="kpi-chg">{totalRev>0?((displayItems[1]?.rev||0)/totalRev*100).toFixed(1):0}% share</div></div>
+        <div className="kpi-card navy"><div className="kpi-lbl">{displayItems[2]?.n||'—'}</div><div className="kpi-val sm">{fmtFull(displayItems[2]?.rev||0)}</div><div className="kpi-chg">{totalRev>0?((displayItems[2]?.rev||0)/totalRev*100).toFixed(1):0}% share</div></div>
+        <div className="kpi-card amber"><div className="kpi-lbl">{drillGroup?'Sub-cats':'Groups'}</div><div className="kpi-val sm">{displayItems.length}</div><div className="kpi-chg">{drillGroup?'In this group':'Category groups'}</div></div>
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:2}}>
-          <Panel title="Category Revenue" subtitle={selectedCat?'Filtered · click the donut to change':`${label} · ${periodLabel.toLowerCase()}-based`} flex={1}>
-            <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
-              {selectedCat&&(<div className="drill-chip">Showing: {selectedCat}<button onClick={()=>setSelectedCat(null)} title="Clear selection">✕</button></div>)}
-              <div style={{flex:1,minHeight:0}}><InlineTable headers={tbl.headers} rows={catRows} height="100%"/></div>
-            </div>
+          <Panel title={drillGroup?`${drillGroup} — Sub-categories`:'Category Groups'} subtitle={drillGroup?'Sub-category breakdown':`${label} · click a bar to drill in`} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={!drillGroup?catsInsight:null} headerExtra={breadcrumb}>
+            <EC option={barOpt} onEvents={{'click':handleBarClick}}/>
           </Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="Category Split" subtitle="Click a slice to drill in" flex={1} tableHeaders={['Category','Revenue','Share']} tableRows={cats.map(d=>[d.n,fmtFull(d.rev),((d.rev/totalRev)*100).toFixed(1).replace('.',','  )+'%'])} insight={catsInsight}><EC option={donutOpt} onEvents={{'click':handleCatDonutClick}}/></Panel>
+          <Panel title={drillGroup?'Sub-category Split':'Group Split'} subtitle={drillGroup?'Within group':'Click a slice to drill in'} flex={1} tableHeaders={['Name','Revenue','Share']} tableRows={displayItems.map(d=>[d.n,fmtFull(d.rev),totalRev>0?((d.rev/totalRev)*100).toFixed(1).replace('.',','  )+'%':'—'])} insight={!drillGroup?catsInsight:null} headerExtra={breadcrumb}>
+            <EC option={donutOpt} onEvents={{'click':handleDonutClick}}/>
+          </Panel>
         </div>
       </div>
     </div>
@@ -2187,19 +2402,19 @@ function PLSummary() {
   const GaugeSVG=({value,label,py})=>{
     const clamp=v=>Math.max(-30,Math.min(30,v));
     const angle=(clamp(value)+30)/60*180-90;
-    const r=44,cx=58,cy2=52;
+    const r=38,cx=50,cy2=44;
     const toXY=(deg)=>{const rad=(deg-90)*Math.PI/180;return{x:cx+r*Math.cos(rad),y:cy2+r*Math.sin(rad)};};
-    const arcPath=(from,to,color,rr)=>{const a=toXY(from*3),b=toXY(to*3);const large=(to-from)*3>180?1:0;return`<path d="M ${a.x} ${a.y} A ${rr} ${rr} 0 ${large} 1 ${b.x} ${b.y}" stroke="${color}" stroke-width="8" fill="none" stroke-linecap="butt"/>`;};
+    const arcPath=(from,to,color,rr)=>{const a=toXY(from*3),b=toXY(to*3);const large=(to-from)*3>180?1:0;return`<path d="M ${a.x} ${a.y} A ${rr} ${rr} 0 ${large} 1 ${b.x} ${b.y}" stroke="${color}" stroke-width="7" fill="none" stroke-linecap="butt"/>`;};
     const color=value>=10?'#2E9B62':value>=0?'#E5A93D':'#D95C5C';
     const px2=toXY(angle);
     return(
       <div style={{display:'flex',flexDirection:'column',alignItems:'center',flex:1}}>
-        <svg viewBox="0 0 116 68" style={{width:'100%',maxWidth:150,overflow:'visible'}}>
-          <g dangerouslySetInnerHTML={{__html:arcPath(-30,0,'#D95C5C',r)+arcPath(0,10,'#E5A93D',r)+arcPath(10,30,'#2E9B62',r)+`<line x1="${cx}" y1="${cy2}" x2="${px2.x}" y2="${px2.y}" stroke="#1F3741" stroke-width="3" stroke-linecap="round"/>`+`<circle cx="${cx}" cy="${cy2}" r="4" fill="#1F3741"/>`}}/>
+        <svg viewBox="0 0 100 58" style={{width:'100%',maxWidth:110,overflow:'visible'}}>
+          <g dangerouslySetInnerHTML={{__html:arcPath(-30,0,'#D95C5C',r)+arcPath(0,10,'#E5A93D',r)+arcPath(10,30,'#2E9B62',r)+`<line x1="${cx}" y1="${cy2}" x2="${px2.x}" y2="${px2.y}" stroke="#1F3741" stroke-width="2.5" stroke-linecap="round"/>`+`<circle cx="${cx}" cy="${cy2}" r="3.5" fill="#1F3741"/>`}}/>
         </svg>
-        <div style={{fontSize:19,fontWeight:800,fontFamily:'JetBrains Mono,monospace',color,marginTop:-4}}>{value.toFixed(1).replace('.',','  )}%</div>
-        <div style={{fontSize:10,color:'var(--muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',marginTop:2}}>{label}</div>
-        <div style={{fontSize:10,color:'var(--muted)',marginTop:1}}>2025: {py.toFixed(1).replace('.',','  )}%</div>
+        <div style={{fontSize:15,fontWeight:800,fontFamily:'JetBrains Mono,monospace',color,marginTop:-2}}>{value.toFixed(1).replace('.',','  )}%</div>
+        <div style={{fontSize:9,color:'var(--muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',marginTop:1}}>{label}</div>
+        <div style={{fontSize:9,color:'var(--muted)',marginTop:1}}>2025: {py.toFixed(1).replace('.',','  )}%</div>
       </div>
     );
   };
@@ -2225,9 +2440,9 @@ function PLSummary() {
       <div className="charts-row">
         <Panel title="P&L Bridge" subtitle="2026 Jan–Mar" height={420} className="fin-fixed" style={{flex:1}} tableHeaders={wfTable.headers} tableRows={wfTable.rows} insight={bridgeInsight}><EC option={wfOpt}/></Panel>
         <Panel title="Margin Health" subtitle="Gross & EBITDA margins" tag="Indicative" height={420} className="fin-fixed" style={{flex:0.8}} tableHeaders={gaugeTable.headers} tableRows={gaugeTable.rows}>
-          <div style={{display:'flex',flexDirection:'column',gap:18,height:'100%',alignItems:'center',justifyContent:'center',padding:'4px 0'}}>
+          <div style={{display:'flex',flexDirection:'column',gap:10,height:'100%',alignItems:'center',justifyContent:'center',padding:'8px 12px'}}>
             <GaugeSVG value={gmCY} label="Gross Margin" py={gmPY}/>
-            <div style={{height:1,background:'var(--border)',alignSelf:'stretch'}}/>
+            <div style={{height:1,background:'var(--border)',alignSelf:'stretch',flexShrink:0}}/>
             <GaugeSVG value={emCY} label="EBITDA Margin" py={emPY}/>
           </div>
         </Panel>
@@ -2329,6 +2544,239 @@ function FinLedger() {
   );
 }
 
+/* ── DEBTORS ────────────────────────────────────────────────── */
+const DEBTOR_BUCKET_COLORS={'0–30 days':'#22c55e','31–60 days':'#f59e0b','61–90 days':'#f97316','91–180 days':'#ef4444','>180 days':'#b91c1c','Settled':'#94a3b8'};
+const DEBTOR_RISK_COLORS={A:'#22c55e',B:'#f59e0b',C:'#f97316',D:'#ef4444'};
+const DEBTOR_RISK_BG={A:'rgba(34,197,94,0.1)',B:'rgba(245,158,11,0.1)',C:'rgba(249,115,22,0.1)',D:'rgba(239,68,68,0.12)'};
+
+function Debtors(){
+  const[trendMode,setTrendMode]=useState('cohort');
+  const trendData=trendMode==='cohort'?debtorTrendlineCohort:debtorTrendlineSnapshot;
+  const kpi=debtorKPI||{};
+  const ageingData=debtorAgeing||[];
+  const ageingOpt={
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'}},
+    grid:{left:105,right:115,top:16,bottom:16},
+    xAxis:{type:'value',axisLabel:{fontSize:10,formatter:v=>fmtFull(v)},splitNumber:4},
+    yAxis:{type:'category',data:ageingData.map(b=>b.bucket),axisLabel:{fontSize:11}},
+    series:[{type:'bar',data:ageingData.map(b=>({value:b.value,itemStyle:{color:DEBTOR_BUCKET_COLORS[b.bucket]||'#40BCF3',borderRadius:[0,4,4,0]}})),label:{show:true,position:'right',formatter:p=>fmtFull(p.value),fontSize:11,color:'#475569'},barMaxWidth:36}],
+  };
+  const trendOpt={
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis'},
+    grid:{left:52,right:16,top:44,bottom:60},
+    legend:{data:['% ≤30d','% ≤60d','% ≤90d'],top:8,left:'center',textStyle:{fontSize:11}},
+    xAxis:{type:'category',data:trendData.map(d=>d.month),axisLabel:{fontSize:10,rotate:35,interval:Math.max(0,Math.floor(trendData.length/10)-1)}},
+    yAxis:{type:'value',min:0,max:100,axisLabel:{formatter:v=>v+'%',fontSize:10}},
+    series:[
+      {name:'% ≤30d',type:'line',data:trendData.map(d=>d.pct30!=null?+Math.min(100,Math.max(0,d.pct30)).toFixed(1):null),smooth:false,symbol:'circle',symbolSize:4,lineStyle:{width:2},itemStyle:{color:'#22c55e'},areaStyle:{color:'rgba(34,197,94,0.08)'},connectNulls:false},
+      {name:'% ≤60d',type:'line',data:trendData.map(d=>d.pct60!=null?+Math.min(100,Math.max(0,d.pct60)).toFixed(1):null),smooth:false,symbol:'circle',symbolSize:4,lineStyle:{width:2},itemStyle:{color:'#f59e0b'},connectNulls:false},
+      {name:'% ≤90d',type:'line',data:trendData.map(d=>d.pct90!=null?+Math.min(100,Math.max(0,d.pct90)).toFixed(1):null),smooth:false,symbol:'circle',symbolSize:4,lineStyle:{width:2},itemStyle:{color:'#f97316'},connectNulls:false},
+    ],
+  };
+  return(
+    <div className="page-area" key="debtors">
+      <div className="kpi-strip">
+        <div className="kpi-card blue"><div className="kpi-lbl">Total Open AR</div><div className="kpi-val sm">{fmtFull(kpi.totalDebtorValue)}</div><div className="kpi-chg">{kpi.openInvoiceCount} invoices · {kpi.customerCount} customers</div></div>
+        <div className="kpi-card amber"><div className="kpi-lbl">Over 30 Days</div><div className="kpi-val sm">{fmtFull(kpi.over30)}</div><div className="kpi-chg">{kpi.pctOver30!=null?kpi.pctOver30.toFixed(1):'—'}% of total AR</div></div>
+        <div className="kpi-card navy"><div className="kpi-lbl">Over 90 Days</div><div className="kpi-val sm">{fmtFull(kpi.over90)}</div><div className="kpi-chg">{kpi.pctOver90!=null?kpi.pctOver90.toFixed(1):'—'}% of total AR</div></div>
+        <div className="kpi-card teal"><div className="kpi-lbl">Snapshot Date</div><div className="kpi-val sm" style={{fontSize:17}}>{kpi.asOf||debtorAsOf}</div><div className="kpi-chg">Latest AR posting date</div></div>
+      </div>
+      <div className="charts-row">
+        <div className="charts-col" style={{flex:1}}>
+          <Panel title="AR Ageing Buckets" subtitle="Open receivables by age" height={420}><EC option={ageingOpt}/></Panel>
+        </div>
+        <div className="charts-col" style={{flex:1}}>
+          <Panel title="Payment Trendline" subtitle={trendMode==='cohort'?'% invoices paid, by cohort month':'% invoices paid, last 18 month-end snapshots'} height={420}
+            controls={<div className="view-tog"><button className={`vt-btn${trendMode==='cohort'?' active':''}`} onClick={()=>setTrendMode('cohort')}>Cohort</button><button className={`vt-btn${trendMode==='snapshot'?' active':''}`} onClick={()=>setTrendMode('snapshot')}>Snapshot</button></div>}>
+            <EC option={trendOpt}/>
+          </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── DEBTOR CUSTOMERS ────────────────────────────────────────── */
+function DebtorCustomers(){
+  const[drillCustomer,setDrillCustomer]=useState(null);
+  const[search,setSearch]=useState('');
+  const customers=debtorCustomers||[];
+  const q=search.trim().toLowerCase();
+  const filtered=q?customers.filter(c=>c.name.toLowerCase().includes(q)||String(c.code).includes(q)||(c.risk||'').toLowerCase()===q):customers;
+
+  if(drillCustomer){
+    const items=(debtorOpenItems||[]).filter(i=>i.code===drillCustomer.code);
+    return(
+      <div className="page-area" key="items">
+        <div className="drill-chip">Open items — <b>{drillCustomer.name}</b><button onClick={()=>setDrillCustomer(null)}>✕</button></div>
+        <div className="charts-row" style={{flex:1}}>
+          <div className="charts-col" style={{flex:1}}>
+            <Panel title={`Open Invoices — ${drillCustomer.name}`} subtitle={`${items.length} open invoice(s) · As of ${debtorAsOf}`}
+              flex={1} tableHeaders={['Invoice #','Invoice Date','Open Amount','Days Out','Bucket']}
+              tableRows={items.map(i=>[i.invoiceNr,i.invoiceDate,fmtFull(i.openAmount),i.daysOutstanding,i.bucket])}
+              defaultView="table" searchableTable><EC option={{}}/></Panel>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return(
+    <div className="page-area" key="debtorcustomers">
+      <div className="kpi-strip">
+        <div className="kpi-card blue"><div className="kpi-lbl">Customers with Open AR</div><div className="kpi-val sm">{customers.length}</div><div className="kpi-chg">As of {debtorAsOf}</div></div>
+        <div className="kpi-card amber"><div className="kpi-lbl">Non-Payer Flags</div><div className="kpi-val sm">{customers.filter(c=>c.nonPayer).length}</div><div className="kpi-chg">Flagged in system</div></div>
+        <div className="kpi-card navy"><div className="kpi-lbl">Risk D</div><div className="kpi-val sm">{customers.filter(c=>c.risk==='D').length}</div><div className="kpi-chg">&gt;90d oldest open invoice</div></div>
+        <div className="kpi-card teal"><div className="kpi-lbl">Risk A</div><div className="kpi-val sm">{customers.filter(c=>c.risk==='A').length}</div><div className="kpi-chg">≤30d oldest open invoice</div></div>
+      </div>
+      <div style={{fontSize:11,color:'#64748b',padding:'0 0 8px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+        <span>Risk: <b style={{color:DEBTOR_RISK_COLORS.A}}>A</b> ≤30d · <b style={{color:DEBTOR_RISK_COLORS.B}}>B</b> 31–60d · <b style={{color:DEBTOR_RISK_COLORS.C}}>C</b> 61–90d · <b style={{color:DEBTOR_RISK_COLORS.D}}>D</b> &gt;90d · Click a row → open invoices</span>
+      </div>
+      <div className="chart-panel" style={{flex:1,minHeight:0,display:'flex',flexDirection:'column'}}>
+        <div className="cp-head">
+          <div style={{flex:1,minWidth:0}}><div className="cp-title">Customer AR Scorecard</div><div className="cp-sub">{filtered.length} of {customers.length} customers</div></div>
+          <input type="text" placeholder="Search name, code or risk…" value={search} onChange={e=>setSearch(e.target.value)}
+            style={{fontSize:11,padding:'4px 10px',border:'1px solid #dde3ea',borderRadius:6,outline:'none',width:200,background:'transparent',color:'inherit'}}/>
+        </div>
+        <div className="cp-body" style={{flex:1,minHeight:0,overflow:'auto'}}>
+          <table className="itbl">
+            <thead><tr><th>Code</th><th>Name</th><th>Open Value</th><th>Open Inv.</th><th>Avg Days</th><th>Oldest (d)</th><th>Last Payment</th><th>Risk</th><th>Non-Payer</th></tr></thead>
+            <tbody>{filtered.map((c,i)=>(
+              <tr key={i} style={{cursor:'pointer'}}
+                onClick={()=>setDrillCustomer(c)}
+                onMouseEnter={e=>{e.currentTarget.style.background=DEBTOR_RISK_BG[c.risk]||'rgba(64,188,243,0.07)';}}
+                onMouseLeave={e=>{e.currentTarget.style.background='';}}>
+                <td>{c.code}</td>
+                <td style={{fontWeight:500,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.name}</td>
+                <td>{fmtFull(c.openValue)}</td>
+                <td>{c.openInvoices}</td>
+                <td>{c.avgDaysToPay!=null?Math.round(c.avgDaysToPay)+'d':'—'}</td>
+                <td>{c.ageOfOldest!=null?c.ageOfOldest+'d':'—'}</td>
+                <td style={{fontSize:11,color:'#64748b'}}>{c.lastPayment||'—'}</td>
+                <td><span style={{background:DEBTOR_RISK_COLORS[c.risk]||'#94a3b8',color:'#fff',borderRadius:4,padding:'2px 9px',fontSize:11,fontWeight:700,display:'inline-block',minWidth:22,textAlign:'center'}}>{c.risk||'—'}</span></td>
+                <td><span style={{background:c.nonPayer?'#ef4444':'#22c55e',color:'#fff',borderRadius:4,padding:'2px 8px',fontSize:11,fontWeight:700,display:'inline-block'}}>{c.nonPayer?'YES':'no'}</span></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── DEBTOR TREND ────────────────────────────────────────────── */
+function DebtorTrend(){
+  const all=debtorQuarterlyYearly||[];
+  const qRows=all.filter(r=>r.type==='Q');
+  const yRows=all.filter(r=>r.type==='Y');
+  const[daysPer,setDaysPer]=useState('Q');
+  const[pctPer,setPctPer]=useState('Q');
+  const daysRows=daysPer==='Q'?qRows:yRows;
+  const pctRows=pctPer==='Q'?qRows:yRows;
+  const isDQ=daysPer==='Q';
+  const isPQ=pctPer==='Q';
+
+  const daysOpt={
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'}},
+    grid:{left:48,right:16,top:16,bottom:isDQ?60:32},
+    xAxis:{type:'category',data:daysRows.map(r=>r.period),axisLabel:{fontSize:isDQ?10:11,rotate:isDQ?35:0,interval:0}},
+    yAxis:{type:'value',min:0,axisLabel:{fontSize:10,formatter:v=>v+'d'}},
+    series:[{type:'bar',
+      data:daysRows.map(r=>r.avgDays!=null?+r.avgDays.toFixed(1):null),
+      itemStyle:{color:isDQ?'#40BCF3':'#1F3741',borderRadius:[3,3,0,0]},
+      barMaxWidth:isDQ?36:72,
+      label:{show:true,position:'top',fontSize:isDQ?10:12,color:isDQ?'#475569':'#1F3741',
+        formatter:p=>p.value!=null?p.value+'d':''}}],
+  };
+
+  const pct30Opt={
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis'},
+    grid:{left:48,right:16,top:16,bottom:isPQ?60:32},
+    xAxis:{type:'category',data:pctRows.map(r=>r.period),axisLabel:{fontSize:isPQ?10:11,rotate:isPQ?35:0,interval:0}},
+    yAxis:{type:'value',min:0,max:100,axisLabel:{formatter:v=>v+'%',fontSize:10}},
+    series:isPQ
+      ?[{type:'line',
+          data:pctRows.map(r=>r.pct30!=null?+Math.min(100,Math.max(0,r.pct30)).toFixed(1):null),
+          smooth:false,symbol:'circle',symbolSize:5,connectNulls:false,
+          lineStyle:{width:2,color:'#22c55e'},itemStyle:{color:'#22c55e'},
+          areaStyle:{color:'rgba(34,197,94,0.10)'},
+          label:{show:true,position:'top',fontSize:10,color:'#22c55e',formatter:p=>p.value!=null?p.value+'%':''}}]
+      :[{type:'bar',
+          data:pctRows.map(r=>r.pct30!=null?+r.pct30.toFixed(1):null),
+          itemStyle:{color:'#22c55e',borderRadius:[3,3,0,0]},barMaxWidth:72,
+          label:{show:true,position:'top',fontSize:12,color:'#22c55e',formatter:p=>p.value!=null?p.value+'%':''}}],
+  };
+
+  const daysTog=(
+    <div className="view-tog">
+      <button className={`vt-btn${isDQ?' active':''}`} onClick={()=>setDaysPer('Q')}>Quarterly</button>
+      <button className={`vt-btn${!isDQ?' active':''}`} onClick={()=>setDaysPer('Y')}>Annual</button>
+    </div>
+  );
+  const pctTog=(
+    <div className="view-tog">
+      <button className={`vt-btn${isPQ?' active':''}`} onClick={()=>setPctPer('Q')}>Quarterly</button>
+      <button className={`vt-btn${!isPQ?' active':''}`} onClick={()=>setPctPer('Y')}>Annual</button>
+    </div>
+  );
+
+  const detailOpt={
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'}},
+    grid:{left:52,right:56,top:20,bottom:60},
+    legend:{data:['Avg Days','% ≤30d'],bottom:4,textStyle:{fontSize:11}},
+    xAxis:{type:'category',data:qRows.map(r=>r.period),axisLabel:{fontSize:10,rotate:35,interval:0}},
+    yAxis:[
+      {type:'value',name:'Days',min:0,axisLabel:{fontSize:10,formatter:v=>v+'d'}},
+      {type:'value',name:'%',min:0,max:100,axisLabel:{fontSize:10,formatter:v=>v+'%'}}
+    ],
+    series:[
+      {type:'bar',name:'Avg Days',yAxisIndex:0,
+        data:qRows.map(r=>r.avgDays!=null?+r.avgDays.toFixed(1):null),
+        itemStyle:{color:'#40BCF3',borderRadius:[3,3,0,0]},barMaxWidth:36,
+        label:{show:true,position:'top',fontSize:10,formatter:p=>p.value!=null?p.value+'d':''}},
+      {type:'line',name:'% ≤30d',yAxisIndex:1,
+        data:qRows.map(r=>r.pct30!=null?+Math.min(100,Math.max(0,r.pct30)).toFixed(1):null),
+        smooth:false,symbol:'circle',symbolSize:5,connectNulls:false,
+        lineStyle:{width:2,color:'#22c55e'},itemStyle:{color:'#22c55e'},
+        label:{show:true,position:'top',fontSize:10,color:'#22c55e',formatter:p=>p.value!=null?p.value+'%':''}}
+    ],
+  };
+
+  return(
+    <div className="page-area fin-scroll" key="debtortrend">
+      <div className="kpi-strip">
+        {yRows.map(r=>(
+          <div className="kpi-card blue" key={r.period}>
+            <div className="kpi-lbl">{r.period} Avg Days to Pay</div>
+            <div className="kpi-val sm">{r.avgDays!=null?r.avgDays.toFixed(1)+'d':'—'}</div>
+            <div className="kpi-chg">{r.pct30!=null?r.pct30.toFixed(1)+'% paid ≤30d':''}{r.invoiceCount?' · '+r.invoiceCount+' invoices':''}</div>
+          </div>
+        ))}
+      </div>
+      <div className="charts-row">
+        <div className="charts-col" style={{flex:1}}>
+          <Panel title="Avg Days to Pay"
+            subtitle={isDQ?'Average days from invoice to payment · quarterly':'Annual average from invoice to payment'}
+            height={360} controls={daysTog}><EC option={daysOpt}/></Panel>
+        </div>
+        <div className="charts-col" style={{flex:1}}>
+          <Panel title="% Paid ≤30 Days"
+            subtitle={isPQ?'Invoices settled within 30 days · quarterly':'Annual share settled within 30 days'}
+            height={360} controls={pctTog}><EC option={pct30Opt}/></Panel>
+        </div>
+      </div>
+      <div className="charts-row">
+        <div className="charts-col" style={{flex:1}}>
+          <Panel title="Payment Detail" subtitle="Quarterly breakdown — annual totals shown in KPI cards above" height={300}
+            tableHeaders={['Period','Avg Days','% ≤30d','Invoices']}
+            tableRows={qRows.map(r=>[r.period,r.avgDays!=null?r.avgDays.toFixed(1)+'d':'—',r.pct30!=null?r.pct30.toFixed(1)+'%':'—',r.invoiceCount])}
+            defaultView="table"><EC option={detailOpt}/></Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── MOBILE SCROLL HINT ──────────────────────────────────────── */
 function ScrollHint({ watchKey, disabled }) {
   const [show, setShow] = useState(false);
@@ -2379,8 +2827,9 @@ const NAV = [
   {section:'Catalogue',items:[{id:'products',icon:'◻',label:'Products',desc:'Product-level revenue breakdown'},{id:'categories',icon:'⊞',label:'Categories',desc:'Category split & revenue share'}]},
   {section:'Channels',items:[{id:'channels',icon:'⇌',label:'Channel Mix',desc:'Direct sales vs webshop split'}]},
   {section:'Finance',items:[{id:'plsummary',icon:'⟡',label:'P&L Summary',desc:'Margins & profit & loss summary'},{id:'finrevcosts',icon:'↕',label:'Revenue & Costs',desc:'Revenue vs cost lines over time'},{id:'finledger',icon:'≣',label:'Ledger',desc:'Full financial ledger detail'}]},
+  {section:'Debtors',items:[{id:'debtors',icon:'◎',label:'AR Overview',desc:'Open invoices & ageing buckets'},{id:'debtorcustomers',icon:'◑',label:'Customers',desc:'Customer scorecard & open invoices'},{id:'debtortrend',icon:'⌛',label:'Payment Trends',desc:'Days to pay & quarterly performance'}]},
 ];
-const PAGE_NAMES={overview:'Overview Dashboard',revenue:'Revenue Trends',salesreps:'Verkoper',customers:'Top Customers',products:'Product Analysis',categories:'Category Breakdown',channels:'Channel Mix',plsummary:'P&L Summary',finrevcosts:'Revenue & Costs',finledger:'Ledger'};
+const PAGE_NAMES={overview:'Overview Dashboard',revenue:'Revenue Trends',salesreps:'Verkoper',customers:'Top Customers',products:'Product Analysis',categories:'Category Breakdown',channels:'Channel Mix',plsummary:'P&L Summary',finrevcosts:'Revenue & Costs',finledger:'Ledger',debtors:'AR Overview',debtorcustomers:'Customer Scorecard',debtortrend:'Payment Trends'};
 
 const SUGGESTED_QUESTIONS={
   overview:['How is revenue trending this month?','Which category is driving sales right now?','Who is this month\'s top verkoper?'],
@@ -2393,6 +2842,9 @@ const SUGGESTED_QUESTIONS={
   plsummary:['How is gross margin trending?','What is driving EBITDA this period?'],
   finrevcosts:['What are our biggest cost drivers?','How do revenue and costs compare year over year?'],
   finledger:['What are the largest YoY swings in the ledger?','Which accounts saw the biggest cost increases?'],
+  debtors:['What is the total open AR?','Which customers have the oldest outstanding invoices?','How much AR is over 90 days?'],
+  debtorcustomers:['Which customer has the highest open AR?','How many customers are flagged as non-payer?','Show me all Risk D customers'],
+  debtortrend:['What is the average days to pay this year?','How has the % paid within 30 days changed over time?','Which quarter had the best payment performance?'],
   default:['What can you tell me about this page?','Summarize the key numbers here'],
 };
 
@@ -2426,7 +2878,7 @@ function Sidebar({ page, setPage, sideOpen, setSideOpen, collapsed, toggleCollap
                     onMouseEnter={(e)=>handleNavHover(e,item)}
                     onMouseLeave={handleNavLeave}
                     role="button" tabIndex={0} onKeyDown={e=>e.key==='Enter'&&goTo(item.id)}>
-                    <span className="nav-icon">{item.icon}</span>
+                    <span className="nav-icon"><img src={`/icons/icon-${item.id}.png`} alt={item.label} draggable="false"/></span>
                     <span className="nav-label">{item.label}</span>
                     {page===item.id&&<span className="nav-pip"/>}
                   </div>
@@ -2637,6 +3089,9 @@ export default function App() {
       case'plsummary':return<PLSummary/>;
       case'finrevcosts':return<FinRevCosts/>;
       case'finledger':return<FinLedger/>;
+      case'debtors':return<Debtors/>;
+      case'debtorcustomers':return<DebtorCustomers/>;
+      case'debtortrend':return<DebtorTrend/>;
       default:return<Overview{...props}/>;
     }
   };

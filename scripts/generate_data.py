@@ -5,8 +5,8 @@
 #   PART1 → static_data/DT_Portal_Export_*.xlsx + derived live data
 #   PART2 → stat.csv (from zip)
 #   PART3 → derived invoice_audit_live from raw CSVs
+#   PART4 → fin_boeking type-10 (AR / Debtor Management)
 # =============================================================================
-#testing 
 
 import os
 import io
@@ -252,7 +252,7 @@ def build_part1(pdf_xlsx: pd.DataFrame, df_live: pd.DataFrame) -> str:
         pdf_src.groupby(["customer_name", "month_label"], as_index=False)
         .agg(rev=("Revenue", "sum"), orders=("Revenue", "size"))
     )
-    customers = customers[customers["customer_name"] != "Unknown"]  # ← add this
+    customers = customers[customers["customer_name"] != "Unknown"]
     customers = customers.sort_values("rev", ascending=False)
 
     products = (
@@ -488,10 +488,10 @@ def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
     else:
         df["perc"] = 0
 
-    # ── Salesman via rel_v_vert (static CSV) + bridge ─────────────────────────
-    # rel_v_vert is a MariaDB View not included in the zip export.
-    # We keep it as a static CSV in static_data/rel_v_vert.csv.
-    # When the zip eventually includes it, this will auto-use the zip version.
+    # ── Salesman via rel_v_vert ───────────────────────────────────────────────
+    # Priority: 1) ZIP tables["rel_v_vert"]  (date-suffix stripped automatically)
+    #           2) static_data/rel_v_vert.csv (fallback for old exports)
+    #           3) rel table naam_volledig     (last resort)
     rvv_path = REL_V_VERT_PATH
     if "rel_k_rel__vert" in tables:
         bridge = tables["rel_k_rel__vert"].copy()
@@ -499,9 +499,16 @@ def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
         bridge["id_rel__vert"] = pd.to_numeric(bridge["id_rel__vert"], errors="coerce")
         bridge = bridge.sort_values("id").groupby("id_rel").first().reset_index()
 
-        # Prefer static rel_v_vert.csv (has Orsi Hongarije);
-        # fall back to rel table (has Judit Hongarije instead)
-        if os.path.exists(rvv_path):
+        if "rel_v_vert" in tables:
+            # ← NEW: ZIP export takes priority (rel_v_vert_YYYY-MM-DD.csv)
+            rvv = tables["rel_v_vert"].copy()
+            rvv["id"] = pd.to_numeric(rvv["id"], errors="coerce")
+            rvv = rvv[["id","naam_volledig"]].rename(
+                columns={"id":"_rep_id","naam_volledig":"salesman"}
+            )
+            print("  → Salesman lookup: using rel_v_vert from ZIP")
+        elif os.path.exists(rvv_path):
+            # ← Fallback: static CSV
             rvv = pd.read_csv(rvv_path)
             rvv["id"] = pd.to_numeric(rvv["id"], errors="coerce")
             rvv = rvv[["id","naam_volledig"]].rename(
@@ -509,11 +516,11 @@ def derive_invoice_audit_live(tables: dict) -> pd.DataFrame:
             )
             print("  → Salesman lookup: using static rel_v_vert.csv")
         else:
-            # Fallback: use rel table (Judit instead of Orsi)
+            # ← Last resort: rel table
             rvv = tables["rel"][["id","naam_volledig"]].copy()
             rvv["id"] = pd.to_numeric(rvv["id"], errors="coerce")
             rvv = rvv.rename(columns={"id":"_rep_id","naam_volledig":"salesman"})
-            print("  ⚠ rel_v_vert.csv not found — falling back to rel table")
+            print("  ⚠ rel_v_vert not in ZIP and static CSV not found — falling back to rel table")
 
         bridge = bridge.merge(rvv, left_on="id_rel__vert", right_on="_rep_id", how="left")
         df = df.merge(bridge[["id_rel","salesman"]], left_on="id_rel__fac", right_on="id_rel", how="left")
@@ -740,31 +747,406 @@ def build_part3(df_live: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
+# ─── PART 4: DEBTOR MANAGEMENT ───────────────────────────────────────────────
+
+def build_part4(tables: dict) -> str:
+    """
+    PART4: Accounts Receivable / Debtor Management
+    Source: fin_boeking WHERE id_gen_fin_boeking_type = 10 (Afnemer)
+            joined with rel for customer code + name
+
+    Exports:
+      debtorAsOf             – snapshot date string (max AR datum)
+      debtorKPI              – single KPI object
+      debtorAgeing           – 6-bucket ageing array (0-30/31-60/61-90/91-180/>180/Settled)
+      debtorTrendlineCohort  – % still unpaid at >30/>60/>90d, grouped by invoice cohort month
+      debtorTrendlineSnapshot– % of open AR >30/>60/>90d old, monthly AR-quality snapshot
+      debtorCustomers        – one row per customer with open balance (scorecard + risk)
+      debtorOpenItems        – one row per open invoice (for customer drillthrough)
+      debtorQuarterlyYearly  – quarterly + yearly payment performance
+    """
+
+    _NULL = "\n\n".join([
+        "// ── PART 4: Debtor Management — fin_boeking not available ──",
+        "export const debtorAsOf = null;",
+        "export const debtorKPI = null;",
+        "export const debtorAgeing = [];",
+        "export const debtorTrendlineCohort = [];",
+        "export const debtorTrendlineSnapshot = [];",
+        "export const debtorCustomers = [];",
+        "export const debtorOpenItems = [];",
+        "export const debtorQuarterlyYearly = [];",
+    ])
+
+    fb  = tables.get("fin_boeking")
+    rel = tables.get("rel")
+
+    if fb is None:
+        print("  ⚠ fin_boeking not found — PART4 (Debtors) skipped")
+        return _NULL
+
+    # ── Type coercions ────────────────────────────────────────────────────────
+    fb = fb.copy()
+    fb["datum"]                   = pd.to_datetime(fb["datum"],                   errors="coerce")
+    fb["bedrag"]                  = pd.to_numeric(fb["bedrag"],                   errors="coerce").fillna(0)
+    fb["id_rel"]                  = pd.to_numeric(fb["id_rel"],                   errors="coerce")
+    fb["id_gen_fin_boeking_type"] = pd.to_numeric(fb["id_gen_fin_boeking_type"],  errors="coerce")
+
+    # ── AR filter: type 10 (Afnemer), not reversed, has invoice number ────────
+    rec_ok = fb["rec_status"].isna() if "rec_status" in fb.columns else pd.Series(True, index=fb.index)
+    ar = fb[
+        (fb["id_gen_fin_boeking_type"] == 10)
+        & rec_ok
+        & fb["factuur_nr"].notna()
+    ].copy()
+
+    if ar.empty:
+        print("  ⚠ No AR rows (type 10) found — PART4 skipped")
+        return _NULL
+
+    # ── Snapshot date = latest AR posting date ────────────────────────────────
+    as_of     = ar["datum"].max()
+    as_of_str = as_of.strftime("%Y-%m-%d") if pd.notna(as_of) else "Unknown"
+    print(f"  → AR snapshot: {as_of_str}  ({len(ar):,} postings)")
+
+    # ── Step 1: per-invoice payment info (from credit postings) ───────────────
+    ar_credits = ar[ar["bedrag"] < 0].copy()
+    pay_info = (
+        ar_credits.groupby(["id_rel", "factuur_nr"])
+        .agg(
+            first_payment_date=("datum", "min"),
+            last_payment_date=("datum",  "max"),
+            payment_count=("datum",      "count"),
+        )
+        .reset_index()
+    )
+
+    # ── Step 2: per-invoice invoiced amount (from debit postings) ─────────────
+    ar_debits = ar[ar["bedrag"] > 0].copy()
+    invoiced_info = (
+        ar_debits.groupby(["id_rel", "factuur_nr"])
+        .agg(invoiced=("bedrag", "sum"))
+        .reset_index()
+    )
+
+    # ── Step 3: master invoice-level AR (net open amount) ─────────────────────
+    inv = (
+        ar.groupby(["id_rel", "factuur_nr"])
+        .agg(
+            invoice_date=("datum", "min"),
+            open_amount=("bedrag", "sum"),
+        )
+        .reset_index()
+    )
+    inv = inv.merge(pay_info,      on=["id_rel", "factuur_nr"], how="left")
+    inv = inv.merge(invoiced_info, on=["id_rel", "factuur_nr"], how="left")
+    inv["invoiced"] = inv["invoiced"].fillna(0)
+
+    # ── Step 4: age and bucket ────────────────────────────────────────────────
+    inv["days_outstanding"] = (as_of - inv["invoice_date"]).dt.days.clip(lower=0).fillna(0).astype(int)
+
+    def _bucket(row):
+        if abs(row["open_amount"]) < 0.01:
+            return "Settled"
+        d = row["days_outstanding"]
+        if d <= 30:  return "0-30"
+        if d <= 60:  return "31-60"
+        if d <= 90:  return "61-90"
+        if d <= 180: return "91-180"
+        return ">180"
+
+    inv["ageing_bucket"] = inv.apply(_bucket, axis=1)
+
+    # ── Step 5: join customer code + name from rel ────────────────────────────
+    if rel is not None:
+        rel_cols = [c for c in ["id","kode","naam_volledig"] if c in rel.columns]
+        rel_c = rel[rel_cols].copy()
+        rel_c["id"] = pd.to_numeric(rel_c["id"], errors="coerce")
+        rename_map = {"id": "_rel_id"}
+        if "kode"          in rel_c.columns: rename_map["kode"]          = "customer_code"
+        if "naam_volledig" in rel_c.columns: rename_map["naam_volledig"] = "customer_name"
+        rel_c = rel_c.rename(columns=rename_map)
+        inv = inv.merge(rel_c, left_on="id_rel", right_on="_rel_id", how="left")
+    else:
+        inv["customer_code"] = inv["id_rel"].astype(str)
+        inv["customer_name"] = "Unknown"
+
+    inv["customer_code"] = inv["customer_code"].fillna("").astype(str).str.strip().replace("", "Unknown")
+    inv["customer_name"] = inv["customer_name"].fillna("").astype(str).str.strip().replace("", "Unknown")
+
+    # Non-payer flag (name contains Dutch "does not pay / do not deliver" markers)
+    inv["non_payer"] = inv["customer_name"].str.lower().str.contains(
+        r"betaalt niet|betaald niet|niet leveren", na=False
+    )
+
+    # ── Convenience subset: only invoices with a positive open balance ─────────
+    open_inv = inv[inv["open_amount"] > 0.005].copy()
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Export 1 — debtorKPI
+    # ═══════════════════════════════════════════════════════════════════════════
+    total_value = float(open_inv["open_amount"].sum())
+    over_30_val = float(open_inv.loc[open_inv["days_outstanding"] > 30,  "open_amount"].sum())
+    over_90_val = float(open_inv.loc[open_inv["days_outstanding"] > 90,  "open_amount"].sum())
+    pct_over_30 = round(over_30_val / total_value * 100, 1) if total_value > 0 else 0.0
+    pct_over_90 = round(over_90_val / total_value * 100, 1) if total_value > 0 else 0.0
+
+    kpi_js = (
+        f"export const debtorKPI = {{\n"
+        f"  asOf:'{as_of_str}',\n"
+        f"  totalDebtorValue:{round(total_value)},\n"
+        f"  over30:{round(over_30_val)},\n"
+        f"  pctOver30:{pct_over_30},\n"
+        f"  over90:{round(over_90_val)},\n"
+        f"  pctOver90:{pct_over_90},\n"
+        f"  openInvoiceCount:{len(open_inv)},\n"
+        f"  customerCount:{int(open_inv['id_rel'].nunique())}\n"
+        f"}};"
+    )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Export 2 — debtorAgeing
+    # ═══════════════════════════════════════════════════════════════════════════
+    bucket_order = ["0-30", "31-60", "61-90", "91-180", ">180", "Settled"]
+    ageing_rows  = []
+    for b in bucket_order:
+        mask = inv["ageing_bucket"] == b
+        val  = float(inv.loc[mask, "open_amount"].sum())
+        cnt  = int(mask.sum())
+        pct  = round(val / total_value * 100, 1) if total_value > 0 and b != "Settled" else 0.0
+        ageing_rows.append(f"  {{bucket:'{b}',value:{round(val)},count:{cnt},pct:{pct}}}")
+    ageing_js = "export const debtorAgeing = [\n" + ",\n".join(ageing_rows) + "\n];"
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Export 3a — debtorTrendlineCohort
+    # For invoices issued in month M: % of that month's invoiced value still
+    # unpaid at >30 / >60 / >90 days past invoice date (at current snapshot).
+    # ═══════════════════════════════════════════════════════════════════════════
+    inv["_inv_ym"]    = inv["invoice_date"].dt.to_period("M")
+    inv["_inv_label"] = inv["invoice_date"].dt.strftime("%b %y")
+
+    cohort_rows = []
+    for (ym, label), grp in inv.groupby(["_inv_ym", "_inv_label"]):
+        total_inv = float(grp["invoiced"].sum())
+        if total_inv < 1.0:
+            continue
+        # Only open invoices contribute to the "still unpaid" numerator
+        open_grp = grp[grp["open_amount"] > 0.005]
+        p30 = round(float(open_grp.loc[open_grp["days_outstanding"] > 30,  "invoiced"].sum()) / total_inv * 100, 1)
+        p60 = round(float(open_grp.loc[open_grp["days_outstanding"] > 60,  "invoiced"].sum()) / total_inv * 100, 1)
+        p90 = round(float(open_grp.loc[open_grp["days_outstanding"] > 90,  "invoiced"].sum()) / total_inv * 100, 1)
+        sort_key = str(ym)
+        cohort_rows.append((sort_key, f"  {{month:'{js_escape(label)}',pct30:{p30},pct60:{p60},pct90:{p90}}}"))
+
+    cohort_rows.sort(key=lambda x: x[0])
+    trendline_cohort_js = (
+        "export const debtorTrendlineCohort = [\n"
+        + ",\n".join(r[1] for r in cohort_rows)
+        + "\n];"
+    )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Export 3b — debtorTrendlineSnapshot
+    # For each calendar month end (last 18 months): of all AR open at that
+    # point, what % is >30 / >60 / >90 days old?
+    # ═══════════════════════════════════════════════════════════════════════════
+    ar["_ar_ym"] = ar["datum"].dt.to_period("M")
+    all_months   = sorted(ar["_ar_ym"].dropna().unique())
+    snap_months  = all_months[-18:]  # cap at 18 months to keep run time bounded
+
+    snap_rows = []
+    for snap_month in snap_months:
+        snap_end = snap_month.end_time.normalize()
+        ar_snap  = ar[ar["datum"] <= snap_end]
+        if ar_snap.empty:
+            continue
+        inv_snap = (
+            ar_snap.groupby(["id_rel", "factuur_nr"])
+            .agg(invoice_date=("datum", "min"), open_amount=("bedrag", "sum"))
+            .reset_index()
+        )
+        inv_snap["days"] = (snap_end - inv_snap["invoice_date"]).dt.days.clip(lower=0)
+        open_snap = inv_snap[inv_snap["open_amount"] > 0.005]
+        total_s   = float(open_snap["open_amount"].sum())
+        if total_s < 1.0:
+            continue
+        p30 = round(float(open_snap.loc[open_snap["days"] > 30,  "open_amount"].sum()) / total_s * 100, 1)
+        p60 = round(float(open_snap.loc[open_snap["days"] > 60,  "open_amount"].sum()) / total_s * 100, 1)
+        p90 = round(float(open_snap.loc[open_snap["days"] > 90,  "open_amount"].sum()) / total_s * 100, 1)
+        label = snap_month.strftime("%b %y")
+        snap_rows.append(f"  {{month:'{label}',pct30:{p30},pct60:{p60},pct90:{p90}}}")
+
+    trendline_snapshot_js = (
+        "export const debtorTrendlineSnapshot = [\n"
+        + ",\n".join(snap_rows)
+        + "\n];"
+    )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Export 4 — debtorCustomers
+    # One row per customer that has at least one open invoice.
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # Average days to first payment (across ALL invoices, not just open ones)
+    with_payment = inv[inv["first_payment_date"].notna()].copy()
+    with_payment["days_to_pay"] = (
+        (with_payment["first_payment_date"] - with_payment["invoice_date"]).dt.days.clip(lower=0)
+    )
+    avg_pay_by_cust = (
+        with_payment.groupby("id_rel")["days_to_pay"]
+        .mean()
+        .round(0)
+        .astype(int)
+        .rename("avg_days_to_pay")
+    )
+
+    # Last payment date per customer
+    last_pay_by_cust = (
+        inv[inv["last_payment_date"].notna()]
+        .groupby("id_rel")["last_payment_date"]
+        .max()
+        .rename("last_payment")
+    )
+
+    # Open invoice summary per customer
+    open_cust = (
+        open_inv.groupby(["id_rel", "customer_code", "customer_name"])
+        .agg(
+            open_invoices=("factuur_nr",       "count"),
+            open_value=("open_amount",          "sum"),
+            oldest_invoice=("invoice_date",     "min"),
+            age_of_oldest=("days_outstanding",  "max"),
+            non_payer=("non_payer",             "any"),
+        )
+        .reset_index()
+    )
+
+    open_cust = open_cust.merge(avg_pay_by_cust,  on="id_rel", how="left")
+    open_cust = open_cust.merge(last_pay_by_cust, on="id_rel", how="left")
+    open_cust["avg_days_to_pay"] = open_cust["avg_days_to_pay"].fillna(0).astype(int)
+
+    def _risk(age):
+        if age <= 30:  return "A"
+        if age <= 60:  return "B"
+        if age <= 90:  return "C"
+        return "D"
+
+    open_cust["risk"] = open_cust["age_of_oldest"].apply(_risk)
+    open_cust = open_cust.sort_values("open_value", ascending=False)
+
+    cust_rows = []
+    for _, r in open_cust.iterrows():
+        oldest_s   = r["oldest_invoice"].strftime("%Y-%m-%d") if pd.notna(r["oldest_invoice"])  else ""
+        last_pay_s = r["last_payment"].strftime("%Y-%m-%d")   if pd.notna(r.get("last_payment")) else ""
+        np_flag    = "Y" if r["non_payer"] else "N"
+        cust_rows.append(
+            f"  {{code:'{js_escape(r['customer_code'])}',name:'{js_escape(r['customer_name'])}',"
+            f"openInvoices:{int(r['open_invoices'])},openValue:{round(r['open_value'])},"
+            f"avgDaysToPay:{int(r['avg_days_to_pay'])},oldestInvoice:'{oldest_s}',"
+            f"ageOfOldest:{int(r['age_of_oldest'])},lastPayment:'{last_pay_s}',"
+            f"risk:'{r['risk']}',nonPayer:'{np_flag}'}}"
+        )
+
+    customers_js = "export const debtorCustomers = [\n" + ",\n".join(cust_rows) + "\n];"
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Export 5 — debtorOpenItems
+    # One row per open invoice — used for the customer-drillthrough view.
+    # ═══════════════════════════════════════════════════════════════════════════
+    open_items = open_inv.sort_values(["customer_code", "invoice_date"]).copy()
+
+    item_rows = []
+    for _, r in open_items.iterrows():
+        inv_date_s = r["invoice_date"].strftime("%Y-%m-%d") if pd.notna(r["invoice_date"]) else ""
+        item_rows.append(
+            f"  {{code:'{js_escape(r['customer_code'])}',name:'{js_escape(r['customer_name'])}',"
+            f"invoiceNr:'{js_escape(str(r['factuur_nr']))}',invoiceDate:'{inv_date_s}',"
+            f"openAmount:{round(r['open_amount'])},daysOutstanding:{int(r['days_outstanding'])},"
+            f"bucket:'{r['ageing_bucket']}'}}"
+        )
+
+    items_js = "export const debtorOpenItems = [\n" + ",\n".join(item_rows) + "\n];"
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # Export 6 — debtorQuarterlyYearly
+    # Avg days to first payment + % paid within 30 days, by quarter and year.
+    # ═══════════════════════════════════════════════════════════════════════════
+    paid_inv = inv[inv["first_payment_date"].notna()].copy()
+    paid_inv["days_to_pay"] = (
+        (paid_inv["first_payment_date"] - paid_inv["invoice_date"]).dt.days.clip(lower=0)
+    )
+    paid_inv["_inv_q"] = paid_inv["invoice_date"].dt.to_period("Q")
+    paid_inv["_inv_y"] = paid_inv["invoice_date"].dt.year
+
+    qy_rows = []
+
+    # Quarterly rows
+    for period, grp in paid_inv.groupby("_inv_q"):
+        avg_d = round(float(grp["days_to_pay"].mean()), 1)
+        pct30 = round(float((grp["days_to_pay"] <= 30).mean()) * 100, 1)
+        cnt   = int(len(grp))
+        label = str(period).replace("Q", "-Q")   # "2025Q1" → "2025-Q1"
+        sort_key = str(period) + "_Q"
+        qy_rows.append((sort_key, f"  {{period:'{label}',type:'Q',avgDays:{avg_d},pct30:{pct30},invoiceCount:{cnt}}}"))
+
+    # Yearly rows
+    for year, grp in paid_inv.groupby("_inv_y"):
+        avg_d = round(float(grp["days_to_pay"].mean()), 1)
+        pct30 = round(float((grp["days_to_pay"] <= 30).mean()) * 100, 1)
+        cnt   = int(len(grp))
+        sort_key = f"{year}Q5_Y"   # sorts after Q4 for the same year
+        qy_rows.append((sort_key, f"  {{period:'{year}',type:'Y',avgDays:{avg_d},pct30:{pct30},invoiceCount:{cnt}}}"))
+
+    qy_rows.sort(key=lambda x: x[0])
+    qy_js = "export const debtorQuarterlyYearly = [\n" + ",\n".join(r[1] for r in qy_rows) + "\n];"
+
+    # ── Summary print ─────────────────────────────────────────────────────────
+    print(
+        f"  → Debtors: {len(open_inv):,} open invoices | "
+        f"{int(open_inv['id_rel'].nunique())} customers | "
+        f"AR = €{total_value:,.0f}"
+    )
+
+    return "\n\n".join([
+        "// ── PART 4: Debtor Management ──",
+        f"export const debtorAsOf = '{as_of_str}';",
+        kpi_js,
+        ageing_js,
+        trendline_cohort_js,
+        trendline_snapshot_js,
+        customers_js,
+        items_js,
+        qy_js,
+    ])
+
+
 # ─── MAIN ────────────────────────────────────────────────────────────────────
 
 def main():
     print("=== DairyTop data.js generator ===\n")
 
-    print("[1/5] Connecting to Google Drive...")
+    print("[1/6] Connecting to Google Drive...")
     service = get_drive_service()
 
-    print("[2/5] Downloading latest zip...")
+    print("[2/6] Downloading latest zip...")
     zip_buf = download_latest_zip(service)
 
-    print("[3/5] Extracting zip...")
+    print("[3/6] Extracting zip...")
     tables = extract_zip(zip_buf)
 
-    print("[4/5] Loading static Excel files...")
+    print("[4/6] Loading static Excel files...")
     pdf_xlsx = load_static_excel()
     print(f"  → Rows loaded from xlsx: {len(pdf_xlsx)}")
 
-    print("[5/5] Deriving invoice_audit_live & building data.js...")
+    print("[5/6] Deriving invoice_audit_live...")
     df_live = derive_invoice_audit_live(tables)
     print(f"  → Live rows derived: {len(df_live)}")
 
+    print("[6/6] Building data.js (PART1-4)...")
     part1 = build_part1(pdf_xlsx, df_live)
     part2 = build_part2(tables)
     part3 = build_part3(df_live)
+    part4 = build_part4(tables)
 
     with open(STATIC_JS_PATH, "r", encoding="utf-8") as f:
         static_js = f.read()
@@ -775,6 +1157,7 @@ def main():
         + part1   + "\n\n"
         + part2   + "\n\n"
         + part3   + "\n\n"
+        + part4   + "\n\n"
         + static_js + "\n"
     )
 

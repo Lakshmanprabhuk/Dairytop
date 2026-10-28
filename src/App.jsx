@@ -45,7 +45,7 @@ import {
   debtorCustomers,
   debtorOpenItems,
   debtorQuarterlyYearly
-} from './utils/data.js';
+} from './utils/data.js'; 
 
 /* Strip trailing asterisks from product names (e.g. "Pro Elite 40 - GMO Controlled*" → "Pro Elite 40 - GMO Controlled") */
 const _normProductName = n => typeof n === 'string' ? n.replace(/\*+\s*$/, '').trimEnd() : n;

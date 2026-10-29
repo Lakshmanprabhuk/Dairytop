@@ -224,6 +224,7 @@ const WEEKS_BY_MONTH = (() => {
 })();
 
 /* ── CSS ─────────────────────────────────────────────────────── */
+
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
@@ -596,7 +597,7 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 .watch-row-amt{font-size:9px;font-family:'JetBrains Mono',monospace;color:var(--muted2);margin-top:1px;}
 .watch-empty{font-size:10px;color:var(--muted);padding:8px;text-align:center;font-style:italic;}
 
-.mob-toggle{display:none;position:fixed;top:12px;left:12px;z-index:300;width:38px;height:38px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);cursor:pointer;font-size:15px;color:var(--accent3);box-shadow:var(--shadow-md);align-items:center;justify-content:center;}
+.mob-toggle{display:none;position:fixed;top:6px;left:10px;z-index:300;width:38px;height:38px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);cursor:pointer;font-size:15px;color:var(--accent3);box-shadow:var(--shadow-md);align-items:center;justify-content:center;}
 .mob-overlay{display:none;position:fixed;inset:0;background:rgba(31,55,65,.5);z-index:200;backdrop-filter:blur(2px);}
 
 @media(max-width:1200px) and (min-width:901px){
@@ -657,7 +658,7 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
     margin:0;border-radius:0;border:none;
     border-bottom:1px solid var(--border);
     display:flex;flex-direction:column;
-    padding:6px 10px 6px 54px;
+    padding:8px 10px 8px 58px;
     height:auto;gap:4px;
     box-shadow:none;background:var(--surface);
     align-items:stretch;
@@ -798,7 +799,7 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 
 @media(max-width:480px){
   .kpi-strip{grid-template-columns:repeat(2,1fr);gap:5px;}
-  .topbar,.sidebar.collapsed ~ .main .topbar{padding-left:50px !important;}
+  .topbar,.sidebar.collapsed ~ .main .topbar{padding-left:58px !important;}
   .sidebar{width:240px;}
   .chart-panel{min-height:200px;}
   .cp-body{min-height:140px;}

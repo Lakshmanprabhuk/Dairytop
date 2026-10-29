@@ -1037,6 +1037,7 @@ function Login({ onLogin }) {
     const valid = (u === 'knitworks' && p === 'Knitworks@123') ||
                   (u === 'admin' && p === '1234') ||
                   (u === 'Jan.spiker' && p === 'Janspiker@123') ||
+                  (u === 'Leon.dairytop' && p === 'LeonJonge@123') ||
                   (u === 'Joahan.dairytop' && p === 'Johan@123');
     if (valid) {
       sessionStorage.removeItem('login_attempts');

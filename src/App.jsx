@@ -1,4 +1,4 @@
- import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import ReactECharts from "echarts-for-react";
 import * as XLSX from 'xlsx';
@@ -36,8 +36,21 @@ import {
   finSummary,
   finCategories,
   finLines,
-  fmtPct
+  fmtPct,
+  debtorAsOf,
+  debtorKPI,
+  debtorAgeing,
+  debtorTrendlineCohort,
+  debtorTrendlineSnapshot,
+  debtorCustomers,
+  debtorOpenItems,
+  debtorQuarterlyYearly
 } from './utils/data.js';
+
+/* Strip trailing asterisks from product names (e.g. "Pro Elite 40 - GMO Controlled*" → "Pro Elite 40 - GMO Controlled") */
+const _normProductName = n => typeof n === 'string' ? n.replace(/\*+\s*$/, '').trimEnd() : n;
+const productsRaw = _productsRaw.map(p => ({...p, n: _normProductName(p.n)}));
+const productsWeeklyRaw = _productsWeeklyRaw.map(p => ({...p, n: _normProductName(p.n)}));
 
 function formatDisplayName(username) {
   if (!username) return '';
@@ -211,7 +224,6 @@ const WEEKS_BY_MONTH = (() => {
 })();
 
 /* ── CSS ─────────────────────────────────────────────────────── */
-
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
@@ -299,10 +311,7 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 }
 .nav-item:hover{background:rgba(64,188,243,0.10);color:rgba(255,255,255,0.90);}
 .nav-item.active{color:#fff;background:rgba(64,188,243,0.12);border-left-color:var(--accent);}
-.nav-icon{width:22px;height:22px;flex-shrink:0;opacity:.82;transition:transform .15s ease-out,opacity .15s ease-out;display:flex;align-items:center;justify-content:center;}
-.nav-icon img{width:22px;height:22px;object-fit:contain;display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.18));}
-.nav-item.active .nav-icon{opacity:1;}
-.nav-item:hover .nav-icon{opacity:1;}
+.nav-icon{width:22px;height:22px;flex-shrink:0;opacity:.82;transition:transform .15s ease-out,opacity .15s ease-out;display:flex;align-items:center;justify-content:center;}.nav-icon img{width:22px;height:22px;object-fit:contain;display:block;}
 .nav-item.hovered .nav-icon{transform:scale(1.12);opacity:1;}
 .nav-pip{margin-left:auto;width:5px;height:5px;border-radius:50%;background:var(--accent);opacity:.8;}
 .sidebar.collapsed .nav-item{justify-content:center;padding:11px 0;gap:0;}
@@ -980,7 +989,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 @media print{.scroll-hint,.scroll-fade{display:none !important;}}
 `;
 
-
 /* ── COMPONENTS ─────────────────────────────────────────────────── */
 
 function Login({ onLogin }) {
@@ -1026,7 +1034,6 @@ function Login({ onLogin }) {
     const valid = (u === 'knitworks' && p === 'Knitworks@123') ||
                   (u === 'admin' && p === '1234') ||
                   (u === 'Jan.spiker' && p === 'Janspiker@123') ||
-                  (u === 'Leon.dairytop' && p === 'LeonJonge@123') ||
                   (u === 'Joahan.dairytop' && p === 'Johan@123');
     if (valid) {
       sessionStorage.removeItem('login_attempts');

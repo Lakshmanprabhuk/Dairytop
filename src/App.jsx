@@ -36,21 +36,8 @@ import {
   finSummary,
   finCategories,
   finLines,
-  fmtPct,
-  debtorAsOf,
-  debtorKPI,
-  debtorAgeing,
-  debtorTrendlineCohort,
-  debtorTrendlineSnapshot,
-  debtorCustomers,
-  debtorOpenItems,
-  debtorQuarterlyYearly
-} from './utils/data.js'; 
-
-/* Strip trailing asterisks from product names (e.g. "Pro Elite 40 - GMO Controlled*" → "Pro Elite 40 - GMO Controlled") */
-const _normProductName = n => typeof n === 'string' ? n.replace(/\*+\s*$/, '').trimEnd() : n;
-const productsRaw = _productsRaw.map(p => ({...p, n: _normProductName(p.n)}));
-const productsWeeklyRaw = _productsWeeklyRaw.map(p => ({...p, n: _normProductName(p.n)}));
+  fmtPct
+} from './utils/data.js';
 
 function formatDisplayName(username) {
   if (!username) return '';
@@ -992,6 +979,7 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 }
 @media print{.scroll-hint,.scroll-fade{display:none !important;}}
 `;
+
 
 /* ── COMPONENTS ─────────────────────────────────────────────────── */
 

@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import ReactECharts from "echarts-for-react";
 import * as XLSX from 'xlsx';
 import ChatBot from './ChatBot.jsx';
-
 import {
   monthly,
   weekly,
@@ -46,6 +45,7 @@ import {
   debtorOpenItems,
   debtorQuarterlyYearly
 } from './utils/data.js';
+
 
 /* Strip trailing asterisks from product names (e.g. "Pro Elite 40 - GMO Controlled*" → "Pro Elite 40 - GMO Controlled") */
 const _normProductName = n => typeof n === 'string' ? n.replace(/\*+\s*$/, '').trimEnd() : n;
@@ -252,7 +252,7 @@ const css = `
   --hairline:1px solid var(--border);
 }
 html,body,#root{height:100%;overflow:hidden;}
-body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;}
 
 .app{
   display:flex;height:100vh;height:100dvh;overflow:hidden;
@@ -311,7 +311,7 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 }
 .nav-item:hover{background:rgba(64,188,243,0.10);color:rgba(255,255,255,0.90);}
 .nav-item.active{color:#fff;background:rgba(64,188,243,0.12);border-left-color:var(--accent);}
-.nav-icon{width:22px;height:22px;flex-shrink:0;opacity:.82;transition:transform .15s ease-out,opacity .15s ease-out;display:flex;align-items:center;justify-content:center;}.nav-icon img{width:22px;height:22px;object-fit:contain;display:block;}
+.nav-icon{width:22px;height:22px;flex-shrink:0;opacity:.82;transition:transform .15s ease-out,opacity .15s ease-out;display:flex;align-items:center;justify-content:center;}.nav-icon img{width:32px;height:32px;object-fit:contain;display:block;}
 .nav-item.hovered .nav-icon{transform:scale(1.12);opacity:1;}
 .nav-pip{margin-left:auto;width:5px;height:5px;border-radius:50%;background:var(--accent);opacity:.8;}
 .sidebar.collapsed .nav-item{justify-content:center;padding:11px 0;gap:0;}
@@ -430,6 +430,8 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   box-shadow:none;transition:background .16s,border-color .16s;
 }
 .kpi-card:hover{background:var(--surface3);border-color:var(--border2);border-left-color:var(--kpi-accent,var(--accent));}
+.kpi-card.clickable{cursor:pointer;}
+.kpi-card.clickable:hover{background:var(--surface2);box-shadow:0 2px 8px rgba(64,188,243,0.12);}
 .kpi-card.blue{--kpi-accent:var(--accent);--kpi-label:#0A6E9B;}
 .kpi-card.teal{--kpi-accent:var(--accent2);--kpi-label:#14708F;}
 .kpi-card.navy{--kpi-accent:var(--accent3);--kpi-label:#2A5570;}
@@ -439,13 +441,13 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 .kpi-card.red{--kpi-accent:var(--red);--kpi-label:#9E3838;}
 .kpi-icon{position:absolute;right:10px;top:10px;font-size:16px;opacity:.3;}
 .kpi-lbl{
-  font-size:9px;color:var(--kpi-label,var(--muted2));
+  font-size:10.5px;color:var(--kpi-label,var(--muted2));
   text-transform:uppercase;letter-spacing:.09em;font-weight:800;
   margin-bottom:5px;position:relative;
 }
-.kpi-val{font-size:17px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1;color:var(--text);word-break:break-all;position:relative;letter-spacing:-.2px;}
-.kpi-val.sm{font-size:13px;}
-.kpi-chg{font-size:9.5px;color:var(--muted);margin-top:5px;font-weight:500;position:relative;display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.kpi-val{font-size:20px;font-weight:800;font-family:'JetBrains Mono',monospace;line-height:1;color:var(--text);word-break:break-all;position:relative;letter-spacing:-.2px;}
+.kpi-val.sm{font-size:16px;}
+.kpi-chg{font-size:11px;color:var(--muted);margin-top:5px;font-weight:500;position:relative;display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
 .kpi-trend{display:inline-flex;align-items:center;gap:2px;font-weight:800;font-size:9.5px;padding:1px 6px 1px 5px;border-radius:20px;font-family:'JetBrains Mono',monospace;}
 .kpi-trend.up{color:#1C7A46;background:rgba(46,155,98,0.12);}
 .kpi-trend.down{color:#B23D3D;background:rgba(217,92,92,0.12);}
@@ -599,8 +601,8 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 @media(max-width:1200px) and (min-width:901px){
   :root{--sidebar-w:190px;}
   .page-area{padding:10px 12px;gap:8px;}
-  .kpi-val{font-size:14px;}
-  .kpi-val.sm{font-size:12px;}
+  .kpi-val{font-size:17px;}
+  .kpi-val.sm{font-size:14px;}
   .chart-panel{padding:10px 12px;}
   .cp-title{font-size:11px;}
 }
@@ -754,10 +756,10 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   .kpi-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
   .kpi-card{padding:8px 10px;}
   .kpi-icon{font-size:13px;right:7px;top:7px;}
-  .kpi-lbl{font-size:8px;margin-bottom:3px;}
-  .kpi-val{font-size:13px;}
-  .kpi-val.sm{font-size:11px;}
-  .kpi-chg{font-size:8px;margin-top:3px;}
+  .kpi-lbl{font-size:9px;margin-bottom:3px;}
+  .kpi-val{font-size:15px;}
+  .kpi-val.sm{font-size:13px;}
+  .kpi-chg{font-size:9px;margin-top:3px;}
 
   .charts-row{flex-direction:column;}
   .charts-col{flex:none;}
@@ -789,8 +791,8 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 
   .kpi-strip{grid-template-columns:repeat(2,1fr);gap:6px;}
   .kpi-card{padding:8px 10px;}
-  .kpi-val.sm{font-size:12px;}
-  .kpi-chg{font-size:8px;}
+  .kpi-val.sm{font-size:13px;}
+  .kpi-chg{font-size:9px;}
 }
 
 @media(max-width:480px){
@@ -857,6 +859,14 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
   line-height:1;display:inline-flex;align-items:center;justify-content:center;
 }
 .drill-chip button:hover{background:var(--red);color:#fff;}
+.back-btn{
+  display:inline-flex;align-items:center;gap:5px;flex-shrink:0;
+  font-size:11px;font-weight:600;color:var(--accent2);
+  background:rgba(64,188,243,0.08);border:1px solid var(--accent);
+  border-radius:6px;padding:5px 12px;margin-bottom:8px;cursor:pointer;
+  transition:background .14s,color .14s;
+}
+.back-btn:hover{background:var(--accent);color:#fff;}
 
 .tbl-search-wrap{flex-shrink:0;margin-bottom:6px;position:relative;}
 .tbl-search-wrap input{
@@ -1753,7 +1763,26 @@ function Revenue({ fm, label, effGrain, filter }) {
   const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
   const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
   const useYearly = effGrain === 'yearly';
+  /* Detect if user has applied a specific filter (vs default all-data view) */
+  const filterApplied = useWeekly || useYearly || (filter.years?.length > 0);
 
+  /* ── LTM: last 12 months trailing from monthly dataset ───────── */
+  const ltmMonths = useMemo(() => monthly.slice(-12), []);
+  const ltmRev = ltmMonths.reduce((s, m) => s + m.rev, 0);
+  const ltmOrders = ltmMonths.reduce((s, m) => s + m.orders, 0);
+  const ltmAvg = ltmMonths.length ? ltmRev / ltmMonths.length : 0;
+
+  /* ── YTD: current calendar year months ───────────────────────── */
+  const allYears = [...new Set(monthly.map(m => m.m.split(' ')[1]))].sort();
+  const latestYear = allYears[allYears.length - 1] || '26';
+  const prevYear = String(parseInt(latestYear, 10) - 1).padStart(2, '0');
+  const ytdMonths = monthly.filter(m => m.m.endsWith(latestYear));
+  const ytdMonthNames = ytdMonths.map(m => m.m.split(' ')[0]);
+  const ytdRev = ytdMonths.reduce((s, m) => s + m.rev, 0);
+  const prevYtdRev = monthly.filter(m => m.m.endsWith(prevYear) && ytdMonthNames.includes(m.m.split(' ')[0])).reduce((s, m) => s + m.rev, 0);
+  const ytdDelta = prevYtdRev > 0 ? ((ytdRev - prevYtdRev) / prevYtdRev) * 100 : null;
+
+  /* ── Periods: LTM default, filter-specific when applied ──────── */
   const periods = useMemo(() => {
     if (useWeekly) {
       const set = new Set(tickedWeeks);
@@ -1762,95 +1791,149 @@ function Revenue({ fm, label, effGrain, filter }) {
     if (useYearly) {
       return deriveYearlyFromFilter(filter, fm).map(y => ({ key: y.year, rev: y.rev, orders: y.orders }));
     }
+    if (!filterApplied) {
+      /* Default: LTM */
+      return ltmMonths.map(m => ({ key: m.m, rev: m.rev, orders: m.orders }));
+    }
     return fm.map(m => ({ key: m.m, rev: m.rev, orders: m.orders }));
-  }, [useWeekly, useYearly, tickedWeeks, fm, filter]);
+  }, [useWeekly, useYearly, filterApplied, tickedWeeks, fm, filter, ltmMonths]);
 
   const periodLabel = useWeekly ? 'Week' : useYearly ? 'Year' : 'Month';
+  const isLTM = !filterApplied && !useWeekly && !useYearly;
 
-  const totalRev=periods.reduce((s,m)=>s+m.rev,0);
-  const totalOrders=periods.reduce((s,m)=>s+m.orders,0);
-  const best=periods.length?periods.reduce((b,c)=>c.rev>b.rev?c:b,periods[0]):null;
-  const avg=periods.length?totalRev/periods.length:0;
-  const [selectedMonth,setSelectedMonth]=useState(null);
-  const [showPrevOverlay,setShowPrevOverlay]=useState(false);
-  const prevPeriod=useMemo(()=>{
-    if(useWeekly || useYearly) return [];
-    if(!fm.length)return[];
-    const startIdx=monthly.findIndex(m=>m.m===fm[0].m);
-    if(startIdx<=0)return[];
-    const from=Math.max(0,startIdx-fm.length);
-    return monthly.slice(from,startIdx);
-  },[fm, useWeekly, useYearly]);
-  const canShowPrev=!useWeekly && !useYearly && prevPeriod.length>0;
-  const prevTotal=prevPeriod.reduce((s,m)=>s+m.rev,0);
-  const periodDelta=(canShowPrev&&prevTotal)?((totalRev-prevTotal)/prevTotal)*100:null;
+  const totalRev = periods.reduce((s, m) => s + m.rev, 0);
+  const totalOrders = periods.reduce((s, m) => s + m.orders, 0);
+  const best = periods.length ? periods.reduce((b, c) => c.rev > b.rev ? c : b, periods[0]) : null;
 
-  const barOpt=withDataZoom(withCrosshair({
-    tooltip:{trigger:'axis',formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;p.forEach(s=>{html+=`${s.marker} ${s.seriesName}: ${s.value!=null?fmtFull(s.value):'—'}<br/>`;});return html;}},
-    legend:showPrevOverlay&&canShowPrev?{bottom:0,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false}:undefined,
-    grid:{left:'3%',right:'4%',bottom:isMobileViewport()&&periods.length>3?'28%':(showPrevOverlay&&canShowPrev?'18%':'12%'),top:'8%',containLabel:true},
-    xAxis:{type:'category',data:periods.map(d=>d.key),axisLabel:catAxisLabel(periods.length,9)},
-    yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    series:[
-      {name:'Current period',type:'bar',data:periods.map(d=>({value:d.rev,itemStyle:{color:selectedMonth&&selectedMonth!==d.key?'rgba(8,145,178,0.2)':'rgba(8,145,178,0.75)',borderRadius:[3,3,0,0]}})),barMaxWidth:28},
-      ...(showPrevOverlay&&canShowPrev?[{name:'Previous period',type:'line',data:periods.map((_,i)=>prevPeriod[i]?prevPeriod[i].rev:null),smooth:true,symbol:'circle',symbolSize:5,lineStyle:{color:'#E5A93D',width:2,type:'dashed'},itemStyle:{color:'#E5A93D'}}]:[])
+  const [selectedMonth, setSelectedMonth] = useState(null);
+  const [showPrevOverlay, setShowPrevOverlay] = useState(false);
+  const prevPeriod = useMemo(() => {
+    if (useWeekly || useYearly || isLTM) return [];
+    if (!fm.length) return [];
+    const startIdx = monthly.findIndex(m => m.m === fm[0].m);
+    if (startIdx <= 0) return [];
+    const from = Math.max(0, startIdx - fm.length);
+    return monthly.slice(from, startIdx);
+  }, [fm, useWeekly, useYearly, isLTM]);
+  const canShowPrev = !useWeekly && !useYearly && prevPeriod.length > 0;
+  const prevTotal = prevPeriod.reduce((s, m) => s + m.rev, 0);
+  const periodDelta = (canShowPrev && prevTotal) ? ((totalRev - prevTotal) / prevTotal) * 100 : null;
+
+  const granTag = useWeekly ? 'W' : useYearly ? 'Y' : 'M';
+
+  /* ── Main Revenue Bar chart ──────────────────────────────────── */
+  const barOpt = withDataZoom(withCrosshair({
+    tooltip: { trigger: 'axis', formatter: p => { let html = `<strong>${p[0].name}</strong><br/>`; p.forEach(s => { html += `${s.marker} ${s.seriesName}: ${s.value != null ? fmtFull(s.value) : '—'}<br/>`; }); return html; } },
+    legend: showPrevOverlay && canShowPrev ? { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false } : undefined,
+    grid: { left: '3%', right: '4%', bottom: isMobileViewport() && periods.length > 3 ? '28%' : (showPrevOverlay && canShowPrev ? '18%' : '12%'), top: '8%', containLabel: true },
+    xAxis: { type: 'category', data: periods.map(d => d.key), axisLabel: catAxisLabel(periods.length, 9) },
+    yAxis: { type: 'value', splitNumber: 5, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v), hideOverlap: true }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: [
+      { name: isLTM ? 'LTM Revenue' : 'Current period', type: 'bar', data: periods.map(d => ({ value: d.rev, itemStyle: { color: selectedMonth && selectedMonth !== d.key ? 'rgba(8,145,178,0.2)' : 'rgba(8,145,178,0.75)', borderRadius: [3, 3, 0, 0] } })), barMaxWidth: 28 },
+      ...(showPrevOverlay && canShowPrev ? [{ name: 'Previous period', type: 'line', data: periods.map((_, i) => prevPeriod[i] ? prevPeriod[i].rev : null), smooth: true, symbol: 'circle', symbolSize: 5, lineStyle: { color: '#E5A93D', width: 2, type: 'dashed' }, itemStyle: { color: '#E5A93D' } }] : [])
     ]
   }));
 
-  const prevToggleControl=(
-    <button className={`cmp-toggle${showPrevOverlay?' active':''}`} onClick={()=>setShowPrevOverlay(v=>!v)} disabled={!canShowPrev}>
-      ↔ {showPrevOverlay?'Hide':'vs'} Previous period
+  /* ── Cumulative YoY chart (center panel) ─────────────────────── */
+  const MONTH_ORDER = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const all25 = monthly.filter(m => m.m.endsWith('25'));
+  const all26 = monthly.filter(m => m.m.endsWith('26'));
+  const yoyMonths = [...new Set([...all25.map(m => m.m.split(' ')[0]), ...all26.map(m => m.m.split(' ')[0])])].sort((a,b)=>MONTH_ORDER.indexOf(a)-MONTH_ORDER.indexOf(b));
+  let cum25 = 0, cum26 = 0;
+  const cumData25 = [], cumData26 = [];
+  yoyMonths.forEach(mo => {
+    const e25 = all25.find(m => m.m.startsWith(mo)); const e26 = all26.find(m => m.m.startsWith(mo));
+    if (e25) cum25 += e25.rev; if (e26) cum26 += e26.rev;
+    cumData25.push(e25 ? cum25 : null);
+    cumData26.push(e26 ? cum26 : null);
+  });
+  const cumYoYOpt = withCrosshair({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s=>s.value!=null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
+    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false },
+    grid: { left: '3%', right: '4%', bottom: '22%', top: '8%', containLabel: true },
+    xAxis: { type: 'category', data: yoyMonths, axisLabel: catAxisLabel(yoyMonths.length, 9) },
+    yAxis: { type: 'value', axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: [
+      { name: '2025', type: 'line', data: cumData25, smooth: true, symbol: 'circle', symbolSize: 4, lineStyle: { color: '#0891B2', width: 2, type: 'dashed' }, itemStyle: { color: '#0891B2' }, areaStyle: { color: 'rgba(8,145,178,.07)' }, connectNulls: false },
+      { name: '2026', type: 'line', data: cumData26, smooth: true, symbol: 'circle', symbolSize: 4, lineStyle: { color: '#40BCF3', width: 2 }, itemStyle: { color: '#40BCF3' }, areaStyle: { color: 'rgba(64,188,243,.08)' }, connectNulls: false },
+    ]
+  });
+
+  /* ── Monthly overlay (left bottom panel) ────────────────────── */
+  const n25 = all25.map(m => m.m.split(' ')[0]), n26 = all26.map(m => m.m.split(' ')[0]);
+  let cMonths = (all25.length && all26.length) ? n25.filter(m => n26.includes(m)) : [...new Set([...n25, ...n26])];
+  cMonths.sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b));
+  const lineSeries = [];
+  if (all25.length) lineSeries.push({ name: '2025', type: 'line', data: cMonths.map(m => all25.find(d => d.m.startsWith(m))?.rev || null), lineStyle: { color: '#0891B2', width: 2, type: 'dashed' }, itemStyle: { color: '#0891B2' }, areaStyle: { color: 'rgba(8,145,178,.07)' }, smooth: true });
+  if (all26.length) lineSeries.push({ name: '2026', type: 'line', data: cMonths.map(m => all26.find(d => d.m.startsWith(m))?.rev || null), lineStyle: { color: '#73D4F2', width: 2 }, itemStyle: { color: '#73D4F2' }, areaStyle: { color: 'rgba(115,212,242,.07)' }, smooth: true });
+  const cmpOpt = withDataZoom(withCrosshair({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s=>s.value!=null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
+    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false },
+    grid: { left: '3%', right: '4%', bottom: isMobileViewport() && cMonths.length > 3 ? '28%' : '18%', top: '8%', containLabel: true },
+    xAxis: { type: 'category', data: cMonths, axisLabel: catAxisLabel(cMonths.length, 9) },
+    yAxis: { type: 'value', splitNumber: 5, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v), hideOverlap: true }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: lineSeries
+  }));
+
+  /* ── Order Volume chart ──────────────────────────────────────── */
+  const ordersOpt = withDataZoom(withCrosshair({
+    tooltip: { trigger: 'axis', formatter: p => `<strong>${p[0].name}</strong><br/>Orders: ${fmtN(p[0].value)}` },
+    grid: { left: '3%', right: '4%', bottom: isMobileViewport() && periods.length > 3 ? '28%' : '12%', top: '8%', containLabel: true },
+    xAxis: { type: 'category', data: periods.map(d => d.key), axisLabel: catAxisLabel(periods.length, 9), axisLine: { lineStyle: { color: '#DDE6E9' } } },
+    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmtN(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: [{ type: 'line', data: periods.map(d => d.orders), step: 'middle', symbol: 'circle', symbolSize: (val, params) => { const m = periods[params.dataIndex]?.key; return selectedMonth && selectedMonth === m ? 8 : 5; }, lineStyle: { color: '#0369A1', width: 2 }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(3,105,161,.18)' }, { offset: 1, color: 'rgba(3,105,161,.01)' }] } }, itemStyle: { color: '#0369A1', borderColor: '#fff', borderWidth: 1.5 }, emphasis: { itemStyle: { color: '#0369A1' } } }]
+  }, fmtN));
+
+  const prevToggleControl = (
+    <button className={`cmp-toggle${showPrevOverlay ? ' active' : ''}`} onClick={() => setShowPrevOverlay(v => !v)} disabled={!canShowPrev}>
+      ↔ {showPrevOverlay ? 'Hide' : 'vs'} Previous period
     </button>
   );
-  const revenueInsight=(()=>{const parts=[];if(periodDelta!=null)parts.push(`Revenue ${periodDelta>=0?'up':'down'} ${Math.abs(periodDelta).toFixed(1)}% vs the previous period`);if(best)parts.push(`Best ${periodLabel.toLowerCase()}: ${best.key} (${fmtFull(best.rev)})`);return parts.length?parts.join(' · '):null;})();
+  const revenueInsight = (() => { const parts = []; if (periodDelta != null) parts.push(`Revenue ${periodDelta >= 0 ? 'up' : 'down'} ${Math.abs(periodDelta).toFixed(1)}% vs the previous period`); if (best) parts.push(`Best ${periodLabel.toLowerCase()}: ${best.key} (${fmtFull(best.rev)})`); return parts.length ? parts.join(' · ') : null; })();
 
-  const m25=fm.filter(m=>m.m.includes('25')),m26=fm.filter(m=>m.m.includes('26'));
-  const order=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const n25=m25.map(m=>m.m.split(' ')[0]),n26=m26.map(m=>m.m.split(' ')[0]);
-  let cMonths=(m25.length&&m26.length)?n25.filter(m=>n26.includes(m)):[...new Set([...n25,...n26])];
-  cMonths.sort((a,b)=>order.indexOf(a)-order.indexOf(b));
-  const lineSeries=[];
-  if(m25.length)lineSeries.push({name:'2025',type:'line',data:cMonths.map(m=>m25.find(d=>d.m.startsWith(m))?.rev||null),lineStyle:{color:'#0891B2',width:2,type:'dashed'},itemStyle:{color:'#0891B2'},areaStyle:{color:'rgba(8,145,178,.07)'},smooth:true});
-  if(m26.length)lineSeries.push({name:'2026',type:'line',data:cMonths.map(m=>m26.find(d=>d.m.startsWith(m))?.rev||null),lineStyle:{color:'#73D4F2',width:2},itemStyle:{color:'#73D4F2'},areaStyle:{color:'rgba(115,212,242,.07)'},smooth:true});
-  const cmpOpt=withDataZoom(withCrosshair({
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',formatter:p=>p.map(s=>`${s.marker} ${s.seriesName}: ${s.value?fmtFull(s.value):'—'}`).join('<br/>')},
-    legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false},
-    grid:{left:'3%',right:'4%',bottom:isMobileViewport()&&cMonths.length>3?'28%':'16%',top:'8%',containLabel:true},
-    xAxis:{type:'category',data:cMonths,axisLabel:catAxisLabel(cMonths.length,9)},
-    yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    series:lineSeries
-  }));
-  const ordersOpt=withDataZoom(withCrosshair({
-    tooltip:{trigger:'axis',formatter:p=>`<strong>${p[0].name}</strong><br/>Orders: ${fmtN(p[0].value)}`},
-    grid:{left:'3%',right:'4%',bottom:isMobileViewport()&&periods.length>3?'28%':'12%',top:'8%',containLabel:true},
-    xAxis:{type:'category',data:periods.map(d=>d.key),axisLabel:catAxisLabel(periods.length,9),axisLine:{lineStyle:{color:'#DDE6E9'}}},
-    yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtN(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    series:[{type:'line',data:periods.map(d=>d.orders),step:'middle',symbol:'circle',symbolSize:(val,params)=>{const m=periods[params.dataIndex]?.key;return selectedMonth&&selectedMonth===m?8:5;},lineStyle:{color:'#0369A1',width:2},areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(3,105,161,.18)'},{offset:1,color:'rgba(3,105,161,.01)'}]}},itemStyle:{color:'#0369A1',borderColor:'#fff',borderWidth:1.5},emphasis:{itemStyle:{color:'#0369A1'}}}]
-  },fmtN));
-
-  const barTbl={headers:[periodLabel,'Revenue','Orders','Avg Order Value'],rows:periods.map(m=>[m.key,fmtFull(m.rev),fmtN(m.orders),fmtFull(Math.round(m.rev/(m.orders||1)))])};
-  const ordTbl={headers:[periodLabel,'Orders'],rows:periods.map(m=>[m.key,fmtN(m.orders)])};
-  const handleMonthClick=(p)=>{const month=periods[p.dataIndex]?.key;setSelectedMonth(selectedMonth===month?null:month);};
-
-  const showYearOverlay = !useWeekly && !useYearly;
-  const granTag = useWeekly ? 'W' : useYearly ? 'Y' : 'M';
+  const barTbl = { headers: [periodLabel, 'Revenue', 'Orders', 'Avg Order Value'], rows: periods.map(m => [m.key, fmtFull(m.rev), fmtN(m.orders), fmtFull(Math.round(m.rev / (m.orders || 1)))]) };
+  const ordTbl = { headers: [periodLabel, 'Orders'], rows: periods.map(m => [m.key, fmtN(m.orders)]) };
+  const handleMonthClick = (p) => { const month = periods[p.dataIndex]?.key; setSelectedMonth(selectedMonth === month ? null : month); };
 
   return (
     <div className="page-area" key="revenue">
       <KpiNote/>
       <div className="kpi-strip">
-        <div className="kpi-card blue"><div className="kpi-lbl">Total Revenue</div><div className="kpi-val sm">{fmtFull(totalRev)}</div><div className="kpi-chg">{fmtN(totalOrders)} transactions</div></div>
-        <div className="kpi-card teal"><div className="kpi-lbl">{periodLabel}s Shown</div><div className="kpi-val sm">{periods.length}</div><div className="kpi-chg">Active period</div></div>
-        <div className="kpi-card green"><div className="kpi-lbl">Best {periodLabel}</div><div className="kpi-val sm">{best?best.key:'—'}</div><div className="kpi-chg">{best?fmtFull(best.rev):''}</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">Avg / {periodLabel}</div><div className="kpi-val sm">{fmtFull(avg)}</div><div className="kpi-chg">{periods.length}-{periodLabel.toLowerCase()} average</div></div>
-      </div>
-      <div className="charts-row">
-        <div className="charts-col" style={{flex:2}}>
-          <Panel title="Revenue Over Time" subtitle={`${label} · ${periods.length} ${periodLabel.toLowerCase()}${periods.length===1?'':'s'}`} tag={`${periods.length}${granTag}`} flex={1} controls={prevToggleControl} tableHeaders={barTbl.headers} tableRows={barTbl.rows} insight={revenueInsight}><EC option={barOpt} onEvents={{'click':handleMonthClick}}/></Panel>
-          {showYearOverlay && <Panel title="2025 vs 2026" subtitle="Year overlay" flex={1}><EC option={cmpOpt}/></Panel>}
+        <div className="kpi-card blue">
+          <div className="kpi-lbl">Turnover YTD ({latestYear.startsWith('2') ? latestYear : '20'+latestYear})</div>
+          <div className="kpi-val sm">{fmtFull(ytdRev)}</div>
+          <div className="kpi-chg">
+            {ytdDelta != null ? (
+              <span className={`kpi-trend ${ytdDelta >= 0 ? 'up' : 'down'}`}>{ytdDelta >= 0 ? '▲' : '▼'} {Math.abs(ytdDelta).toFixed(1)}% vs {prevYear.startsWith('2') ? prevYear : '20'+prevYear}</span>
+            ) : null}
+            <span>{ytdMonths.length}m · vs same period prior year</span>
+          </div>
         </div>
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title="Order Volume" subtitle={`Per ${periodLabel.toLowerCase()}`} flex={1} tableHeaders={ordTbl.headers} tableRows={ordTbl.rows}><EC option={ordersOpt} onEvents={{'click':handleMonthClick}}/></Panel>
+        <div className="kpi-card teal">
+          <div className="kpi-lbl">Last 12 Months (LTM)</div>
+          <div className="kpi-val sm">{fmtFull(ltmRev)}</div>
+          <div className="kpi-chg">{fmtN(ltmOrders)} transactions · trailing 12m</div>
+        </div>
+        <div className="kpi-card green">
+          <div className="kpi-lbl">Best {periodLabel} {isLTM ? '(LTM)' : `(${label})`}</div>
+          <div className="kpi-val sm">{best ? best.key : '—'}</div>
+          <div className="kpi-chg">{best ? fmtFull(best.rev) : ''}</div>
+        </div>
+        <div className="kpi-card amber">
+          <div className="kpi-lbl">Avg / Month (LTM)</div>
+          <div className="kpi-val sm">{fmtFull(ltmAvg)}</div>
+          <div className="kpi-chg">12-month trailing average</div>
+        </div>
+      </div>
+      {/* Layout: 50% left (2 stacked) · 25% center cumulative YoY · 25% right order volume */}
+      <div className="charts-row" style={{alignItems:'stretch'}}>
+        <div className="charts-col" style={{flex:2,minWidth:0}}>
+          <Panel title={isLTM ? 'Revenue — Last 12 Months' : 'Revenue Over Time'} subtitle={isLTM ? `LTM · ${periods.length} months · ${ltmMonths[0]?.m} → ${ltmMonths[ltmMonths.length-1]?.m}` : `${label} · ${periods.length} ${periodLabel.toLowerCase()}${periods.length===1?'':'s'}`} tag={isLTM ? 'LTM' : `${periods.length}${granTag}`} flex={1} controls={!isLTM?prevToggleControl:undefined} tableHeaders={barTbl.headers} tableRows={barTbl.rows} insight={revenueInsight}><EC option={barOpt} onEvents={{ 'click': handleMonthClick }}/></Panel>
+          <Panel title="2025 vs 2026 Monthly" subtitle="Same-month comparison" flex={1}><EC option={cmpOpt}/></Panel>
+        </div>
+        <div className="charts-col" style={{flex:1,minWidth:0}}>
+          <Panel title="Cumulative Revenue YoY" subtitle="Running total by calendar month" flex={1}><EC option={cumYoYOpt}/></Panel>
+          <Panel title="Order Volume" subtitle={`Per ${periodLabel.toLowerCase()}${isLTM?' · LTM':''}`} flex={1} tableHeaders={ordTbl.headers} tableRows={ordTbl.rows}><EC option={ordersOpt} onEvents={{ 'click': handleMonthClick }}/></Panel>
         </div>
       </div>
     </div>
@@ -2547,17 +2630,32 @@ const DEBTOR_BUCKET_COLORS={'0–30 days':'#22c55e','31–60 days':'#f59e0b','61
 const DEBTOR_RISK_COLORS={A:'#22c55e',B:'#f59e0b',C:'#f97316',D:'#ef4444'};
 const DEBTOR_RISK_BG={A:'rgba(34,197,94,0.1)',B:'rgba(245,158,11,0.1)',C:'rgba(249,115,22,0.1)',D:'rgba(239,68,68,0.12)'};
 
-function Debtors(){
+function Debtors({setPage,setBucketFilter}){
   const[trendMode,setTrendMode]=useState('cohort');
   const trendData=trendMode==='cohort'?debtorTrendlineCohort:debtorTrendlineSnapshot;
   const kpi=debtorKPI||{};
   const ageingData=debtorAgeing||[];
+  const handleAgeingClick=(params)=>{
+    const bucket=ageingData[params.dataIndex]?.bucket;
+    if(bucket&&setBucketFilter&&setPage){
+      setBucketFilter(bucket);
+      setPage('debtorcustomers');
+    }
+  };
   const ageingOpt={
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'}},
+    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},
+      formatter:p=>{const b=ageingData[p[0]?.dataIndex];if(!b)return'';
+        const cnt=b.count!=null?` · ${b.count} inv.`:'';
+        const pct=b.pct!=null?` (${b.pct}%)`:'';
+        return `<strong>${b.bucket}</strong><br/>${fmtFull(b.value)}${pct}${cnt}<br/><em style="font-size:10px;opacity:.7">Click to filter customers</em>`;}},
     grid:{left:105,right:115,top:16,bottom:16},
     xAxis:{type:'value',axisLabel:{fontSize:10,formatter:v=>fmtFull(v)},splitNumber:4},
     yAxis:{type:'category',data:ageingData.map(b=>b.bucket),axisLabel:{fontSize:11}},
-    series:[{type:'bar',data:ageingData.map(b=>({value:b.value,itemStyle:{color:DEBTOR_BUCKET_COLORS[b.bucket]||'#40BCF3',borderRadius:[0,4,4,0]}})),label:{show:true,position:'right',formatter:p=>fmtFull(p.value),fontSize:11,color:'#475569'},barMaxWidth:36}],
+    series:[{type:'bar',
+      data:ageingData.map(b=>({value:b.value,itemStyle:{color:DEBTOR_BUCKET_COLORS[b.bucket]||'#40BCF3',borderRadius:[0,4,4,0]},emphasis:{itemStyle:{opacity:0.8,shadowBlur:6,shadowColor:'rgba(0,0,0,0.2)'}}})),
+      cursor:'pointer',
+      label:{show:true,position:'right',formatter:p=>{const b=ageingData[p.dataIndex];const pct=b?.pct!=null?` (${b.pct}%)`:'';return fmtFull(p.value)+pct;},fontSize:11,color:'#475569'},
+      barMaxWidth:36}],
   };
   const trendOpt={
     tooltip:{...TOOLTIP_STYLE,trigger:'axis'},
@@ -2571,17 +2669,27 @@ function Debtors(){
       {name:'% ≤90d',type:'line',data:trendData.map(d=>d.pct90!=null?+Math.min(100,Math.max(0,d.pct90)).toFixed(1):null),smooth:false,symbol:'circle',symbolSize:4,lineStyle:{width:2},itemStyle:{color:'#f97316'},connectNulls:false},
     ],
   };
+  const goToCustomers=(bucket)=>{if(setBucketFilter)setBucketFilter(bucket||null);if(setPage)setPage('debtorcustomers');};
   return(
-    <div className="page-area" key="debtors">
+    <div className="page-area fin-scroll" key="debtors">
       <div className="kpi-strip">
-        <div className="kpi-card blue"><div className="kpi-lbl">Total Open AR</div><div className="kpi-val sm">{fmtFull(kpi.totalDebtorValue)}</div><div className="kpi-chg">{kpi.openInvoiceCount} invoices · {kpi.customerCount} customers</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">Over 30 Days</div><div className="kpi-val sm">{fmtFull(kpi.over30)}</div><div className="kpi-chg">{kpi.pctOver30!=null?kpi.pctOver30.toFixed(1):'—'}% of total AR</div></div>
-        <div className="kpi-card navy"><div className="kpi-lbl">Over 90 Days</div><div className="kpi-val sm">{fmtFull(kpi.over90)}</div><div className="kpi-chg">{kpi.pctOver90!=null?kpi.pctOver90.toFixed(1):'—'}% of total AR</div></div>
+        <div className="kpi-card blue clickable" onClick={()=>goToCustomers(null)} title="View all customer invoices">
+          <div className="kpi-lbl">Total Open AR</div><div className="kpi-val sm">{fmtFull(kpi.totalDebtorValue)}</div>
+          <div className="kpi-chg">{kpi.openInvoiceCount} invoices · {kpi.customerCount} customers · click to view →</div>
+        </div>
+        <div className="kpi-card amber clickable" onClick={()=>goToCustomers('31–60 days')} title="View customers with 31–60 day invoices">
+          <div className="kpi-lbl">Over 30 Days</div><div className="kpi-val sm">{fmtFull(kpi.over30)}</div>
+          <div className="kpi-chg">{kpi.pctOver30!=null?kpi.pctOver30.toFixed(1):'—'}% of total AR · click to filter →</div>
+        </div>
+        <div className="kpi-card navy clickable" onClick={()=>goToCustomers('91–180 days')} title="View customers with 91–180 day invoices">
+          <div className="kpi-lbl">Over 90 Days</div><div className="kpi-val sm">{fmtFull(kpi.over90)}</div>
+          <div className="kpi-chg">{kpi.pctOver90!=null?kpi.pctOver90.toFixed(1):'—'}% of total AR · click to filter →</div>
+        </div>
         <div className="kpi-card teal"><div className="kpi-lbl">Snapshot Date</div><div className="kpi-val sm" style={{fontSize:17}}>{kpi.asOf||debtorAsOf}</div><div className="kpi-chg">Latest AR posting date</div></div>
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{flex:1}}>
-          <Panel title="AR Ageing Buckets" subtitle="Open receivables by age" height={420}><EC option={ageingOpt}/></Panel>
+          <Panel title="AR Ageing Buckets" subtitle="Open receivables by age · click a bar to filter customers" height={420}><EC option={ageingOpt} onEvents={{'click':handleAgeingClick}}/></Panel>
         </div>
         <div className="charts-col" style={{flex:1}}>
           <Panel title="Payment Trendline" subtitle={trendMode==='cohort'?'% invoices paid, by cohort month':'% invoices paid, last 18 month-end snapshots'} height={420}
@@ -2595,18 +2703,67 @@ function Debtors(){
 }
 
 /* ── DEBTOR CUSTOMERS ────────────────────────────────────────── */
-function DebtorCustomers(){
+/* Compute risk rating client-side with new thresholds:
+   A: ageOfOldest < 30
+   B: 30 ≤ ageOfOldest ≤ 60
+   C: ageOfOldest > 60 and openValue < 5000
+   D: ageOfOldest > 90 and openValue >= 5000
+*/
+function computeRisk(c){
+  const age=c.ageOfOldest||0;
+  const val=c.openValue||0;
+  if(age<30)return'A';
+  if(age<=60)return'B';
+  if(age>90&&val>=5000)return'D';
+  return'C';
+}
+/* Non-payer: customer has any invoice older than 60 days */
+function computeNonPayer(c){return(c.ageOfOldest||0)>60;}
+
+/* Bucket filter: map bucket label to ageOfOldest range */
+function bucketMatchesCustomer(bucket,c){
+  if(!bucket)return true;
+  const age=c.ageOfOldest||0;
+  switch(bucket){
+    case'0–30 days':return age<=30;
+    case'31–60 days':return age>30&&age<=60;
+    case'61–90 days':return age>60&&age<=90;
+    case'91–180 days':return age>90&&age<=180;
+    case'>180 days':return age>180;
+    default:return true;
+  }
+}
+
+function DebtorCustomers({bucketFilter,clearBucketFilter}){
   const[drillCustomer,setDrillCustomer]=useState(null);
   const[search,setSearch]=useState('');
-  const customers=debtorCustomers||[];
+  /* Enrich customers with client-computed risk and nonPayer */
+  const customers=useMemo(()=>(debtorCustomers||[]).map(c=>({
+    ...c,
+    risk:computeRisk(c),
+    nonPayer:computeNonPayer(c),
+  })),[]);
   const q=search.trim().toLowerCase();
-  const filtered=q?customers.filter(c=>c.name.toLowerCase().includes(q)||String(c.code).includes(q)||(c.risk||'').toLowerCase()===q):customers;
+  const bucketFiltered=bucketFilter?customers.filter(c=>bucketMatchesCustomer(bucketFilter,c)):customers;
+  const filtered=q?bucketFiltered.filter(c=>c.name.toLowerCase().includes(q)||String(c.code).includes(q)||(c.risk||'').toLowerCase()===q):bucketFiltered;
+
+  const nonPayerCount=customers.filter(c=>c.nonPayer).length;
+  const riskDCount=customers.filter(c=>c.risk==='D').length;
+  const riskACount=customers.filter(c=>c.risk==='A').length;
 
   if(drillCustomer){
     const items=(debtorOpenItems||[]).filter(i=>i.code===drillCustomer.code);
+    const enriched={...drillCustomer,risk:computeRisk(drillCustomer),nonPayer:computeNonPayer(drillCustomer)};
     return(
       <div className="page-area" key="items">
+        <button className="back-btn" onClick={()=>setDrillCustomer(null)}>← Back to all customers</button>
         <div className="drill-chip">Open items — <b>{drillCustomer.name}</b><button onClick={()=>setDrillCustomer(null)}>✕</button></div>
+        <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+          <span style={{fontSize:12,color:'#64748b'}}>Risk: <span style={{background:DEBTOR_RISK_COLORS[enriched.risk]||'#94a3b8',color:'#fff',borderRadius:4,padding:'1px 8px',fontSize:11,fontWeight:700}}>{enriched.risk||'—'}</span></span>
+          <span style={{fontSize:12,color:'#64748b'}}>Non-payer: <span style={{background:enriched.nonPayer?'#ef4444':'#22c55e',color:'#fff',borderRadius:4,padding:'1px 8px',fontSize:11,fontWeight:700}}>{enriched.nonPayer?'YES':'No'}</span></span>
+          <span style={{fontSize:12,color:'#64748b'}}>Open: <b>{fmtFull(drillCustomer.openValue)}</b></span>
+          <span style={{fontSize:12,color:'#64748b'}}>Oldest invoice: <b>{drillCustomer.ageOfOldest!=null?drillCustomer.ageOfOldest+'d':'—'}</b></span>
+        </div>
         <div className="charts-row" style={{flex:1}}>
           <div className="charts-col" style={{flex:1}}>
             <Panel title={`Open Invoices — ${drillCustomer.name}`} subtitle={`${items.length} open invoice(s) · As of ${debtorAsOf}`}
@@ -2621,18 +2778,25 @@ function DebtorCustomers(){
 
   return(
     <div className="page-area" key="debtorcustomers">
+      {bucketFilter&&(
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+          <span style={{fontSize:12,background:DEBTOR_BUCKET_COLORS[bucketFilter]||'#94a3b8',color:'#fff',borderRadius:12,padding:'2px 10px',fontWeight:600}}>{bucketFilter}</span>
+          <span style={{fontSize:11,color:'#64748b'}}>{filtered.length} customer{filtered.length!==1?'s':''} with oldest invoice in this bucket</span>
+          <button onClick={clearBucketFilter} style={{fontSize:11,color:'var(--accent2)',background:'none',border:'none',cursor:'pointer',textDecoration:'underline'}}>Clear filter</button>
+        </div>
+      )}
       <div className="kpi-strip">
         <div className="kpi-card blue"><div className="kpi-lbl">Customers with Open AR</div><div className="kpi-val sm">{customers.length}</div><div className="kpi-chg">As of {debtorAsOf}</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">Non-Payer Flags</div><div className="kpi-val sm">{customers.filter(c=>c.nonPayer).length}</div><div className="kpi-chg">Flagged in system</div></div>
-        <div className="kpi-card navy"><div className="kpi-lbl">Risk D</div><div className="kpi-val sm">{customers.filter(c=>c.risk==='D').length}</div><div className="kpi-chg">&gt;90d oldest open invoice</div></div>
-        <div className="kpi-card teal"><div className="kpi-lbl">Risk A</div><div className="kpi-val sm">{customers.filter(c=>c.risk==='A').length}</div><div className="kpi-chg">≤30d oldest open invoice</div></div>
+        <div className="kpi-card amber"><div className="kpi-lbl">Non-Payer Flags</div><div className="kpi-val sm">{nonPayerCount}</div><div className="kpi-chg">&gt;60d oldest open invoice</div></div>
+        <div className="kpi-card navy"><div className="kpi-lbl">Risk D</div><div className="kpi-val sm">{riskDCount}</div><div className="kpi-chg">&gt;90d + &gt;€5k outstanding</div></div>
+        <div className="kpi-card teal"><div className="kpi-lbl">Risk A</div><div className="kpi-val sm">{riskACount}</div><div className="kpi-chg">≤30d oldest open invoice</div></div>
       </div>
       <div style={{fontSize:11,color:'#64748b',padding:'0 0 8px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-        <span>Risk: <b style={{color:DEBTOR_RISK_COLORS.A}}>A</b> ≤30d · <b style={{color:DEBTOR_RISK_COLORS.B}}>B</b> 31–60d · <b style={{color:DEBTOR_RISK_COLORS.C}}>C</b> 61–90d · <b style={{color:DEBTOR_RISK_COLORS.D}}>D</b> &gt;90d · Click a row → open invoices</span>
+        <span>Risk: <b style={{color:DEBTOR_RISK_COLORS.A}}>A</b> &lt;30d · <b style={{color:DEBTOR_RISK_COLORS.B}}>B</b> 30–60d · <b style={{color:DEBTOR_RISK_COLORS.C}}>C</b> 60+d &lt;€5k · <b style={{color:DEBTOR_RISK_COLORS.D}}>D</b> 90+d &gt;€5k · Click a row → open invoices</span>
       </div>
       <div className="chart-panel" style={{flex:1,minHeight:0,display:'flex',flexDirection:'column'}}>
         <div className="cp-head">
-          <div style={{flex:1,minWidth:0}}><div className="cp-title">Customer AR Scorecard</div><div className="cp-sub">{filtered.length} of {customers.length} customers</div></div>
+          <div style={{flex:1,minWidth:0}}><div className="cp-title">Customer AR Scorecard</div><div className="cp-sub">{filtered.length} of {customers.length} customers{bucketFilter?` · filtered: ${bucketFilter}`:''}</div></div>
           <input type="text" placeholder="Search name, code or risk…" value={search} onChange={e=>setSearch(e.target.value)}
             style={{fontSize:11,padding:'4px 10px',border:'1px solid #dde3ea',borderRadius:6,outline:'none',width:200,background:'transparent',color:'inherit'}}/>
         </div>
@@ -2652,7 +2816,7 @@ function DebtorCustomers(){
                 <td>{c.ageOfOldest!=null?c.ageOfOldest+'d':'—'}</td>
                 <td style={{fontSize:11,color:'#64748b'}}>{c.lastPayment||'—'}</td>
                 <td><span style={{background:DEBTOR_RISK_COLORS[c.risk]||'#94a3b8',color:'#fff',borderRadius:4,padding:'2px 9px',fontSize:11,fontWeight:700,display:'inline-block',minWidth:22,textAlign:'center'}}>{c.risk||'—'}</span></td>
-                <td><span style={{background:c.nonPayer?'#ef4444':'#22c55e',color:'#fff',borderRadius:4,padding:'2px 8px',fontSize:11,fontWeight:700,display:'inline-block'}}>{c.nonPayer?'YES':'no'}</span></td>
+                <td><span style={{background:c.nonPayer?'#ef4444':'#22c55e',color:'#fff',borderRadius:4,padding:'2px 8px',fontSize:11,fontWeight:700,display:'inline-block'}}>{c.nonPayer?'YES':'No'}</span></td>
               </tr>
             ))}</tbody>
           </table>
@@ -2927,6 +3091,7 @@ export default function App() {
   const SESSION_PAGE_KEY='dairytop_last_page';
   const SESSION_FILTER_KEY='dairytop_last_filter';
   const [page,setPage]=useState(()=>sessionStorage.getItem(SESSION_PAGE_KEY)||'overview');
+  const [debtorBucketFilter,setDebtorBucketFilter]=useState(null);
   const [filter,setFilter]=useState(()=>{
     try{
       const saved=sessionStorage.getItem(SESSION_FILTER_KEY);
@@ -3087,8 +3252,8 @@ export default function App() {
       case'plsummary':return<PLSummary/>;
       case'finrevcosts':return<FinRevCosts/>;
       case'finledger':return<FinLedger/>;
-      case'debtors':return<Debtors/>;
-      case'debtorcustomers':return<DebtorCustomers/>;
+      case'debtors':return<Debtors setPage={setPage} setBucketFilter={setDebtorBucketFilter}/>;
+      case'debtorcustomers':return<DebtorCustomers bucketFilter={debtorBucketFilter} clearBucketFilter={()=>setDebtorBucketFilter(null)}/>;
       case'debtortrend':return<DebtorTrend/>;
       default:return<Overview{...props}/>;
     }

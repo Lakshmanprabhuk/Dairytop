@@ -44,6 +44,7 @@ import {
   finSummary,
   finCategories,
   finLines,
+  finPeriodLabel,
 } from './data.js';
 
 // Groups raw {n, m, rev, orders, qty} rows by name and sums rev/orders/qty
@@ -158,7 +159,7 @@ export function buildDataSummary(queryText = '') {
     asOf: {
       lastUpdated,
       lastInvoiceDate: maxFactuurDatum,
-      note: `Data is current as of ${lastUpdated}. The LAST entry in monthlyRevenue (${currentMonthEntry?.month}) is the current, still in-progress month — it will look artificially low compared to full months because the month has not finished yet. The second-to-last entry (${previousMonthEntry?.month}) is the most recent fully completed month.`,
+      note: `Data is current as of ${lastUpdated}. The LAST entry in monthlyRevenue (${currentMonthEntry?.m}) is the current, still in-progress month — it will look artificially low compared to full months because the month has not finished yet. The second-to-last entry (${previousMonthEntry?.m}) is the most recent fully completed month.`,
       currentMonth: currentMonthEntry ? { month: currentMonthEntry.m, revenueEUR: Math.round(currentMonthEntry.rev), orders: currentMonthEntry.orders, partial: true } : null,
       previousMonth: previousMonthEntry ? { month: previousMonthEntry.m, revenueEUR: Math.round(previousMonthEntry.rev), orders: previousMonthEntry.orders } : null,
     },
@@ -206,7 +207,7 @@ export function buildDataSummary(queryText = '') {
     byMonthNote: `customersByMonth/productsByMonth include full month-level detail for ${targetYearLabel} for ALL customers/products, PLUS the complete multi-year month-level history for any customer/product named in the user's current question (matched: ${matchedEntityNames.length ? matchedEntityNames.join(', ') : 'none this turn'}). If the user asks about a different specific year or names a different customer/product, that data will be included automatically on their next message once they mention it. For a lifetime total of ANY customer/product regardless of year, use customersTotals/productsTotals instead, which always include everyone.`,
 
     finance: {
-      comparisonPeriod: '2026 Jan-Mar (current year) vs 2025 Jan-Jun (prior year) — NOTE: these are unequal-length partial periods, not a fair like-for-like comparison',
+      comparisonPeriod: `${finPeriodLabel} — NOTE: these are unequal-length partial periods, not a fair like-for-like comparison`,
       revenue: { currentYearEUR: Math.round(finSummary.revenue.cy), priorYearEUR: Math.round(finSummary.revenue.py) },
       cogs: { currentYearEUR: Math.round(finSummary.cogs.cy), priorYearEUR: Math.round(finSummary.cogs.py) },
       opex: { currentYearEUR: Math.round(finSummary.opex.cy), priorYearEUR: Math.round(finSummary.opex.py) },
@@ -271,3 +272,6 @@ STRICT RULES — follow these without exception:
 DASHBOARD DATA:
 ${JSON.stringify(summary)}`;
 }
+
+// Local fallback uses the same data.js module, without constructing an AI prompt.
+export { buildFallbackAnswer } from './chatFallback.js';

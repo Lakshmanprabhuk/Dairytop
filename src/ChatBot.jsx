@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { buildSystemPrompt } from "./utils/chatContext.js";
+import { buildSystemPrompt, buildFallbackAnswer } from "./utils/chatContext.js";
+import { requestWithDeadline } from "./utils/chatRequest.js";
 
 const CHAT_PROXY_URL = import.meta.env.VITE_CHAT_PROXY_URL;
 
@@ -109,9 +110,10 @@ function renderFormatted(text) {
   });
 }
 
-async function callChatProxy(systemPrompt, history, userMessage) {
+async function callChatProxy(systemPrompt, history, userMessage, signal) {
   const response = await fetch(CHAT_PROXY_URL, {
     method: 'POST',
+    signal,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       systemPrompt,
@@ -122,7 +124,7 @@ async function callChatProxy(systemPrompt, history, userMessage) {
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error || `API error ${response.status}`);
-  if (!data?.text) throw new Error('No response from Gemini.');
+  if (typeof data?.text !== 'string' || !data.text.trim()) throw new Error('No response from Gemini.');
   return data.text;
 }
 
@@ -358,6 +360,8 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
   });
   const [, forceRecalc] = useState(0);
   const bodyRef = useRef(null);
+  const requestRef = useRef(null);
+  useEffect(() => () => requestRef.current?.abort(), []);
   const dragRef = useRef({ dragging: false, moved: false, startX: 0, startY: 0, origX: 0, origY: 0 });
   const t = STRINGS[lang];
   const timeGreeting = getTimeGreeting(lang);
@@ -464,40 +468,42 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
 
   const send = useCallback(async (text) => {
     const trimmed = (text ?? input).trim();
-    if (!trimmed || loading) return;
-
-    if (!CHAT_PROXY_URL) {
-      setMessages(prev => [...prev, { role: 'user', text: trimmed }, { role: 'error', text: t.notConfigured }]);
-      setInput('');
-      return;
-    }
+    if (!trimmed || loading || requestRef.current) return;
 
     const nextHistory = [...messages, { role: 'user', text: trimmed }];
     setMessages(nextHistory);
     setInput('');
     setLoading(true);
+    const request = new AbortController();
+    requestRef.current = request;
 
     try {
-      const recentTurnsText = nextHistory.slice(-5).map(m => m.text).join(' ');
-      const basePrompt = buildSystemPrompt(lang, recentTurnsText);
-      const contextNote = context
-        ? (lang === 'nl'
-            ? `\n\nContext: de gebruiker bekijkt op dit moment de pagina "${context.pageName}"` +
-              (context.filterLabel ? ` met periodefilter "${context.filterLabel}"${context.dateRange ? ` (${context.dateRange})` : ''}.` : '.') +
-              ' Stem je antwoord hierop af wanneer dat relevant is, maar je mag ook de volledige dataset gebruiken.'
-            : `\n\nContext: the user is currently viewing the "${context.pageName}" page` +
-              (context.filterLabel ? ` with the date filter set to "${context.filterLabel}"${context.dateRange ? ` (${context.dateRange})` : ''}.` : '.') +
-              ' Tailor your answer to what they can currently see when that\'s relevant, but you may still draw on the full dataset.')
-        : '';
-      const systemPrompt = basePrompt + contextNote;
-      const historyForApi = nextHistory.filter(m => m.role === 'user' || m.role === 'bot').slice(0, -1);
-      const reply = await callChatProxy(systemPrompt, historyForApi, trimmed);
+      if (!CHAT_PROXY_URL) throw new Error("Missing proxy URL");
+      const reply = await requestWithDeadline(async signal => {
+        const recentTurnsText = nextHistory.filter(m => m.role === 'user').slice(-3).map(m => m.text).join(' ');
+        const basePrompt = buildSystemPrompt(lang, recentTurnsText);
+        const contextNote = context
+          ? (lang === 'nl'
+              ? `\n\nContext: de gebruiker bekijkt op dit moment de pagina "${context.pageName}"` +
+                (context.filterLabel ? ` met periodefilter "${context.filterLabel}"${context.dateRange ? ` (${context.dateRange})` : ''}.` : '.') +
+                ' Stem je antwoord hierop af wanneer dat relevant is, maar je mag ook de volledige dataset gebruiken.'
+              : `\n\nContext: the user is currently viewing the "${context.pageName}" page` +
+                (context.filterLabel ? ` with the date filter set to "${context.filterLabel}"${context.dateRange ? ` (${context.dateRange})` : ''}.` : '.') +
+                ' Tailor your answer to what they can currently see when that\'s relevant, but you may still draw on the full dataset.')
+          : '';
+        const systemPrompt = basePrompt + contextNote;
+        const historyForApi = nextHistory.filter(m => m.role === 'user' || m.role === 'bot').slice(0, -1);
+        return callChatProxy(systemPrompt, historyForApi, trimmed, signal);
+      }, { signal: request.signal });
+      if (request.signal.aborted) return;
       setMessages(prev => [...prev, { role: 'bot', text: reply }]);
-    } catch (err) {
-      console.error('Chat error:', err);
-      setMessages(prev => [...prev, { role: 'error', text: err.message || t.genericError }]);
+    } catch {
+      if (request.signal.aborted) return;
+      const reply = buildFallbackAnswer(trimmed, { lang, context });
+      setMessages(prev => [...prev, { role: 'bot', text: reply, source: 'local' }]);
     } finally {
-      setLoading(false);
+      if (requestRef.current === request) requestRef.current = null;
+      if (!request.signal.aborted) setLoading(false);
     }
   }, [input, loading, messages, lang, t, context]);
 

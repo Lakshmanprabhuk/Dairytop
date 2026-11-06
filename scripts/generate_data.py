@@ -910,7 +910,7 @@ def build_part4(tables: dict) -> str:
     bucket_order = ["0-30", "31-60", "61-90", "91-180", ">180", "Settled"]
     ageing_rows  = []
     for b in bucket_order:
-        mask = inv["ageing_bucket"] == b
+        mask = ((inv["ageing_bucket"] == b) & (inv["open_amount"] > 0.005))
         val  = float(inv.loc[mask, "open_amount"].sum())
         cnt  = int(mask.sum())
         pct  = round(val / total_value * 100, 1) if total_value > 0 and b != "Settled" else 0.0

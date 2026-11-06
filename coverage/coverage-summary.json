@@ -1,0 +1,9 @@
+{
+  "sentenceCount": 1624,
+  "uniqueSentences": 1624,
+  "uniqueWords": 3083,
+  "languageAndNumberWords": 403,
+  "entityNameWords": 2708,
+  "aliasPhrases": 304,
+  "note": "Word counts include meaningful words from actual entity names. Entity words are recognized in names, not treated as general intent synonyms. Sentences are generated combinations of supported templates, with expected canonical queries for regression testing."
+}

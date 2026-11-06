@@ -477,6 +477,22 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
     const request = new AbortController();
     requestRef.current = request;
 
+    // ── Local-first routing ────────────────────────────────────────────
+    // Try the deterministic fallback engine synchronously BEFORE hitting
+    // the AI proxy.  If it returns a confident answer (anything that is
+    // NOT the explicit "beyond the local rules" redirect), use it
+    // immediately — zero network latency, zero token cost.
+    // Only analytical questions (compare, forecast, growth, why…) fall
+    // through to the AI.
+    const localFirst = buildFallbackAnswer(trimmed, { lang, context });
+    if (!/beyond the local rules/i.test(localFirst)) {
+      setMessages(prev => [...prev, { role: 'bot', text: localFirst, source: 'local' }]);
+      requestRef.current = null;
+      setLoading(false);
+      return;
+    }
+    // ── AI path (question needs interpretation / comparison) ──────────
+
     try {
       if (!CHAT_PROXY_URL) throw new Error("Missing proxy URL");
       const reply = await requestWithDeadline(async signal => {

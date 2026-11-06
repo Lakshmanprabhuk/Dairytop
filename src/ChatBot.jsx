@@ -485,13 +485,22 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
     // Only analytical questions (compare, forecast, growth, why…) fall
     // through to the AI.
     const localFirst = answerFromData(trimmed, { lang, context });
-    if (!/beyond the local rules/i.test(localFirst)) {
+    // Route to AI when the local engine cannot give a specific answer:
+    //   "beyond the local rules" — analytical question (forecast, compare, growth…)
+    //   "local analysis supports" — help-fallthrough: greeting, unknown phrasing, etc.
+    // Exception: an EXPLICIT "help" request stays local — it IS the right answer.
+    const isExplicitHelp = !trimmed || /\b(help|hulp)\b/i.test(trimmed);
+    const localEngineHandled =
+      !isExplicitHelp
+        ? !/beyond the local rules|local analysis supports|lokale analyse ondersteunt/i.test(localFirst)
+        : true;
+    if (localEngineHandled) {
       setMessages(prev => [...prev, { role: 'bot', text: localFirst, source: 'local' }]);
       requestRef.current = null;
       setLoading(false);
       return;
     }
-    // ── AI path (question needs interpretation / comparison) ──────────
+    // ── AI path: analytical question or no specific local answer ─────
 
     try {
       if (!CHAT_PROXY_URL) throw new Error("Missing proxy URL");

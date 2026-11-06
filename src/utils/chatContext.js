@@ -274,4 +274,4 @@ ${JSON.stringify(summary)}`;
 }
 
 // Local fallback uses the same data.js module, without constructing an AI prompt.
-export { buildFallbackAnswer } from './chatFallback.js';
+export { buildFallbackAnswer, answerFromData } from './chatFallback.js';

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { buildSystemPrompt, buildFallbackAnswer } from "./utils/chatContext.js";
+import { buildSystemPrompt, buildFallbackAnswer, answerFromData } from "./utils/chatContext.js";
 import { requestWithDeadline } from "./utils/chatRequest.js";
 
 const CHAT_PROXY_URL = import.meta.env.VITE_CHAT_PROXY_URL;
@@ -484,7 +484,7 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
     // immediately — zero network latency, zero token cost.
     // Only analytical questions (compare, forecast, growth, why…) fall
     // through to the AI.
-    const localFirst = buildFallbackAnswer(trimmed, { lang, context });
+    const localFirst = answerFromData(trimmed, { lang, context });
     if (!/beyond the local rules/i.test(localFirst)) {
       setMessages(prev => [...prev, { role: 'bot', text: localFirst, source: 'local' }]);
       requestRef.current = null;

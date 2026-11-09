@@ -1,4 +1,4 @@
-// Auto-generated on 2026-11-09 03:39 UTC
+// Auto-generated on 2026-11-09 14:21 UTC
 // Do not edit manually — re-run the GitHub Action instead.
 
 export const monthly = [

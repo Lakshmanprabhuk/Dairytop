@@ -27,9 +27,9 @@
 //   curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY"
 const DEFAULT_MODELS = [
   // ── Tier 1: stable, well-established free-tier quotas ──
+  'gemini-2.5-flash-lite',
   'gemini-2.5-flash',
   'gemini-2.5-pro',
-  'gemini-2.5-flash-lite',
 
   // ── Tier 2: newer Flash family (3.6 is your current working model) ──
   'gemini-3.6-flash',
@@ -61,9 +61,8 @@ const MODELS = process.env.GEMINI_MODELS
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-// Total time budget for the whole fallback chain, in ms. Kept below
-// Vercel's function timeout (10s on Hobby) so we can still return a
-// clean JSON error instead of being killed mid-flight.
+// Total time budget for the whole fallback chain, in ms.
+// 9000 keeps us safely under Vercel Hobby's 10 s hard function kill.
 const TOTAL_BUDGET_MS = 9000;
 const MIN_ATTEMPT_MS = 2000;
 

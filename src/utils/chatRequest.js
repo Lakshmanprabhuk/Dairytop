@@ -1,4 +1,4 @@
-export const AI_TIMEOUT_MS = 15_000;
+export const AI_TIMEOUT_MS = 12_000;
 
 // Deadline includes fetch AND response-body parsing. The race also settles if a
 // proxy/mock ignores AbortSignal. Late responses cannot overwrite the fallback.

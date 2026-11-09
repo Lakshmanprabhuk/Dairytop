@@ -299,13 +299,13 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
   if (/\b(revenue|sales|turnover|omzet|orders?|bestellingen|month|monthly|maand|omzetmaand)\b/.test(q)) {
     const rows = p.filter(d.monthly || []);
     if (metric === 'qty') return help;
-    if (/\b(top|best|worst|highest|lowest|beste|laagste|monthly|maandelijks|trend)\b/.test(q)) {
-      const result = rows.map(r => ({...r, name:r.m}));
-      return list(/\b(monthly|maandelijks|trend(?:ing)?)\b/.test(q) ? result : rank(result).slice(0,count)) + footer;
-    }
     if (/\b(average|avg|mean|gemiddeld)\b/.test(q)) {
       const avg = rows.length ? sum(rows, metric) / rows.length : 0;
       return `${say('Average monthly', 'Gemiddeld maandelijks')} ${metricLabel}: **${format(avg)}**` + footer;
+    }
+    if (/\b(top|best|worst|highest|lowest|beste|laagste|monthly|maandelijks|trend)\b/.test(q)) {
+      const result = rows.map(r => ({...r, name:r.m}));
+      return list(/\b(monthly|maandelijks|trend(?:ing)?)\b/.test(q) ? result : rank(result).slice(0,count)) + footer;
     }
     return `${metricLabel}: **${format(sum(rows, metric))}**` + footer;
   }

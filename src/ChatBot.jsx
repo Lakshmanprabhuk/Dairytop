@@ -697,23 +697,75 @@ const chatCss = `
 .cb-moo-2{animation-delay:1.1s;left:-3px;}.cb-moo-3{animation-delay:1.65s;left:5px;}
 .cb-moo-4{animation-delay:2.2s;left:-2px;}
 
-/* Mobile */
+/* ── Responsive chatbot breakpoints ───────────────────────────────────────── */
+
+/* Shared mobile chrome tweaks ≤ 900px */
 @media (max-width: 900px) {
   .cb-toggle-fixed {
     position: fixed !important; right: 14px !important;
     bottom: calc(14px + env(safe-area-inset-bottom)) !important;
-    left: auto !important; top: auto !important; cursor: pointer !important; touch-action: manipulation;
-  }
-  .cb-panel {
-    border-radius: 0 !important;
-    left: 0 !important; right: 0 !important; bottom: 0 !important; top: 0 !important;
-    width: 100% !important; max-width: 100% !important;
-    height: 100dvh !important; max-height: 100dvh !important;
+    left: auto !important; top: auto !important;
+    cursor: pointer !important; touch-action: manipulation;
   }
   .cb-greet   { display: none !important; }
   .cb-moo-wrap{ display: none; }
   .cb-send, .cb-stop-btn { width: 40px; height: 40px; }
   .cb-input { font-size: 16px; }
+}
+
+/* 1 ── Small tablets / wide phones  769–900px — corner floating panel */
+@media (min-width: 769px) and (max-width: 900px) {
+  .cb-panel {
+    border-radius: 20px !important;
+    right: 20px !important; left: auto !important;
+    bottom: 80px !important; top: auto !important;
+    width: 440px !important; max-width: 440px !important;
+    height: 560px !important; max-height: 560px !important;
+  }
+}
+
+/* 2 ── Large phones  601–768px — full-width bottom sheet */
+@media (min-width: 601px) and (max-width: 768px) {
+  .cb-panel {
+    border-radius: 20px 20px 0 0 !important;
+    left: 0 !important; right: 0 !important;
+    bottom: 0 !important; top: auto !important;
+    width: 100% !important; max-width: 100% !important;
+    height: 68dvh !important; max-height: 68dvh !important;
+  }
+}
+
+/* 3 ── Mid phones  481–600px — full-width bottom sheet */
+@media (min-width: 481px) and (max-width: 600px) {
+  .cb-panel {
+    border-radius: 18px 18px 0 0 !important;
+    left: 0 !important; right: 0 !important;
+    bottom: 0 !important; top: auto !important;
+    width: 100% !important; max-width: 100% !important;
+    height: 72dvh !important; max-height: 72dvh !important;
+  }
+}
+
+/* 4 ── Standard phones  361–480px — full-width bottom sheet */
+@media (min-width: 361px) and (max-width: 480px) {
+  .cb-panel {
+    border-radius: 16px 16px 0 0 !important;
+    left: 0 !important; right: 0 !important;
+    bottom: 0 !important; top: auto !important;
+    width: 100% !important; max-width: 100% !important;
+    height: 76dvh !important; max-height: 76dvh !important;
+  }
+}
+
+/* 5 ── Very small phones  ≤ 360px — full-width bottom sheet */
+@media (max-width: 360px) {
+  .cb-panel {
+    border-radius: 14px 14px 0 0 !important;
+    left: 0 !important; right: 0 !important;
+    bottom: 0 !important; top: auto !important;
+    width: 100% !important; max-width: 100% !important;
+    height: 80dvh !important; max-height: 80dvh !important;
+  }
 }
 `;
 

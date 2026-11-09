@@ -272,7 +272,7 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
 
   let remainder = ` ${q} `;
   for (const {name} of [...named].sort((a,b) => b.name.length-a.name.length)) remainder = remainder.replace(` ${normalize(name)} `, ' ');
-  const vocabulary = new Set(('show give tell me please list who what which is are was were our the a an of for in by with and their all available data total totals sum overall lifetime top bottom best worst highest lowest least first revenue sales turnover orders order qty quantity quantities units number how many customers customer clients client klanten klant products product products items item artikelen producten salesrep salesreps sales rep reps salesmen salesman salespeople person representatives representative verkopers verkoper vertegenwoordiger vertegenwoordigers category categories categorie categorieen channels channel webshop direct split versus vs distribution kanalen directe verkoop verdeling month monthly trend trending current this last previous year years quarter ytd deze huidige vorige dit vorig jaar maand maandelijks omzet omzetmaand beste slechtste laagste aantal hoeveel hoeveelheid bestellingen toon geef mij wat wie welke zijn onze de het een per van voor alle totaal totalen s t d m re ve ll hoe gaat verloopt staat hi hello hey hoi hallo dag goedemorgen goedemiddag goedenavond thanks thank bedankt dank ok okay ja nee yes no fine good great'.split(' ')));
+  const vocabulary = new Set(('show give tell me please list who what which is are was were our the a an of for in by with and their all available data total totals sum overall lifetime top bottom best worst highest lowest least first revenue sales turnover orders order qty quantity quantities units number how many customers customer clients client klanten klant products product products items item artikelen producten salesrep salesreps sales rep reps salesmen salesman salespeople person representatives representative verkopers verkoper vertegenwoordiger vertegenwoordigers category categories categorie categorieen channels channel webshop direct split versus vs distribution kanalen directe verkoop verdeling month monthly trend trending current this last previous year years quarter ytd deze huidige vorige dit vorig jaar maand maandelijks omzet omzetmaand beste slechtste laagste aantal hoeveel hoeveelheid bestellingen toon geef mij wat wie welke zijn onze de het een per van voor alle totaal totalen s t d m re ve ll hoe gaat verloopt staat hi hello hey hoi hallo dag goedemorgen goedemiddag goedenavond thanks thank bedankt dank ok okay ja nee yes no fine good great average avg mean gemiddeld gemiddelde'.split(' ')));
   aliases.flat().forEach(word => vocabulary.add(word));
   const unknown = remainder.trim().split(/\s+/).filter(word => word && !vocabulary.has(word) && !/^\d+$|^q[1-4]$|^entitytoken\d+$/.test(word));
   if (unknown.length) return say('I could not safely interpret the name or filter in this question. Use a full dashboard name and a month/year, or ask "top 5 customers".', 'De naam of het filter in deze vraag is niet eenduidig. Gebruik een volledige dashboardnaam en een maand/jaar, of vraag "top 5 klanten".');
@@ -302,6 +302,10 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
     if (/\b(top|best|worst|highest|lowest|beste|laagste|monthly|maandelijks|trend)\b/.test(q)) {
       const result = rows.map(r => ({...r, name:r.m}));
       return list(/\b(monthly|maandelijks|trend(?:ing)?)\b/.test(q) ? result : rank(result).slice(0,count)) + footer;
+    }
+    if (/\b(average|avg|mean|gemiddeld)\b/.test(q)) {
+      const avg = rows.length ? sum(rows, metric) / rows.length : 0;
+      return `${say('Average monthly', 'Gemiddeld maandelijks')} ${metricLabel}: **${format(avg)}**` + footer;
     }
     return `${metricLabel}: **${format(sum(rows, metric))}**` + footer;
   }

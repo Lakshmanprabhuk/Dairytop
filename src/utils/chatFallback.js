@@ -73,13 +73,12 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
   );
   if (!q || /\b(help|hulp)\b/.test(q)) return help;
   if (/\b(why|predict|forecast|recommend|waarom|voorspel|verwacht|growth|groei|compare|comparison|vergelijk|versus)\b/.test(q))
-    return say('This question needs interpretation or comparison beyond the local rules. ', 'Deze vraag vereist interpretatie of vergelijking buiten de lokale regels. ') + help;
+    return null; // let AI handle comparisons / predictions
 
   // Weekly handler — before the daily blocker so "this week" is handled
   if (/\b(week|weeks?|weekly|wekelijks|weekomzet)\b/.test(q)) {
     const weekAllowed = /^(?:week|weeks?|weekly|wekelijks|weekomzet|revenue|sales|omzet|orders?|bestellingen|this|current|last|previous|huidige|vorige|top|bottom|best|worst|highest|lowest|beste|slechtste|laagste|first|show|me|the|what|is|our|for|aantal|trending?|monthly|maandelijks|\d+|q[1-4])$/;
-    if (q.split(' ').some(w => w && !weekAllowed.test(w)))
-      return say('Weekly analysis supports: "revenue this week", "last week orders", "top 5 weeks by revenue", "week 44 revenue".', 'Wekelijkse analyse: "omzet deze week", "vorige week orders", "top 5 weken op omzet", "week 44 omzet".');
+    if (q.split(' ').some(w => w && !weekAllowed.test(w))) return null;
     const weeks = d.weekly || [];
     if (!weeks.length) return say('Weekly data is not available.', 'Wekelijkse gegevens zijn niet beschikbaar.');
     const latest = weeks[weeks.length - 1];
@@ -268,14 +267,14 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
     }
   }
 
-  if (types.length > 1) return say('Local analysis cannot link these independent entity totals. Customer-to-product purchases require invoice-line records with customer and product IDs. Ask about one entity type at a time.', 'Lokale analyse kan deze onafhankelijke totalen niet koppelen. Aankopen per klant en product vereisen factuurregels met klant- en product-ID\'s. Vraag naar één type tegelijk.');
+  if (types.length > 1) return null; // let AI handle cross-entity queries
 
   let remainder = ` ${q} `;
   for (const {name} of [...named].sort((a,b) => b.name.length-a.name.length)) remainder = remainder.replace(` ${normalize(name)} `, ' ');
   const vocabulary = new Set(('show give tell me please list who what which is are was were our the a an of for in by with and their all available data total totals sum overall lifetime top bottom best worst highest lowest least first revenue sales turnover orders order qty quantity quantities units number how many customers customer clients client klanten klant products product products items item artikelen producten salesrep salesreps sales rep reps salesmen salesman salespeople person representatives representative verkopers verkoper vertegenwoordiger vertegenwoordigers category categories categorie categorieen channels channel webshop direct split versus vs distribution kanalen directe verkoop verdeling month monthly trend trending current this last previous year years quarter ytd deze huidige vorige dit vorig jaar maand maandelijks omzet omzetmaand beste slechtste laagste aantal hoeveel hoeveelheid bestellingen toon geef mij wat wie welke zijn onze de het een per van voor alle totaal totalen s t d m re ve ll hoe gaat verloopt staat hi hello hey hoi hallo dag goedemorgen goedemiddag goedenavond thanks thank bedankt dank ok okay ja nee yes no fine good great average avg mean gemiddeld gemiddelde'.split(' ')));
   aliases.flat().forEach(word => vocabulary.add(word));
   const unknown = remainder.trim().split(/\s+/).filter(word => word && !vocabulary.has(word) && !/^\d+$|^q[1-4]$|^entitytoken\d+$/.test(word));
-  if (unknown.length) return say('I could not safely interpret the name or filter in this question. Use a full dashboard name and a month/year, or ask "top 5 customers".', 'De naam of het filter in deze vraag is niet eenduidig. Gebruik een volledige dashboardnaam en een maand/jaar, of vraag "top 5 klanten".');
+  if (unknown.length) return null; // unknown words → let AI interpret
 
   if (/\b(channels?|webshop|direct sales|directe verkoop|kanalen)\b/.test(q)) {
     if (types.length) return help;
@@ -288,7 +287,7 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
     let rows = p.filter(d[selected] || []);
     const names = named.filter(n => n.def?.[0] === selected).map(n => n.name);
     if (names.length) rows = rows.filter(r => names.includes(String(r.n).trim()));
-    else if (/\b(for|van|voor)\b/.test(q) && !/\b(number of|aantal van)\b/.test(q)) return say('I could not match an exact entity name. Use its full dashboard name or ask for a top list.', 'Geen exacte naam gevonden. Gebruik de volledige dashboardnaam of vraag om een toplijst.');
+    else if (/\b(for|van|voor)\b/.test(q) && !/\b(number of|aantal van)\b/.test(q)) return null;
     if (metric === 'qty' && rows.some(r => !Number.isFinite(r.qty))) return say('Quantity is not available for this entity type.', 'Hoeveelheid is niet beschikbaar voor dit type.');
     if (!rows.length) return say('No matching rows for that entity and period.', 'Geen passende regels voor deze naam en periode.');
     const groups = aggregate(rows);
@@ -298,7 +297,7 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
   }
   if (/\b(revenue|sales|turnover|omzet|orders?|bestellingen|month|monthly|maand|omzetmaand)\b/.test(q)) {
     const rows = p.filter(d.monthly || []);
-    if (metric === 'qty') return help;
+    if (metric === 'qty') return null;
     if (/\b(average|avg|mean|gemiddeld)\b/.test(q)) {
       const avg = rows.length ? sum(rows, metric) / rows.length : 0;
       return `${say('Average monthly', 'Gemiddeld maandelijks')} ${metricLabel}: **${format(avg)}**` + footer;
@@ -309,12 +308,16 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
     }
     return `${metricLabel}: **${format(sum(rows, metric))}**` + footer;
   }
-  return help;
+  return null;
 }
 
 export function buildFallbackAnswer(question, options) {
   const nl = options?.lang === 'nl';
   const prefix = nl ? 'AI is niet beschikbaar. Lokaal berekend uit dashboardgegevens:\n\n' : 'AI is unavailable. Calculated locally from dashboard data:\n\n';
-  try { return prefix + answerFromData(question, options); }
+  try {
+    const answer = answerFromData(question, options);
+    if (answer == null) return prefix + (nl ? 'Deze vraag kan lokaal niet worden beantwoord. Probeer het opnieuw als AI beschikbaar is.' : 'This question could not be answered locally. Try again when AI is available, or ask \'top 5 customers\'.');
+    return prefix + answer;
+  }
   catch { return prefix + (nl ? 'Deze vraag kan lokaal niet worden beantwoord. Probeer "top 5 klanten".' : 'This question could not be answered locally. Try "top 5 customers".'); }
 }

@@ -950,6 +950,13 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
       /beyond the local rules|local analysis supports|lokale analyse ondersteunt|could not safely|niet veilig|could not interpret|unable to interpret/i.test(localFirst);
     const localEngineHandled = !forceAI && !isExplicitHelp && !isLocalFail;
 
+    // ── Routing log — visible in browser DevTools (F12 → Console) ────────
+    console.group(`%c[DairyTop] "${trimmed}"`, 'font-weight:bold;color:#0ea5e9');
+    console.log('Local query  :', localQuery);
+    console.log('Local answer :', localFirst ?? '(null — no local handler matched)');
+    console.log('Route        :', localEngineHandled ? '✅ LOCAL' : forceAI ? '➡️ AI (follow-up chip)' : isExplicitHelp ? '➡️ AI (help request)' : '➡️ AI (local returned null/fail)');
+    console.groupEnd();
+
     if (localEngineHandled) {
       setMessages(prev => [...prev, { role: 'bot', text: localFirst, time: nowTime(), source: 'local' }]);
       requestRef.current = null;
@@ -957,6 +964,7 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
       return;
     }
     // ── AI path ───────────────────────────────────────────────────────────
+    console.log('%c[DairyTop] Calling AI...', 'color:#f59e0b');
     try {
       if (!CHAT_PROXY_URL) throw new Error('Missing proxy URL');
       const reply = await requestWithDeadline(async signal => {
@@ -992,10 +1000,12 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
         return callChatProxy(systemPrompt, historyForApi, trimmed, signal);
       }, { signal: request.signal });
       if (request.signal.aborted) return;
+      console.log('%c[DairyTop] AI replied ✓', 'color:#22c55e', reply.slice(0, 120) + (reply.length > 120 ? '…' : ''));
       setMessages(prev => [...prev, { role: 'bot', text: reply, time: nowTime() }]);
     } catch {
       if (request.signal.aborted) return;
       const reply = buildFallbackAnswer(trimmed, { lang, context });
+      console.warn('[DairyTop] AI failed — using local fallback:', reply.slice(0, 120));
       setMessages(prev => [...prev, { role: 'bot', text: reply, time: nowTime(), source: 'local' }]);
     } finally {
       if (requestRef.current === request) requestRef.current = null;

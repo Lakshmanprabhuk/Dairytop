@@ -72,6 +72,13 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
     'Lokale analyse ondersteunt: topklanten/producten/verkopers/categorieën, maandomzet, kanaalsplit, financiële totalen, debiteuren, wekelijkse omzet, openstaande orderwaarde, MTD-prognose, tonnage per categorie, verkopers per categorie. Gebruik volledige namen. Probeer "top 5 klanten in 2026" of "omzet deze week".'
   );
   if (!q || /\b(help|hulp)\b/.test(q)) return help;
+  // Greeting / small-talk handler — answered locally, no AI needed
+  if (/^(hi+|hello+|hey+|hoi+|hallo+|dag|goedemorgen|goedemiddag|goedenavond|thanks?|bedankt|dank|oke?|okay|ja|nee|yes|no|fine|good|great)\s*[!.]*$/.test(q)) {
+    return say(
+      'Hi there! Ask me about revenue, top customers, products, sales reps, open orders, or anything on the dashboard.',
+      'Hoi! Vraag me over omzet, topklanten, producten, verkopers, open orders of alles op het dashboard.'
+    );
+  }
   if (/\b(why|predict|forecast|recommend|waarom|voorspel|verwacht|growth|groei|compare|comparison|vergelijk|versus)\b/.test(q))
     return null; // let AI handle comparisons / predictions
 
@@ -147,6 +154,7 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
 
   // Finance handler
   if (/\b(finance|financial|financieel|financiele|cogs|opex|ebitda|profit|winst|margin|marge)\b/.test(q)) {
+    if (/\b(categor(?:y|ies)|categorie(?:en|s)?)\b/.test(q)) return null; // let AI handle finance by category
     if (/\b20\d{2}\b|\b(month|year|maand|jaar)\b/.test(q)) return say(`Available finance periods only: ${d.finPeriodLabel}. Ask "finance totals".`, `Alleen beschikbare financiële perioden: ${d.finPeriodLabel}. Vraag "financiële totalen" (finance totals).`);
     if (/entitytoken\d+/.test(q) || !q.split(' ').every(w => /^(finance|financial|total|totals|cogs|opex|ebitda|profit|margin|marge|show|me|the|what|is|our|and|please)$/.test(w))) return say('Local finance supports overall totals only, without entity or custom filters.', 'Lokale financiele analyse ondersteunt alleen algemene totalen, zonder naam- of aangepaste filters.');
     if (!d.finSummary) return help;
@@ -176,7 +184,7 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
 
   // Tonnage handler
   if (/\b(tonnage|ton(?:nen)?|tons?)\b/.test(q)) {
-    const tonnageAllowed = /^(?:tonnage|ton(?:nen)?|tons?|total|totaal|per|by|category|categorie|categorieen|salesman|verkopers?|show|me|the|what|is|for|top|bottom|best|worst|our|and|how|many|revenue|omzet|orders?|\d+|entitytoken\d+)$/;
+    const tonnageAllowed = /^(?:tonnage|ton(?:nen)?|tons?|total|totaal|per|by|category|categorie|categorieen|salesman|reps?|verkopers?|show|me|the|what|is|for|top|bottom|best|worst|our|and|how|many|revenue|omzet|orders?|\d+|entitytoken\d+)$/;
     if (q.split(' ').some(w => w && !tonnageAllowed.test(w)))
       return say('Tonnage questions: "total tonnage", "Melkpoeder tonnage", "top reps by tonnage", "tonnage for [rep name]".', 'Tonnage vragen: "totaal tonnage", "Melkpoeder tonnage", "top verkopers op tonnage".');
     const repEntT = prepared.entities.find(e => e.type === 'salesreps');
@@ -273,6 +281,14 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
   for (const {name} of [...named].sort((a,b) => b.name.length-a.name.length)) remainder = remainder.replace(` ${normalize(name)} `, ' ');
   const vocabulary = new Set(('show give tell me please list who what which is are was were our the a an of for in by with and their all available data total totals sum overall lifetime top bottom best worst highest lowest least first revenue sales turnover orders order qty quantity quantities units number how many customers customer clients client klanten klant products product products items item artikelen producten salesrep salesreps sales rep reps salesmen salesman salespeople person representatives representative verkopers verkoper vertegenwoordiger vertegenwoordigers category categories categorie categorieen channels channel webshop direct split versus vs distribution kanalen directe verkoop verdeling month monthly trend trending current this last previous year years quarter ytd deze huidige vorige dit vorig jaar maand maandelijks omzet omzetmaand beste slechtste laagste aantal hoeveel hoeveelheid bestellingen toon geef mij wat wie welke zijn onze de het een per van voor alle totaal totalen s t d m re ve ll hoe gaat verloopt staat hi hello hey hoi hallo dag goedemorgen goedemiddag goedenavond thanks thank bedankt dank ok okay ja nee yes no fine good great average avg mean gemiddeld gemiddelde'.split(' ')));
   aliases.flat().forEach(word => vocabulary.add(word));
+  // Revenue-driver: "who drove / generated the most revenue" → top customer
+  if (/\b(who|wie)\b/.test(q) && /\b(drove|driv|generated|made|brought|contributed|highest|most)\b/.test(q)) {
+    const revRows = p.filter(d.customers || []);
+    const revGroups = aggregate(revRows);
+    if (!revGroups.length) return say('Customer revenue data is not available.', 'Klantomzetgegevens zijn niet beschikbaar.');
+    const topRev = [...revGroups].sort((a, b) => b.rev - a.rev)[0];
+    return `${say('Top revenue driver', 'Grootste omzetbijdrager')} (${p.label}): **${topRev.name}** — ${money(topRev.rev)}` + footer;
+  }
   const unknown = remainder.trim().split(/\s+/).filter(word => word && !vocabulary.has(word) && !/^\d+$|^q[1-4]$|^entitytoken\d+$/.test(word));
   if (unknown.length) return null; // unknown words → let AI interpret
 

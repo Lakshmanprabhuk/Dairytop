@@ -184,6 +184,7 @@ export default async function handler(req, res) {
 
   const startedAt = Date.now();
   const failures = [];
+  const tried = [];    // models attempted in order
 
   for (const model of MODELS) {
     const elapsed = Date.now() - startedAt;
@@ -195,9 +196,10 @@ export default async function handler(req, res) {
 
     const result = await tryModel(model, apiKey, requestBody, remaining);
 
+    tried.push(model);
     if (result.ok) {
       res.setHeader('X-Model-Used', model);
-      return res.status(200).json({ text: result.text, model });
+      return res.status(200).json({ text: result.text, model, tried });
     }
 
     // 400/401/403 mean the request shape or the key itself is bad — every

@@ -204,7 +204,7 @@ async function callChatProxy(systemPrompt, history, userMessage, signal) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error || `API error ${response.status}`);
   if (typeof data?.text !== 'string' || !data.text.trim()) throw new Error('No response from Gemini.');
-  return data.text;
+  return { text: data.text, model: data.model || 'unknown', tried: data.tried || [data.model].filter(Boolean) };
 }
 
 // ── Layout constants ─────────────────────────────────────────────────────────
@@ -967,7 +967,7 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
     console.log('%c[DairyTop] Calling AI...', 'color:#f59e0b');
     try {
       if (!CHAT_PROXY_URL) throw new Error('Missing proxy URL');
-      const reply = await requestWithDeadline(async signal => {
+      const aiResult = await requestWithDeadline(async signal => {
         const recentTurnsText = nextHistory.filter(m => m.role === 'user').slice(-3).map(m => m.text).join(' ');
         const basePrompt  = buildSystemPrompt(lang, recentTurnsText);
         const contextNote = context
@@ -1000,7 +1000,9 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
         return callChatProxy(systemPrompt, historyForApi, trimmed, signal);
       }, { signal: request.signal });
       if (request.signal.aborted) return;
-      console.log('%c[DairyTop] AI replied ✓', 'color:#22c55e', reply.slice(0, 120) + (reply.length > 120 ? '…' : ''));
+      const { text: reply, model: usedModel, tried: triedModels } = aiResult;
+      const triedLabel = triedModels.length > 1 ? ` (tried: ${triedModels.join(' → ')})` : '';
+      console.log(`%c[DairyTop] AI replied ✓  model: ${usedModel}${triedLabel}`, 'color:#22c55e');
       setMessages(prev => [...prev, { role: 'bot', text: reply, time: nowTime() }]);
     } catch {
       if (request.signal.aborted) return;

@@ -916,8 +916,13 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
 
   // ── Send / AI ────────────────────────────────────────────────────────────
   const send = useCallback(async (text, { forceAI = false } = {}) => {
+    // ── DIAGNOSTIC: fires on every send() call, even if guard blocks ──
+    console.error(`[DairyTop] send() CALLED  text=${JSON.stringify((text??input).slice(0,30))}  loading=${loading}  ref=${!!requestRef.current}`);
     const trimmed = (text ?? input).trim();
-    if (!trimmed || loading || requestRef.current) return;
+    if (!trimmed || loading || requestRef.current) {
+      console.error('[DairyTop] send() BLOCKED BY GUARD  loading=' + loading + '  ref=' + !!requestRef.current);
+      return;
+    }
 
     const msgTime    = nowTime();
     const nextHistory = [...messages, { role: 'user', text: trimmed, time: msgTime }];

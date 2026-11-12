@@ -1854,8 +1854,8 @@ function Revenue({ fm, label, effGrain, filter }) {
     xAxis: { type: 'category', data: yoyMonths, axisLabel: catAxisLabel(yoyMonths.length, 9) },
     yAxis: { type: 'value', axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
     series: [
-      { name: '2025', type: 'line', data: cumData25, smooth: true, symbol: 'circle', symbolSize: 4, lineStyle: { color: '#0891B2', width: 2, type: 'dashed' }, itemStyle: { color: '#0891B2' }, areaStyle: { color: 'rgba(8,145,178,.07)' }, connectNulls: false },
-      { name: '2026', type: 'line', data: cumData26, smooth: true, symbol: 'circle', symbolSize: 4, lineStyle: { color: '#40BCF3', width: 2 }, itemStyle: { color: '#40BCF3' }, areaStyle: { color: 'rgba(64,188,243,.08)' }, connectNulls: false },
+      { name: '2025', type: 'line', legendIcon: 'path://M0,4 L18,4 L18,12 L0,12 Z M22,4 L40,4 L40,12 L22,12 Z', data: cumData25, smooth: true, symbol: 'circle', symbolSize: 4, lineStyle: { color: '#0891B2', width: 2, type: 'dashed' }, itemStyle: { color: '#0891B2' }, areaStyle: { color: 'rgba(8,145,178,.07)' }, connectNulls: false },
+      { name: '2026', type: 'line', legendIcon: 'path://M0,4 L44,4 L44,12 L0,12 Z', data: cumData26, smooth: true, symbol: 'circle', symbolSize: 4, lineStyle: { color: '#40BCF3', width: 2 }, itemStyle: { color: '#40BCF3' }, areaStyle: { color: 'rgba(64,188,243,.08)' }, connectNulls: false },
     ]
   });
 
@@ -1864,12 +1864,12 @@ function Revenue({ fm, label, effGrain, filter }) {
   let cMonths = (all25.length && all26.length) ? n25.filter(m => n26.includes(m)) : [...new Set([...n25, ...n26])];
   cMonths.sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b));
   const lineSeries = [];
-  if (all25.length) lineSeries.push({ name: '2025', type: 'line', data: cMonths.map(m => all25.find(d => d.m.startsWith(m))?.rev || null), lineStyle: { color: '#0891B2', width: 2, type: 'dashed' }, itemStyle: { color: '#0891B2' }, areaStyle: { color: 'rgba(8,145,178,.07)' }, smooth: true });
-  if (all26.length) lineSeries.push({ name: '2026', type: 'line', data: cMonths.map(m => all26.find(d => d.m.startsWith(m))?.rev || null), lineStyle: { color: '#73D4F2', width: 2 }, itemStyle: { color: '#73D4F2' }, areaStyle: { color: 'rgba(115,212,242,.07)' }, smooth: true });
+  if (all25.length) lineSeries.push({ name: '2025', type: 'line', legendIcon: 'path://M0,4 L18,4 L18,12 L0,12 Z M22,4 L40,4 L40,12 L22,12 Z', data: cMonths.map(m => all25.find(d => d.m.startsWith(m))?.rev || null), lineStyle: { color: '#0891B2', width: 2, type: 'dashed' }, itemStyle: { color: '#0891B2' }, areaStyle: { color: 'rgba(8,145,178,.07)' }, smooth: true });
+  if (all26.length) lineSeries.push({ name: '2026', type: 'line', legendIcon: 'path://M0,4 L44,4 L44,12 L0,12 Z', data: cMonths.map(m => all26.find(d => d.m.startsWith(m))?.rev || null), lineStyle: { color: '#73D4F2', width: 2 }, itemStyle: { color: '#73D4F2' }, areaStyle: { color: 'rgba(115,212,242,.07)' }, smooth: true });
   const cmpOpt = withDataZoom(withCrosshair({
     tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s=>s.value!=null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
     legend: { bottom: 4, textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
-    grid: { left: '3%', right: '4%', bottom: isMobileViewport() && cMonths.length > 3 ? '28%' : '22%', top: '8%', containLabel: true },
+    grid: { left: '3%', right: '4%', bottom: isMobileViewport() && cMonths.length > 3 ? '28%' : '26%', top: '8%', containLabel: true },
     xAxis: { type: 'category', data: cMonths, axisLabel: catAxisLabel(cMonths.length, 9) },
     yAxis: { type: 'value', splitNumber: 5, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v), hideOverlap: true }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
     series: lineSeries

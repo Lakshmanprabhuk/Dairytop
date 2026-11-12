@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { buildSystemPrompt, buildFallbackAnswer, answerFromData } from "./utils/chatContext.js";
+import { resolve as resolveLocal, buildSystemPrompt, buildFallbackAnswer, compactHistory } from "./utils/chatContext.js";
+import { QUESTION_NL, CONTEXT_SUGGESTIONS, followupsFor, topicFromText } from "./utils/chatSuggestions.js";
+import { getChatData } from "./utils/chatData.js";
 import { requestWithDeadline } from "./utils/chatRequest.js";
 import heroChatbotImg from "./assets/hero-chatbot.png";
 import dairytopLogoImg from "./assets/dairytop-logo.png";
@@ -30,44 +32,6 @@ const STRINGS = {
     trust: 'Uses dashboard data only',
     timeGreetings: { night: 'Good night', morning: 'Good morning', afternoon: 'Good afternoon', evening: 'Good evening' },
     greetingBody: "I'm your dashboard assistant 🐮 Ask me anything about your sales & finance data.",
-    suggestions: [
-      { icon: 'trend',  label: 'Revenue trends',   prompt: 'How is revenue trending this month?' },
-      { icon: 'people', label: 'Top sales reps',    prompt: 'Who are the top sales reps?' },
-      { icon: 'box',    label: 'Open orders',       prompt: 'What are our open orders?' },
-      { icon: 'grid',   label: 'By category',       prompt: 'Revenue by category?' },
-    ],
-    ctxSuggestions: {
-      overview: [
-        { icon: 'trend',  label: 'Revenue trend',    prompt: 'How is revenue trending this month?' },
-        { icon: 'people', label: 'Top customers',     prompt: 'Top 5 customers by revenue' },
-        { icon: 'box',    label: 'Open orders',       prompt: 'What is our open order value?' },
-        { icon: 'grid',   label: 'By category',       prompt: 'Revenue by category?' },
-      ],
-      sales: [
-        { icon: 'people', label: 'Top customers',     prompt: 'Top 5 customers this year' },
-        { icon: 'grid',   label: 'By category',       prompt: 'Revenue by category?' },
-        { icon: 'trend',  label: 'Monthly trend',     prompt: 'Monthly revenue trend this year' },
-        { icon: 'box',    label: 'Product revenue',   prompt: 'Top 5 products by revenue' },
-      ],
-      finance: [
-        { icon: 'trend',  label: 'Finance totals',    prompt: 'Finance totals' },
-        { icon: 'grid',   label: 'Revenue vs COGS',   prompt: 'What are our COGS and OPEX?' },
-        { icon: 'box',    label: 'Gross profit',      prompt: 'What is our gross profit and EBITDA?' },
-        { icon: 'people', label: 'Cost breakdown',    prompt: 'Finance totals by category' },
-      ],
-      orders: [
-        { icon: 'box',    label: 'Open order value',  prompt: 'What is our open order value?' },
-        { icon: 'trend',  label: 'MTD vs projected',  prompt: 'What is our MTD actual vs projected?' },
-        { icon: 'people', label: 'Orders by customer',prompt: 'Top customers by open orders' },
-        { icon: 'grid',   label: 'Weekly revenue',    prompt: 'Revenue this week' },
-      ],
-      reps: [
-        { icon: 'people', label: 'Top reps',          prompt: 'Top 5 sales reps by revenue' },
-        { icon: 'trend',  label: 'Rep trend',         prompt: 'Monthly revenue per sales rep' },
-        { icon: 'grid',   label: 'Reps by category',  prompt: 'Which categories does each rep sell?' },
-        { icon: 'box',    label: 'Rep tonnage',       prompt: 'Top reps by tonnage' },
-      ],
-    },
     contexts: { overview: 'Overview', sales: 'Sales', finance: 'Finance', orders: 'Orders', reps: 'Reps' },
     contextItems: [
       { key: 'overview', label: 'Overview Dashboard' },
@@ -76,12 +40,6 @@ const STRINGS = {
       { key: 'orders',   label: 'Open Orders' },
       { key: 'reps',     label: 'Sales Reps' },
     ],
-    followups: {
-      revenue: ['Who drove the most revenue?', 'Compare to last month', 'Top 5 customers'],
-      reps:    ['Best rep this week?', 'Revenue per rep', 'Compare reps'],
-      orders:  ['Oldest open order?', 'Total open value', 'Orders by customer'],
-      generic: ['Tell me more', 'Show me the top 5', 'Compare to last period'],
-    },
   },
   nl: {
     title: 'DairyTop Assistent',
@@ -102,44 +60,6 @@ const STRINGS = {
     trust: 'Gebruikt alleen dashboardgegevens',
     timeGreetings: { night: 'Goedenacht', morning: 'Goedemorgen', afternoon: 'Goedemiddag', evening: 'Goedenavond' },
     greetingBody: 'Ik ben je dashboard-assistent 🐮 Vraag me gerust iets over je verkoop- en financiële gegevens.',
-    suggestions: [
-      { icon: 'trend',  label: 'Omzettrends',       prompt: 'Hoe ontwikkelt de omzet zich deze maand?' },
-      { icon: 'people', label: 'Topverkopers',       prompt: 'Wie zijn de topverkopers?' },
-      { icon: 'box',    label: 'Open orders',        prompt: 'Wat zijn onze open orders?' },
-      { icon: 'grid',   label: 'Per categorie',      prompt: 'Omzet per categorie?' },
-    ],
-    ctxSuggestions: {
-      overview: [
-        { icon: 'trend',  label: 'Omzettrend',         prompt: 'Hoe ontwikkelt de omzet zich deze maand?' },
-        { icon: 'people', label: 'Top klanten',         prompt: 'Top 5 klanten op omzet' },
-        { icon: 'box',    label: 'Open orders',         prompt: 'Wat is onze openstaande orderwaarde?' },
-        { icon: 'grid',   label: 'Per categorie',       prompt: 'Omzet per categorie?' },
-      ],
-      sales: [
-        { icon: 'people', label: 'Top klanten',         prompt: 'Top 5 klanten dit jaar' },
-        { icon: 'grid',   label: 'Per categorie',       prompt: 'Omzet per categorie?' },
-        { icon: 'trend',  label: 'Maandelijkse trend',  prompt: 'Maandelijkse omzettrend dit jaar' },
-        { icon: 'box',    label: 'Productomzet',        prompt: 'Top 5 producten op omzet' },
-      ],
-      finance: [
-        { icon: 'trend',  label: 'Financiële totalen',  prompt: 'Financiële totalen' },
-        { icon: 'grid',   label: 'Omzet vs COGS',       prompt: 'Wat zijn onze COGS en OPEX?' },
-        { icon: 'box',    label: 'Brutowinst',          prompt: 'Wat is onze brutowinst en EBITDA?' },
-        { icon: 'people', label: 'Kostenanalyse',       prompt: 'Financiële totalen per categorie' },
-      ],
-      orders: [
-        { icon: 'box',    label: 'Openstaande waarde',  prompt: 'Wat is onze openstaande orderwaarde?' },
-        { icon: 'trend',  label: 'MTD vs prognose',     prompt: 'Wat is onze MTD actueel vs prognose?' },
-        { icon: 'people', label: 'Orders per klant',    prompt: 'Top klanten op open orders' },
-        { icon: 'grid',   label: 'Weekomzet',           prompt: 'Omzet deze week' },
-      ],
-      reps: [
-        { icon: 'people', label: 'Top verkopers',       prompt: 'Top 5 verkopers op omzet' },
-        { icon: 'trend',  label: 'Verkooptrend',        prompt: 'Maandelijkse omzet per verkoper' },
-        { icon: 'grid',   label: 'Verkopers per categ.',prompt: 'Welke categorieën verkoopt elke vertegenwoordiger?' },
-        { icon: 'box',    label: 'Tonnage verkopers',   prompt: 'Top verkopers op tonnage' },
-      ],
-    },
     contexts: { overview: 'Overzicht', sales: 'Verkoop', finance: 'Financiën', orders: 'Orders', reps: 'Vertegenwoordigers' },
     contextItems: [
       { key: 'overview', label: 'Overzicht Dashboard' },
@@ -148,12 +68,6 @@ const STRINGS = {
       { key: 'orders',   label: 'Open Orders' },
       { key: 'reps',     label: 'Vertegenwoordigers' },
     ],
-    followups: {
-      revenue: ['Wie behaalde de meeste omzet?', 'Vergelijk met vorige maand', 'Top 5 klanten'],
-      reps:    ['Beste vertegenwoordiger?', 'Omzet per vertegenwoordiger', 'Vergelijk'],
-      orders:  ['Oudste openstaande order?', 'Totale open waarde', 'Orders per klant'],
-      generic: ['Vertel meer', 'Toon top 5', 'Vergelijk met vorige periode'],
-    },
   },
 };
 
@@ -170,14 +84,6 @@ function getTimeGreeting(lang) {
 
 function nowTime() {
   return new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-}
-
-function detectFollowupCategory(text) {
-  const t = (text || '').toLowerCase();
-  if (/revenue|omzet|sales|turnover/.test(t)) return 'revenue';
-  if (/rep|vertegenwoordiger/.test(t))        return 'reps';
-  if (/order/.test(t))                        return 'orders';
-  return 'generic';
 }
 
 function renderFormatted(text) {
@@ -203,7 +109,7 @@ async function callChatProxy(systemPrompt, history, userMessage, signal) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error || `API error ${response.status}`);
-  if (typeof data?.text !== 'string' || !data.text.trim()) throw new Error('No response from Gemini.');
+  if (typeof data?.text !== 'string' || !data.text.trim()) throw new Error('No response from the AI service.');
   return { text: data.text, model: data.model || 'unknown', tried: data.tried || [data.model].filter(Boolean) };
 }
 
@@ -469,7 +375,7 @@ const chatCss = `
 .cb-suggestions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; width: 100%; max-width: 320px; position: relative; z-index: 1; }
 .cb-sugg-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 15px; border-radius: 100px; white-space: nowrap;
+  padding: 8px 15px; border-radius: 18px; white-space: normal; text-align: left; line-height: 1.3; max-width: 100%;
   font-family: inherit; cursor: pointer; font-size: 12px; font-weight: 500;
   background: rgba(255,255,255,.78);
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
@@ -770,7 +676,8 @@ const chatCss = `
 `;
 
 // ── Component ────────────────────────────────────────────────────────────────
-export default function ChatBot({ context, suggestedQuestions, userName } = {}) {
+// liveData (optional): Supabase snapshot from App.jsx. Without it the static data.js module is used.
+export default function ChatBot({ context, suggestedQuestions, userName, liveData } = {}) {
   const [open,         setOpen]         = useState(false);
   const [lang,         setLang]         = useState('en');
   const [messages,     setMessages]     = useState([]);
@@ -801,6 +708,8 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
   const ctxPillRef = useRef(null);
   const ctxMenuRef = useRef(null);
   const dragRef    = useRef({ dragging: false, moved: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+  const lastSubjectRef = useRef([]);   // what the previous question was about → lets "top 5" / "compare to last month" follow on
+  const data = useMemo(() => getChatData(liveData), [liveData]);
 
   useEffect(() => () => requestRef.current?.abort(), []);
 
@@ -898,6 +807,7 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
     stopRequest();
     setMessages([]);
     setInput('');
+    lastSubjectRef.current = [];
   }, [stopRequest]);
 
   const setFeedback = useCallback((idx, type) => {
@@ -914,111 +824,65 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
     }, 1800);
   }, []);
 
-  // ── Send / AI ────────────────────────────────────────────────────────────
-  const send = useCallback(async (text, { forceAI = false } = {}) => {
-    // ── DIAGNOSTIC: fires on every send() call, even if guard blocks ──
-    console.error(`[DairyTop] send() CALLED  text=${JSON.stringify((text??input).slice(0,30))}  loading=${loading}  ref=${!!requestRef.current}`);
+  // ── Send ─────────────────────────────────────────────────────────────────
+  // 1. Local engine first: instant, no network, no tokens.
+  // 2. AI only for "why / predict / recommend" questions or wording the engine
+  //    does not understand — and then only with the slice of data that question needs.
+  const send = useCallback(async (text) => {
     const trimmed = (text ?? input).trim();
-    if (!trimmed || loading || requestRef.current) {
-      console.error('[DairyTop] send() BLOCKED BY GUARD  loading=' + loading + '  ref=' + !!requestRef.current);
+    if (!trimmed || loading || requestRef.current) return;
+
+    const nextHistory = [...messages, { role: 'user', text: trimmed, time: nowTime() }];
+    setMessages(nextHistory);
+    setInput('');
+
+    let local = null;
+    try {
+      local = resolveLocal(trimmed, { lang, context, prev: lastSubjectRef.current }, data);
+    } catch (err) {
+      if (import.meta.env.DEV) console.warn('[DairyTop] local engine error', err);
+    }
+    if (local?.subject?.length) lastSubjectRef.current = local.subject;
+    if (import.meta.env.DEV) console.log(`[DairyTop] "${trimmed}" → ${local?.answer ? 'LOCAL' : 'AI'}`, local?.parsed);
+    if (local?.answer) {
+      setMessages(prev => [...prev, { role: 'bot', text: local.answer, time: nowTime(), source: 'local', followups: followupsFor(local.topic, lang, trimmed) }]);
       return;
     }
 
-    const msgTime    = nowTime();
-    const nextHistory = [...messages, { role: 'user', text: trimmed, time: msgTime }];
-    setMessages(nextHistory);
-    setInput('');
     setLoading(true);
     const request = new AbortController();
     requestRef.current = request;
-
-    // ── Context-aware query bias ─────────────────────────────────────────────
-    // When a dashboard section is selected in the dropdown, nudge short/vague
-    // queries toward that section's data handler in the local engine.
-    const ctxBiasMap = {
-      finance: 'finance',
-      orders:  'open orders',
-      reps:    'salesreps',
-      sales:   'revenue',
-      overview: '',
-    };
-    const ctxBias    = ctxBiasMap[currentCtx] || '';
-    const isShort    = trimmed.split(/\s+/).length <= 7;
-    const alreadyCtx = ctxBias && new RegExp(ctxBias.replace(' ', '|'), 'i').test(trimmed);
-    const localQuery = ctxBias && isShort && !alreadyCtx ? `${ctxBias} ${trimmed}` : trimmed;
-
-    // ── Local-first routing (bypass for follow-up chips via forceAI) ───────
-    const localFirst       = answerFromData(localQuery, { lang, context });
-    const isExplicitHelp   = /\b(help|hulp)\b/i.test(trimmed);
-    // Route to AI if: forced, help request, no local answer, or local returned any failure/uncertainty signal
-    const isLocalFail = !localFirst ||
-      /beyond the local rules|local analysis supports|lokale analyse ondersteunt|could not safely|niet veilig|could not interpret|unable to interpret/i.test(localFirst);
-    const localEngineHandled = !forceAI && !isExplicitHelp && !isLocalFail;
-
-    // ── Routing log — always visible in DevTools Console (F12) ─────────
-    console.log('%c━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'color:#334155');
-    console.log(`%c[DairyTop] Q: "${trimmed}"`, 'font-weight:bold;color:#0ea5e9');
-    console.log(`%c  local query : ${localQuery}`, 'color:#64748b');
-    console.log(`%c  local answer: ${localFirst ?? '(null — no local handler)'}`, 'color:#64748b');
-    console.log(`%c  route       : ${localEngineHandled ? '✅ LOCAL' : forceAI ? '➡️ AI  [follow-up chip]' : isExplicitHelp ? '➡️ AI  [help request]' : '➡️ AI  [local returned null]'}`, localEngineHandled ? 'color:#22c55e;font-weight:bold' : 'color:#f59e0b;font-weight:bold');
-
-    if (localEngineHandled) {
-      setMessages(prev => [...prev, { role: 'bot', text: localFirst, time: nowTime(), source: 'local' }]);
-      requestRef.current = null;
-      setLoading(false);
-      return;
-    }
-    // ── AI path ───────────────────────────────────────────────────────────
-    console.log('%c[DairyTop] Calling AI...', 'color:#f59e0b');
     try {
       if (!CHAT_PROXY_URL) throw new Error('Missing proxy URL');
       const aiResult = await requestWithDeadline(async signal => {
-        const recentTurnsText = nextHistory.filter(m => m.role === 'user').slice(-3).map(m => m.text).join(' ');
-        const basePrompt  = buildSystemPrompt(lang, recentTurnsText);
-        const contextNote = context
-          ? (lang === 'nl'
-              ? `\n\nContext: de gebruiker bekijkt op dit moment de pagina "${context.pageName}"` +
-                (context.filterLabel ? ` met periodefilter "${context.filterLabel}"${context.dateRange ? ` (${context.dateRange})` : ''}.` : '.') +
-                ' Stem je antwoord hierop af wanneer dat relevant is, maar je mag ook de volledige dataset gebruiken.'
-              : `\n\nContext: the user is currently viewing the "${context.pageName}" page` +
-                (context.filterLabel ? ` with the date filter set to "${context.filterLabel}"${context.dateRange ? ` (${context.dateRange})` : ''}.` : '.') +
-                " Tailor your answer to what they can currently see when that's relevant, but you may still draw on the full dataset.")
-          : '';
-        // Active dashboard context from the user's dropdown selection
-        const ctxLabelMap = {
-          overview: 'Overview Dashboard',
-          sales:    'Sales Dashboard',
-          finance:  'Finance Dashboard',
-          orders:   'Open Orders',
-          reps:     'Sales Reps',
-        };
-        const ctxFocusMap = {
-          overview: 'Give a balanced overview covering revenue, customers and trends.',
-          sales:    'Focus on revenue, top customers, products and sales reps.',
-          finance:  'Focus on P&L, COGS, OPEX, gross profit and EBITDA from the finance section.',
-          orders:   'Focus on open order value, MTD actual vs projected and backlog.',
-          reps:     'Focus on individual sales rep performance, rankings and category breakdowns.',
-        };
-        const chatbotCtxNote = `\n\nUser's active dashboard context: "${ctxLabelMap[currentCtx] || 'Overview Dashboard'}". ${ctxFocusMap[currentCtx] || ''} When the question is general or ambiguous, prefer data relevant to this section while still drawing on the full dataset where needed.`;
-        const systemPrompt   = basePrompt + contextNote + chatbotCtxNote;
-        const historyForApi  = nextHistory.filter(m => m.role === 'user' || m.role === 'bot').slice(0, -1);
-        return callChatProxy(systemPrompt, historyForApi, trimmed, signal);
+        const recentTurns  = nextHistory.filter(m => m.role === 'user').slice(-2).map(m => m.text).join(' ');
+        const systemPrompt = buildSystemPrompt(lang, recentTurns, data, { context, ctxKey: currentCtx, prev: lastSubjectRef.current });
+        return callChatProxy(systemPrompt, compactHistory(nextHistory.slice(0, -1)), trimmed, signal);
       }, { signal: request.signal });
       if (request.signal.aborted) return;
-      const { text: reply, model: usedModel, tried: triedModels } = aiResult;
-      const triedLabel = triedModels.length > 1 ? ` (tried: ${triedModels.join(' → ')})` : '';
-      console.log(`%c[DairyTop] AI replied ✓  model: ${usedModel}${triedLabel}`, 'color:#22c55e');
-      setMessages(prev => [...prev, { role: 'bot', text: reply, time: nowTime() }]);
+      setMessages(prev => [...prev, { role: 'bot', text: aiResult.text, time: nowTime(), source: 'ai', followups: followupsFor(topicFromText(`${trimmed} ${aiResult.text}`), lang, trimmed) }]);
     } catch {
       if (request.signal.aborted) return;
-      const reply = buildFallbackAnswer(trimmed, { lang, context });
-      console.warn('[DairyTop] AI failed — using local fallback:', reply.slice(0, 120));
-      setMessages(prev => [...prev, { role: 'bot', text: reply, time: nowTime(), source: 'local' }]);
+      // AI unreachable → still give the user real numbers instead of an error.
+      const reply = buildFallbackAnswer(trimmed, { lang, context }, data);
+      setMessages(prev => [...prev, { role: 'bot', text: reply, time: nowTime(), source: 'local', followups: followupsFor('general', lang, trimmed) }]);
     } finally {
       if (requestRef.current === request) requestRef.current = null;
       if (!request.signal.aborted) setLoading(false);
     }
-  }, [input, loading, messages, lang, context]);
+  }, [input, loading, messages, lang, context, data, currentCtx]);
+
+  // ── Suggested questions ──────────────────────────────────────────────────
+  // Default context → the questions App.jsx defines for the page the user is on.
+  // Another context picked in the chat → that context's chips.
+  // Every chip is checked against the local engine, so a chip can never lead to AI or a dead end.
+  const chips = useMemo(() => {
+    const list = currentCtx === 'overview' && suggestedQuestions?.length
+      ? suggestedQuestions.map(en => { const text = lang === 'nl' ? (QUESTION_NL[en] || en) : en; return { icon: 'grid', label: text, prompt: text }; })
+      : (CONTEXT_SUGGESTIONS[currentCtx] || CONTEXT_SUGGESTIONS.overview).map(c => ({ icon: c.icon, label: c.label[lang] || c.label.en, prompt: c.prompt[lang] || c.prompt.en }));
+    return list.filter(c => { try { return !!resolveLocal(c.prompt, { lang, context }, data).answer; } catch { return false; } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentCtx, suggestedQuestions, lang, context?.page, context?.dateRange, data]);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -1141,16 +1005,7 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
                 <div className="cb-empty-title">{t.emptyTitle}</div>
                 <div className="cb-empty-sub">{t.emptySubtitle}</div>
                 <div className="cb-suggestions">
-                  {((suggestedQuestions && lang === 'en')
-                    ? suggestedQuestions.map(s => ({ icon: 'grid', label: s, prompt: s }))
-                    : (t.ctxSuggestions?.[currentCtx] || t.suggestions)
-                  ).filter(s => {
-                    // only show badges that have a local answer (or for AI-only contexts like finance/orders allow all)
-                    const forceShow = ['finance', 'orders'].includes(currentCtx);
-                    if (forceShow) return true;
-                    const ans = answerFromData(s.prompt, { lang, context: currentCtx });
-                    return ans && !/beyond the local rules|local analysis supports/i.test(ans);
-                  }).map(s => (
+                  {chips.map(s => (
                     <button key={s.prompt} className="cb-sugg-btn" onClick={() => send(s.prompt)}>
                       <Svg name={s.icon} size={13} />
                       {s.label}
@@ -1170,8 +1025,7 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
                   const isUser = m.role === 'user';
                   const wrapClass = `cb-msg-wrap ${isBot ? 'bot' : isUser ? 'user' : 'error'}`;
                   const isLastBot = isBot && messages.slice(i + 1).every(mm => mm.role !== 'bot');
-                  const fuCat = isLastBot && !loading ? detectFollowupCategory(m.text) : null;
-                  const fuChips = fuCat ? (t.followups[fuCat] || t.followups.generic).slice(0, 3) : [];
+                  const fuChips = isLastBot && !loading ? (m.followups || []) : [];
 
                   return (
                     <div key={i} className={wrapClass}>
@@ -1213,7 +1067,7 @@ export default function ChatBot({ context, suggestedQuestions, userName } = {}) 
                       {fuChips.length > 0 && (
                         <div className="cb-followups">
                           {fuChips.map(chip => (
-                            <button key={chip} className="cb-fu-chip" onClick={() => { setInput(chip); send(chip, { forceAI: true }); }}>
+                            <button key={chip} className="cb-fu-chip" onClick={() => send(chip)}>
                               <Svg name="send" size={11} />
                               {chip}
                             </button>

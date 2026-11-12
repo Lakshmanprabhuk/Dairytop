@@ -1849,7 +1849,7 @@ function Revenue({ fm, label, effGrain, filter }) {
   });
   const cumYoYOpt = withCrosshair({
     tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s=>s.value!=null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
-    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false },
+    legend: { data: [...(all25.length?[{name:'2025',icon:'path://M0,8 L14,8 M18,8 L32,8'}]:[]),...(all26.length?[{name:'2026',icon:'path://M0,8 L44,8'}]:[])], bottom: 4, textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
     grid: { left: '3%', right: '4%', bottom: '22%', top: '8%', containLabel: true },
     xAxis: { type: 'category', data: yoyMonths, axisLabel: catAxisLabel(yoyMonths.length, 9) },
     yAxis: { type: 'value', axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
@@ -1868,8 +1868,8 @@ function Revenue({ fm, label, effGrain, filter }) {
   if (all26.length) lineSeries.push({ name: '2026', type: 'line', data: cMonths.map(m => all26.find(d => d.m.startsWith(m))?.rev || null), lineStyle: { color: '#73D4F2', width: 2 }, itemStyle: { color: '#73D4F2' }, areaStyle: { color: 'rgba(115,212,242,.07)' }, smooth: true });
   const cmpOpt = withDataZoom(withCrosshair({
     tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s=>s.value!=null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
-    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false },
-    grid: { left: '3%', right: '4%', bottom: isMobileViewport() && cMonths.length > 3 ? '28%' : '18%', top: '8%', containLabel: true },
+    legend: { data: lineSeries.map(s => ({ name: s.name, icon: s.lineStyle?.type === 'dashed' ? 'path://M0,8 L14,8 M18,8 L32,8' : 'path://M0,8 L44,8' })), bottom: 4, textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
+    grid: { left: '3%', right: '4%', bottom: isMobileViewport() && cMonths.length > 3 ? '28%' : '22%', top: '8%', containLabel: true },
     xAxis: { type: 'category', data: cMonths, axisLabel: catAxisLabel(cMonths.length, 9) },
     yAxis: { type: 'value', splitNumber: 5, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v), hideOverlap: true }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
     series: lineSeries
@@ -1925,14 +1925,12 @@ function Revenue({ fm, label, effGrain, filter }) {
           <div className="kpi-chg">12-month trailing average</div>
         </div>
       </div>
-      {/* Layout: 50% left (2 stacked) · 25% center cumulative YoY · 25% right order volume */}
-      <div className="charts-row" style={{alignItems:'stretch'}}>
-        <div className="charts-col" style={{flex:2,minWidth:0}}>
-          <Panel title={isLTM ? 'Revenue — Last 12 Months' : 'Revenue Over Time'} subtitle={isLTM ? `LTM · ${periods.length} months · ${ltmMonths[0]?.m} → ${ltmMonths[ltmMonths.length-1]?.m}` : `${label} · ${periods.length} ${periodLabel.toLowerCase()}${periods.length===1?'':'s'}`} tag={isLTM ? 'LTM' : `${periods.length}${granTag}`} flex={1} controls={!isLTM?prevToggleControl:undefined} tableHeaders={barTbl.headers} tableRows={barTbl.rows} insight={revenueInsight}><EC option={barOpt} onEvents={{ 'click': handleMonthClick }}/></Panel>
-          <Panel title="2025 vs 2026 Monthly" subtitle="Same-month comparison" flex={1}><EC option={cmpOpt}/></Panel>
-        </div>
-        <Panel title="Cumulative Revenue YoY" subtitle="Running total by calendar month" flex={1} style={{minWidth:0}}><EC option={cumYoYOpt}/></Panel>
-        <Panel title="Order Volume" subtitle={`Per ${periodLabel.toLowerCase()}${isLTM?' · LTM':''}`} flex={1} style={{minWidth:0}} tableHeaders={ordTbl.headers} tableRows={ordTbl.rows}><EC option={ordersOpt} onEvents={{ 'click': handleMonthClick }}/></Panel>
+      {/* Layout: 4-col grid matching KPI strip — 50% | 25% | 25% */}
+      <div className="charts-row" style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gridTemplateRows:'1fr 1fr',alignItems:'stretch'}}>
+        <Panel title={isLTM ? 'Revenue — Last 12 Months' : 'Revenue Over Time'} subtitle={isLTM ? `LTM · ${periods.length} months · ${ltmMonths[0]?.m} → ${ltmMonths[ltmMonths.length-1]?.m}` : `${label} · ${periods.length} ${periodLabel.toLowerCase()}${periods.length===1?'':'s'}`} tag={isLTM ? 'LTM' : `${periods.length}${granTag}`} flex={1} controls={!isLTM?prevToggleControl:undefined} tableHeaders={barTbl.headers} tableRows={barTbl.rows} insight={revenueInsight} style={{gridColumn:'1/span 2',gridRow:'1',minWidth:0}}><EC option={barOpt} onEvents={{ 'click': handleMonthClick }}/></Panel>
+        <Panel title="2025 vs 2026 Monthly" subtitle="Same-month comparison" flex={1} style={{gridColumn:'1/span 2',gridRow:'2',minWidth:0}}><EC option={cmpOpt}/></Panel>
+        <Panel title="Cumulative Revenue YoY" subtitle="Running total by calendar month" flex={1} style={{gridColumn:'3',gridRow:'1/span 2',minWidth:0}}><EC option={cumYoYOpt}/></Panel>
+        <Panel title="Order Volume" subtitle={`Per ${periodLabel.toLowerCase()}${isLTM?' · LTM':''}`} flex={1} style={{gridColumn:'4',gridRow:'1/span 2',minWidth:0}} tableHeaders={ordTbl.headers} tableRows={ordTbl.rows}><EC option={ordersOpt} onEvents={{ 'click': handleMonthClick }}/></Panel>
       </div>
     </div>
   );

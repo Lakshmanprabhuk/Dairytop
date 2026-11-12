@@ -2752,12 +2752,12 @@ function DebtorCustomers({bucketFilter,clearBucketFilter}){
     const enriched={...drillCustomer,risk:computeRisk(drillCustomer),nonPayer:computeNonPayer(drillCustomer)};
     return(
       <div className="page-area" key="items">
-        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,flexWrap:'wrap'}}>
-          <button onClick={()=>setDrillCustomer(null)} style={{display:'inline-flex',alignItems:'center',gap:5,background:'#1D3B4C',color:'#fff',border:'none',borderRadius:20,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',flexShrink:0}} onMouseEnter={e=>e.currentTarget.style.background='#0891B2'} onMouseLeave={e=>e.currentTarget.style.background='#1D3B4C'}>← Back to all customers</button>
-          <span style={{color:'#b0bec5',fontWeight:300,fontSize:14,flexShrink:0}}>|</span>
-          <span style={{fontSize:11,fontWeight:600,color:'#64748b',flexShrink:0}}>Open items</span>
-          <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(64,188,243,0.1)',border:'1px solid var(--accent)',borderRadius:20,padding:'3px 6px 3px 10px',fontSize:11,fontWeight:600,color:'var(--accent2)',flexShrink:0}}>
-            {drillCustomer.name}<button onClick={()=>setDrillCustomer(null)} style={{border:'none',background:'rgba(31,55,65,0.08)',color:'var(--accent3)',width:15,height:15,borderRadius:'50%',cursor:'pointer',fontSize:9,lineHeight:1,display:'inline-flex',alignItems:'center',justifyContent:'center',marginLeft:4}}>✕</button>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,flexWrap:'wrap',background:'rgba(64,188,243,0.06)',border:'1.5px solid rgba(64,188,243,0.35)',borderRadius:12,padding:'8px 14px'}}>
+          <button onClick={()=>setDrillCustomer(null)} style={{display:'inline-flex',alignItems:'center',gap:6,background:'#1D3B4C',color:'#fff',border:'none',borderRadius:20,padding:'6px 16px',fontSize:11,fontWeight:600,cursor:'pointer',flexShrink:0,transition:'background .15s,box-shadow .15s',boxShadow:'0 1px 4px rgba(8,145,178,0.18)'}} onMouseEnter={e=>{e.currentTarget.style.background='#0891B2';e.currentTarget.style.boxShadow='0 2px 8px rgba(8,145,178,0.32)'}} onMouseLeave={e=>{e.currentTarget.style.background='#1D3B4C';e.currentTarget.style.boxShadow='0 1px 4px rgba(8,145,178,0.18)'}}>← Back to all customers</button>
+          <span style={{color:'#b0c4ce',fontWeight:300,fontSize:16,flexShrink:0,lineHeight:1}}>|</span>
+          <span style={{fontSize:12,fontWeight:600,color:'#4a6572',flexShrink:0,letterSpacing:'0.01em'}}>Open items</span>
+          <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(64,188,243,0.12)',border:'1.5px solid rgba(64,188,243,0.5)',borderRadius:20,padding:'4px 8px 4px 12px',fontSize:11,fontWeight:700,color:'var(--accent2)',flexShrink:0}}>
+            {drillCustomer.name}<button onClick={()=>setDrillCustomer(null)} style={{border:'none',background:'rgba(8,145,178,0.12)',color:'var(--accent2)',width:16,height:16,borderRadius:'50%',cursor:'pointer',fontSize:9,lineHeight:1,display:'inline-flex',alignItems:'center',justifyContent:'center',marginLeft:5,transition:'background .12s'}} onMouseEnter={e=>e.currentTarget.style.background='rgba(239,68,68,0.15)'} onMouseLeave={e=>e.currentTarget.style.background='rgba(8,145,178,0.12)'}>✕</button>
           </div>
         </div>
         <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>

@@ -1931,10 +1931,8 @@ function Revenue({ fm, label, effGrain, filter }) {
           <Panel title={isLTM ? 'Revenue — Last 12 Months' : 'Revenue Over Time'} subtitle={isLTM ? `LTM · ${periods.length} months · ${ltmMonths[0]?.m} → ${ltmMonths[ltmMonths.length-1]?.m}` : `${label} · ${periods.length} ${periodLabel.toLowerCase()}${periods.length===1?'':'s'}`} tag={isLTM ? 'LTM' : `${periods.length}${granTag}`} flex={1} controls={!isLTM?prevToggleControl:undefined} tableHeaders={barTbl.headers} tableRows={barTbl.rows} insight={revenueInsight}><EC option={barOpt} onEvents={{ 'click': handleMonthClick }}/></Panel>
           <Panel title="2025 vs 2026 Monthly" subtitle="Same-month comparison" flex={1}><EC option={cmpOpt}/></Panel>
         </div>
-        <div className="charts-col" style={{flex:1,minWidth:0}}>
-          <Panel title="Cumulative Revenue YoY" subtitle="Running total by calendar month" flex={1}><EC option={cumYoYOpt}/></Panel>
-          <Panel title="Order Volume" subtitle={`Per ${periodLabel.toLowerCase()}${isLTM?' · LTM':''}`} flex={1} tableHeaders={ordTbl.headers} tableRows={ordTbl.rows}><EC option={ordersOpt} onEvents={{ 'click': handleMonthClick }}/></Panel>
-        </div>
+        <Panel title="Cumulative Revenue YoY" subtitle="Running total by calendar month" flex={1} style={{minWidth:0}}><EC option={cumYoYOpt}/></Panel>
+        <Panel title="Order Volume" subtitle={`Per ${periodLabel.toLowerCase()}${isLTM?' · LTM':''}`} flex={1} style={{minWidth:0}} tableHeaders={ordTbl.headers} tableRows={ordTbl.rows}><EC option={ordersOpt} onEvents={{ 'click': handleMonthClick }}/></Panel>
       </div>
     </div>
   );

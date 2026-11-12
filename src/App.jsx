@@ -2752,8 +2752,14 @@ function DebtorCustomers({bucketFilter,clearBucketFilter}){
     const enriched={...drillCustomer,risk:computeRisk(drillCustomer),nonPayer:computeNonPayer(drillCustomer)};
     return(
       <div className="page-area" key="items">
-        <button className="back-btn" onClick={()=>setDrillCustomer(null)}>← Back to all customers</button>
-        <div className="drill-chip">Open items — <b>{drillCustomer.name}</b><button onClick={()=>setDrillCustomer(null)}>✕</button></div>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,flexWrap:'wrap'}}>
+          <button onClick={()=>setDrillCustomer(null)} style={{display:'inline-flex',alignItems:'center',gap:5,background:'#1D3B4C',color:'#fff',border:'none',borderRadius:20,padding:'6px 14px',fontSize:11,fontWeight:600,cursor:'pointer',flexShrink:0}} onMouseEnter={e=>e.currentTarget.style.background='#0891B2'} onMouseLeave={e=>e.currentTarget.style.background='#1D3B4C'}>← Back to all customers</button>
+          <span style={{color:'#b0bec5',fontWeight:300,fontSize:14,flexShrink:0}}>|</span>
+          <span style={{fontSize:11,fontWeight:600,color:'#64748b',flexShrink:0}}>Open items</span>
+          <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(64,188,243,0.1)',border:'1px solid var(--accent)',borderRadius:20,padding:'3px 6px 3px 10px',fontSize:11,fontWeight:600,color:'var(--accent2)',flexShrink:0}}>
+            {drillCustomer.name}<button onClick={()=>setDrillCustomer(null)} style={{border:'none',background:'rgba(31,55,65,0.08)',color:'var(--accent3)',width:15,height:15,borderRadius:'50%',cursor:'pointer',fontSize:9,lineHeight:1,display:'inline-flex',alignItems:'center',justifyContent:'center',marginLeft:4}}>✕</button>
+          </div>
+        </div>
         <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>
           <span style={{fontSize:12,color:'#64748b'}}>Risk: <span style={{background:DEBTOR_RISK_COLORS[enriched.risk]||'#94a3b8',color:'#fff',borderRadius:4,padding:'1px 8px',fontSize:11,fontWeight:700}}>{enriched.risk||'—'}</span></span>
           <span style={{fontSize:12,color:'#64748b'}}>Non-payer: <span style={{background:enriched.nonPayer?'#ef4444':'#22c55e',color:'#fff',borderRadius:4,padding:'1px 8px',fontSize:11,fontWeight:700}}>{enriched.nonPayer?'YES':'No'}</span></span>

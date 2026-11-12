@@ -2755,12 +2755,12 @@ function DebtorCustomers({bucketFilter,clearBucketFilter}){
     return(
       <div className="page-area" key="items">
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,flexWrap:'wrap',background:'rgba(64,188,243,0.06)',border:'1.5px solid rgba(64,188,243,0.35)',borderRadius:12,padding:'8px 14px'}}>
-          <button onClick={()=>setShowInvoices(false)} style={{display:'inline-flex',alignItems:'center',gap:6,background:'#1D3B4C',color:'#fff',border:'none',borderRadius:20,padding:'6px 16px',fontSize:11,fontWeight:600,cursor:'pointer',flexShrink:0,transition:'background .15s,box-shadow .15s',boxShadow:'0 1px 4px rgba(8,145,178,0.18)'}} onMouseEnter={e=>{e.currentTarget.style.background='#0891B2';e.currentTarget.style.boxShadow='0 2px 8px rgba(8,145,178,0.32)'}} onMouseLeave={e=>{e.currentTarget.style.background='#1D3B4C';e.currentTarget.style.boxShadow='0 1px 4px rgba(8,145,178,0.18)'}}>\u2190 Back to all customers</button>
+          <button onClick={()=>setShowInvoices(false)} style={{display:'inline-flex',alignItems:'center',gap:6,background:'#1D3B4C',color:'#fff',border:'none',borderRadius:20,padding:'6px 16px',fontSize:11,fontWeight:600,cursor:'pointer',flexShrink:0,transition:'background .15s,box-shadow .15s',boxShadow:'0 1px 4px rgba(8,145,178,0.18)'}} onMouseEnter={e=>{e.currentTarget.style.background='#0891B2';e.currentTarget.style.boxShadow='0 2px 8px rgba(8,145,178,0.32)'}} onMouseLeave={e=>{e.currentTarget.style.background='#1D3B4C';e.currentTarget.style.boxShadow='0 1px 4px rgba(8,145,178,0.18)'}}>← Back to all customers</button>
           <span style={{color:'#b0c4ce',fontWeight:300,fontSize:16,flexShrink:0,lineHeight:1}}>|</span>
           <span style={{fontSize:12,fontWeight:600,color:'#4a6572',flexShrink:0,letterSpacing:'0.01em'}}>Open items</span>
           {selectedList.map(c=>(
             <div key={c.code} style={{display:'inline-flex',alignItems:'center',gap:6,background:'rgba(64,188,243,0.12)',border:'1.5px solid rgba(64,188,243,0.5)',borderRadius:20,padding:'4px 8px 4px 12px',fontSize:11,fontWeight:700,color:'var(--accent2)',flexShrink:0}}>
-              {c.name}<button onClick={()=>removeCustomer(c.code)} style={{border:'none',background:'rgba(8,145,178,0.12)',color:'var(--accent2)',width:16,height:16,borderRadius:'50%',cursor:'pointer',fontSize:9,lineHeight:1,display:'inline-flex',alignItems:'center',justifyContent:'center',marginLeft:5,transition:'background .12s'}} onMouseEnter={e=>e.currentTarget.style.background='rgba(239,68,68,0.18)'} onMouseLeave={e=>e.currentTarget.style.background='rgba(8,145,178,0.12)'}>\u2715</button>
+              {c.name}<button onClick={()=>removeCustomer(c.code)} style={{border:'none',background:'rgba(8,145,178,0.12)',color:'var(--accent2)',width:16,height:16,borderRadius:'50%',cursor:'pointer',fontSize:9,lineHeight:1,display:'inline-flex',alignItems:'center',justifyContent:'center',marginLeft:5,transition:'background .12s'}} onMouseEnter={e=>e.currentTarget.style.background='rgba(239,68,68,0.18)'} onMouseLeave={e=>e.currentTarget.style.background='rgba(8,145,178,0.12)'}>✕</button>
             </div>
           ))}
         </div>
@@ -2770,13 +2770,13 @@ function DebtorCustomers({bucketFilter,clearBucketFilter}){
             return(
               <div key={c.code} style={{display:'flex',flexDirection:'column',gap:6}}>
                 <div style={{display:'flex',gap:8,flexWrap:'wrap',padding:'0 2px'}}>
-                  <span style={{fontSize:12,color:'#64748b'}}>Risk: <span style={{background:DEBTOR_RISK_COLORS[c.risk]||'#94a3b8',color:'#fff',borderRadius:4,padding:'1px 8px',fontSize:11,fontWeight:700}}>{c.risk||'\u2014'}</span></span>
+                  <span style={{fontSize:12,color:'#64748b'}}>Risk: <span style={{background:DEBTOR_RISK_COLORS[c.risk]||'#94a3b8',color:'#fff',borderRadius:4,padding:'1px 8px',fontSize:11,fontWeight:700}}>{c.risk||'—'}</span></span>
                   <span style={{fontSize:12,color:'#64748b'}}>Non-payer: <span style={{background:c.nonPayer?'#ef4444':'#22c55e',color:'#fff',borderRadius:4,padding:'1px 8px',fontSize:11,fontWeight:700}}>{c.nonPayer?'YES':'No'}</span></span>
                   <span style={{fontSize:12,color:'#64748b'}}>Open: <b>{fmtFull(c.openValue)}</b></span>
-                  <span style={{fontSize:12,color:'#64748b'}}>Oldest invoice: <b>{c.ageOfOldest!=null?c.ageOfOldest+'d':'\u2014'}</b></span>
+                  <span style={{fontSize:12,color:'#64748b'}}>Oldest invoice: <b>{c.ageOfOldest!=null?c.ageOfOldest+'d':'—'}</b></span>
                 </div>
                 <div className="charts-col" style={{flex:1}}>
-                  <Panel title={`Open Invoices \u2014 ${c.name}`} subtitle={`${items.length} open invoice(s) \u00b7 As of ${debtorAsOf}`}
+                  <Panel title={`Open Invoices — ${c.name}`} subtitle={`${items.length} open invoice(s) · As of ${debtorAsOf}`}
                     flex={1} tableHeaders={['Invoice #','Invoice Date','Open Amount','Days Out','Bucket']}
                     tableRows={items.map(i=>[i.invoiceNr,i.invoiceDate,fmtFull(i.openAmount),i.daysOutstanding,i.bucket])}
                     defaultView="table" searchableTable><EC option={{}}/></Panel>
@@ -2800,17 +2800,17 @@ function DebtorCustomers({bucketFilter,clearBucketFilter}){
       <div className="kpi-strip">
         <div className="kpi-card blue"><div className="kpi-lbl">Customers with Open AR</div><div className="kpi-val sm">{customers.length}</div><div className="kpi-chg">As of {debtorAsOf}</div></div>
         <div className="kpi-card amber"><div className="kpi-lbl">Non-Payer Flags</div><div className="kpi-val sm">{nonPayerCount}</div><div className="kpi-chg">&gt;60d oldest open invoice</div></div>
-        <div className="kpi-card navy"><div className="kpi-lbl">Risk D</div><div className="kpi-val sm">{riskDCount}</div><div className="kpi-chg">&gt;90d + &gt;\u20ac5k outstanding</div></div>
-        <div className="kpi-card teal"><div className="kpi-lbl">Risk A</div><div className="kpi-val sm">{riskACount}</div><div className="kpi-chg">\u226430d oldest open invoice</div></div>
+        <div className="kpi-card navy"><div className="kpi-lbl">Risk D</div><div className="kpi-val sm">{riskDCount}</div><div className="kpi-chg">&gt;90d + &gt;€5k outstanding</div></div>
+        <div className="kpi-card teal"><div className="kpi-lbl">Risk A</div><div className="kpi-val sm">{riskACount}</div><div className="kpi-chg">≤30d oldest open invoice</div></div>
       </div>
       <div style={{fontSize:11,color:'#64748b',padding:'0 0 8px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-        <span>Risk: <b style={{color:DEBTOR_RISK_COLORS.A}}>A</b> &lt;30d \u00b7 <b style={{color:DEBTOR_RISK_COLORS.B}}>B</b> 30\u201360d \u00b7 <b style={{color:DEBTOR_RISK_COLORS.C}}>C</b> 60+d &lt;\u20ac5k \u00b7 <b style={{color:DEBTOR_RISK_COLORS.D}}>D</b> 90+d &gt;\u20ac5k \u00b7 <b>Check rows</b> then click <b>Show invoices</b></span>
+        <span>Risk: <b style={{color:DEBTOR_RISK_COLORS.A}}>A</b> &lt;30d · <b style={{color:DEBTOR_RISK_COLORS.B}}>B</b> 30–60d · <b style={{color:DEBTOR_RISK_COLORS.C}}>C</b> 60+d &lt;€5k · <b style={{color:DEBTOR_RISK_COLORS.D}}>D</b> 90+d &gt;€5k · <b>Check rows</b> then click <b>Show invoices</b></span>
       </div>
       <div className="chart-panel" style={{flex:1,minHeight:0,display:'flex',flexDirection:'column'}}>
         <div className="cp-head">
           <div style={{flex:1,minWidth:0}}>
             <div className="cp-title">Customer AR Scorecard</div>
-            <div className="cp-sub">{filtered.length} of {customers.length} customers{bucketFilter?` \u00b7 filtered: ${bucketFilter}`:''}{selectedCodes.size>0?` \u00b7 ${selectedCodes.size} selected`:''}</div>
+            <div className="cp-sub">{filtered.length} of {customers.length} customers{bucketFilter?` · filtered: ${bucketFilter}`:''}{selectedCodes.size>0?` · ${selectedCodes.size} selected`:''}</div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
             {selectedCodes.size>0&&(
@@ -2822,7 +2822,7 @@ function DebtorCustomers({bucketFilter,clearBucketFilter}){
                 <span style={{fontSize:10,fontWeight:400,opacity:0.88}}>For {selectedCodes.size} customer{selectedCodes.size!==1?'s':''}</span>
               </button>
             )}
-            <input type="text" placeholder="Search name, code or risk\u2026" value={search} onChange={e=>setSearch(e.target.value)}
+            <input type="text" placeholder="Search name, code or risk…" value={search} onChange={e=>setSearch(e.target.value)}
               style={{fontSize:11,padding:'4px 10px',border:'1px solid #dde3ea',borderRadius:6,outline:'none',width:200,background:'transparent',color:'inherit'}}/>
           </div>
         </div>
@@ -2848,10 +2848,10 @@ function DebtorCustomers({bucketFilter,clearBucketFilter}){
                   <td style={{fontWeight:500,maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.name}</td>
                   <td>{fmtFull(c.openValue)}</td>
                   <td>{c.openInvoices}</td>
-                  <td>{c.avgDaysToPay!=null?Math.round(c.avgDaysToPay)+'d':'\u2014'}</td>
-                  <td>{c.ageOfOldest!=null?c.ageOfOldest+'d':'\u2014'}</td>
-                  <td style={{fontSize:11,color:'#64748b'}}>{c.lastPayment||'\u2014'}</td>
-                  <td><span style={{background:DEBTOR_RISK_COLORS[c.risk]||'#94a3b8',color:'#fff',borderRadius:4,padding:'2px 9px',fontSize:11,fontWeight:700,display:'inline-block',minWidth:22,textAlign:'center'}}>{c.risk||'\u2014'}</span></td>
+                  <td>{c.avgDaysToPay!=null?Math.round(c.avgDaysToPay)+'d':'—'}</td>
+                  <td>{c.ageOfOldest!=null?c.ageOfOldest+'d':'—'}</td>
+                  <td style={{fontSize:11,color:'#64748b'}}>{c.lastPayment||'—'}</td>
+                  <td><span style={{background:DEBTOR_RISK_COLORS[c.risk]||'#94a3b8',color:'#fff',borderRadius:4,padding:'2px 9px',fontSize:11,fontWeight:700,display:'inline-block',minWidth:22,textAlign:'center'}}>{c.risk||'—'}</span></td>
                   <td><span style={{background:c.nonPayer?'#ef4444':'#22c55e',color:'#fff',borderRadius:4,padding:'2px 8px',fontSize:11,fontWeight:700,display:'inline-block'}}>{c.nonPayer?'YES':'No'}</span></td>
                 </tr>
               );

@@ -2622,7 +2622,7 @@ function FinLedger() {
 }
 
 /* ── DEBTORS ────────────────────────────────────────────────── */
-const DEBTOR_BUCKET_COLORS={'0–30 days':'#22c55e','31–60 days':'#f59e0b','61–90 days':'#f97316','91–180 days':'#ef4444','>180 days':'#b91c1c','Settled':'#94a3b8'};
+const DEBTOR_BUCKET_COLORS={'0–30 days':'#22c55e','31–60 days':'#f59e0b','61–90 days':'#f97316','91–180 days':'#ef4444','>180 days':'#b91c1c','Settled':'#94a3b8','0-30':'#22c55e','31-60':'#f59e0b','61-90':'#f97316','91-180':'#ef4444','>180':'#b91c1c'};
 const DEBTOR_RISK_COLORS={A:'#22c55e',B:'#f59e0b',C:'#f97316',D:'#ef4444'};
 const DEBTOR_RISK_BG={A:'rgba(34,197,94,0.1)',B:'rgba(245,158,11,0.1)',C:'rgba(249,115,22,0.1)',D:'rgba(239,68,68,0.12)'};
 

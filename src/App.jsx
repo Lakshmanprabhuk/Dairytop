@@ -1849,7 +1849,7 @@ function Revenue({ fm, label, effGrain, filter }) {
   });
   const cumYoYOpt = withCrosshair({
     tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s=>s.value!=null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
-    legend: { data: [...(all25.length?[{name:'2025',icon:'path://M0,8 L14,8 M18,8 L32,8'}]:[]),...(all26.length?[{name:'2026',icon:'path://M0,8 L44,8'}]:[])], bottom: 4, textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
+    legend: { bottom: 4, textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
     grid: { left: '3%', right: '4%', bottom: '22%', top: '8%', containLabel: true },
     xAxis: { type: 'category', data: yoyMonths, axisLabel: catAxisLabel(yoyMonths.length, 9) },
     yAxis: { type: 'value', axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
@@ -1868,7 +1868,7 @@ function Revenue({ fm, label, effGrain, filter }) {
   if (all26.length) lineSeries.push({ name: '2026', type: 'line', data: cMonths.map(m => all26.find(d => d.m.startsWith(m))?.rev || null), lineStyle: { color: '#73D4F2', width: 2 }, itemStyle: { color: '#73D4F2' }, areaStyle: { color: 'rgba(115,212,242,.07)' }, smooth: true });
   const cmpOpt = withDataZoom(withCrosshair({
     tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s=>s.value!=null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
-    legend: { data: lineSeries.map(s => ({ name: s.name, icon: s.lineStyle?.type === 'dashed' ? 'path://M0,8 L14,8 M18,8 L32,8' : 'path://M0,8 L44,8' })), bottom: 4, textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
+    legend: { bottom: 4, textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
     grid: { left: '3%', right: '4%', bottom: isMobileViewport() && cMonths.length > 3 ? '28%' : '22%', top: '8%', containLabel: true },
     xAxis: { type: 'category', data: cMonths, axisLabel: catAxisLabel(cMonths.length, 9) },
     yAxis: { type: 'value', splitNumber: 5, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v), hideOverlap: true }, splitLine: { lineStyle: { color: '#F0F3F4' } } },

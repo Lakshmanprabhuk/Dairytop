@@ -1156,7 +1156,7 @@ function InlineTable({ headers, rows, height, searchable, initialQuery }) {
   );
 }
 
-function Panel({ title, subtitle, tag, controls, flex, height, style, className, children, defaultView = 'chart', tableHeaders, tableRows, insight, searchableTable, tableInitialQuery, headerExtra }) {
+function Panel({ title, subtitle, tag, controls, flex, height, style, className, children, defaultView = 'chart', tableHeaders, tableRows, insight, searchableTable, tableInitialQuery, headerExtra, hideToggle }) {
   const [view, setView] = useState(defaultView);
   const [ready, setReady] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -1167,7 +1167,7 @@ function Panel({ title, subtitle, tag, controls, flex, height, style, className,
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [fullscreen]);
-  const hasToggle = tableHeaders && tableRows;
+  const hasToggle = tableHeaders && tableRows && !hideToggle;
   const panelStyle = { ...(height != null ? { flex: '0 0 auto', height } : flex ? { flex } : {}), ...style };
   const fixedVars = height != null ? { '--fin-fixed-h': typeof height === 'number' ? `${height}px` : height } : undefined;
 
@@ -2779,7 +2779,7 @@ function DebtorCustomers({bucketFilter,clearBucketFilter}){
                   <Panel title={`Open Invoices — ${c.name}`} subtitle={`${items.length} open invoice(s) · As of ${debtorAsOf}`}
                     flex={1} tableHeaders={['Invoice #','Invoice Date','Open Amount','Days Out','Bucket']}
                     tableRows={items.map(i=>[i.invoiceNr,i.invoiceDate,fmtFull(i.openAmount),i.daysOutstanding,i.bucket])}
-                    defaultView="table" searchableTable><EC option={{}}/></Panel>
+                    defaultView="table" searchableTable hideToggle><EC option={{}}/></Panel>
                 </div>
               </div>
             );

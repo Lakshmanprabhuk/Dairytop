@@ -79,7 +79,7 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
       'Hoi! Vraag me over omzet, topklanten, producten, verkopers, open orders of alles op het dashboard.'
     );
   }
-  if (/\b(why|predict|forecast|recommend|waarom|voorspel|verwacht|growth|groei|compare|comparison|vergelijk|versus)\b/.test(q))
+  if (/\b(why|predict|forecast|recommend|waarom|voorspel|verwacht)\b/.test(q))
     return null; // let AI handle comparisons / predictions
 
   // Weekly handler — before the daily blocker so "this week" is handled
@@ -323,6 +323,34 @@ export function answerFromData(question, { lang = 'en', context } = {}, d = data
       return list(/\b(monthly|maandelijks|trend(?:ing)?)\b/.test(q) ? result : rank(result).slice(0,count)) + footer;
     }
     return `${metricLabel}: **${format(sum(rows, metric))}**` + footer;
+  }
+  // Compare to last month / previous month handler
+  if (/\b(compare|versus|vs|vergelijk|growth|groei|change|verschil)\b/.test(q) || /compare to (last|previous) month/i.test(q)) {
+    const monthly = d.monthly || [];
+    const ids2 = monthly.map(r => monthId(r.m)).filter(Number.isFinite);
+    if (ids2.length < 2) return say('Not enough monthly data to compare.', 'Niet genoeg maandgegevens om te vergelijken.');
+    const lat = Math.max(...ids2);
+    const prev = lat - 1;
+    const curRow = monthly.find(r => monthId(r.m) === lat);
+    const prevRow = monthly.find(r => monthId(r.m) === prev);
+    if (!curRow || !prevRow) return say('Not enough monthly data to compare.', 'Niet genoeg maandgegevens om te vergelijken.');
+    const curRev = curRow.rev ?? 0;
+    const prevRev = prevRow.rev ?? 0;
+    const curOrd = curRow.orders ?? 0;
+    const prevOrd = prevRow.orders ?? 0;
+    const revDiff = curRev - prevRev;
+    const revPct = prevRev ? ((revDiff / prevRev) * 100).toFixed(1) : '—';
+    const ordDiff = curOrd - prevOrd;
+    const ordPct = prevOrd ? ((ordDiff / prevOrd) * 100).toFixed(1) : '—';
+    const arrow = v => v > 0 ? '▲' : v < 0 ? '▼' : '—';
+    return say(
+      `**${curRow.m} vs ${prevRow.m}**\n` +
+      `Revenue: **${format(curRev)}** ${arrow(revDiff)} ${revPct}% (${revDiff >= 0 ? '+' : ''}${format(revDiff)})\n` +
+      `Orders: **${curOrd}** ${arrow(ordDiff)} ${ordPct}% (${ordDiff >= 0 ? '+' : ''}${ordDiff})`,
+      `**${curRow.m} vs ${prevRow.m}**\n` +
+      `Omzet: **${format(curRev)}** ${arrow(revDiff)} ${revPct}% (${revDiff >= 0 ? '+' : ''}${format(revDiff)})\n` +
+      `Bestellingen: **${curOrd}** ${arrow(ordDiff)} ${ordPct}% (${ordDiff >= 0 ? '+' : ''}${ordDiff})`
+    ) + footer;
   }
   return null;
 }

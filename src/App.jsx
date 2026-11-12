@@ -1195,7 +1195,7 @@ function Panel({ title, subtitle, tag, controls, flex, height, style, className,
           </button>
         </div>
       )}
-      {expandBtn}
+      {!hideToggle && expandBtn}
     </div>
   );
 

@@ -168,6 +168,12 @@ export default async function handler(req, res) {
   if (history.length > 40) {
     return res.status(400).json({ error: 'History too long' });
   }
+  // The frontend now sends a slim, pre-aggregated data slice (a few thousand
+  // characters). Refuse anything huge so this public endpoint cannot be used
+  // to burn the token quota.
+  if (systemPrompt.length > 80000) {
+    return res.status(400).json({ error: 'System prompt too long' });
+  }
 
   const contents = [
     ...history.map(h => ({
@@ -180,6 +186,8 @@ export default async function handler(req, res) {
   const requestBody = {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents,
+    // Short, factual answers: faster responses and fewer output tokens.
+    generationConfig: { temperature: 0.2, maxOutputTokens: 1024 },
   };
 
   const startedAt = Date.now();

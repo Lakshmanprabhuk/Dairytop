@@ -2753,7 +2753,7 @@ function DebtorCustomers({bucketFilter,clearBucketFilter}){
   const selectedList=customers.filter(c=>selectedCodes.has(c.code));
   if(showInvoices&&selectedList.length>0){
     return(
-      <div className="page-area" key="items">
+      <div className="page-area fin-scroll" key="items">
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,flexWrap:'wrap',background:'rgba(64,188,243,0.06)',border:'1.5px solid rgba(64,188,243,0.35)',borderRadius:12,padding:'8px 14px'}}>
           <button onClick={()=>setShowInvoices(false)} style={{display:'inline-flex',alignItems:'center',gap:6,background:'#1D3B4C',color:'#fff',border:'none',borderRadius:20,padding:'6px 16px',fontSize:11,fontWeight:600,cursor:'pointer',flexShrink:0,transition:'background .15s,box-shadow .15s',boxShadow:'0 1px 4px rgba(8,145,178,0.18)'}} onMouseEnter={e=>{e.currentTarget.style.background='#0891B2';e.currentTarget.style.boxShadow='0 2px 8px rgba(8,145,178,0.32)'}} onMouseLeave={e=>{e.currentTarget.style.background='#1D3B4C';e.currentTarget.style.boxShadow='0 1px 4px rgba(8,145,178,0.18)'}}>← Back to all customers</button>
           <span style={{color:'#b0c4ce',fontWeight:300,fontSize:16,flexShrink:0,lineHeight:1}}>|</span>

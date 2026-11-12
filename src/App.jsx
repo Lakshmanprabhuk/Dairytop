@@ -1849,7 +1849,7 @@ function Revenue({ fm, label, effGrain, filter }) {
   });
   const cumYoYOpt = withCrosshair({
     tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s=>s.value!=null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
-    legend: { bottom: 4, textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
+    legend: { bottom: 4, data: [{ name: '2025', icon: 'path://M0,3 L10,3 L10,9 L0,9 Z M12,3 L22,3 L22,9 L12,9 Z M24,3 L34,3 L34,9 L24,9 Z' }, { name: '2026', icon: 'path://M0,3 L34,3 L34,9 L0,9 Z' }], textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
     grid: { left: '3%', right: '4%', bottom: '22%', top: '8%', containLabel: true },
     xAxis: { type: 'category', data: yoyMonths, axisLabel: catAxisLabel(yoyMonths.length, 9) },
     yAxis: { type: 'value', axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
@@ -1868,7 +1868,7 @@ function Revenue({ fm, label, effGrain, filter }) {
   if (all26.length) lineSeries.push({ name: '2026', type: 'line', symbol: 'none', data: cMonths.map(m => all26.find(d => d.m.startsWith(m))?.rev || null), lineStyle: { color: '#73D4F2', width: 2 }, itemStyle: { color: '#73D4F2' }, areaStyle: { color: 'rgba(115,212,242,.07)' }, smooth: true });
   const cmpOpt = withDataZoom(withCrosshair({
     tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s=>s.value!=null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
-    legend: { bottom: 4, textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
+    legend: { bottom: 4, data: [{ name: '2025', icon: 'path://M0,3 L10,3 L10,9 L0,9 Z M12,3 L22,3 L22,9 L12,9 Z M24,3 L34,3 L34,9 L24,9 Z' }, { name: '2026', icon: 'path://M0,3 L34,3 L34,9 L0,9 Z' }], textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
     grid: { left: '3%', right: '4%', bottom: isMobileViewport() && cMonths.length > 3 ? '28%' : '26%', top: '8%', containLabel: true },
     xAxis: { type: 'category', data: cMonths, axisLabel: catAxisLabel(cMonths.length, 9) },
     yAxis: { type: 'value', splitNumber: 5, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v), hideOverlap: true }, splitLine: { lineStyle: { color: '#F0F3F4' } } },

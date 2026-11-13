@@ -15,7 +15,7 @@ const CHAT_PROXY_URL = import.meta.env.VITE_CHAT_PROXY_URL;
 const STRINGS = {
   en: {
     title: 'DairyTop Assistant',
-    subtitle: 'AI · Sales & Finance',
+    subtitle: 'BI · Sales & Finance',
     emptyTitle: 'What would you like to explore?',
     emptySubtitle: "Ask about your DairyTop sales and finance data.",
     placeholder: 'Ask a question…',
@@ -43,7 +43,7 @@ const STRINGS = {
   },
   nl: {
     title: 'DairyTop Assistent',
-    subtitle: 'AI · Verkoop & Financiën',
+    subtitle: 'BI · Verkoop & Financiën',
     emptyTitle: 'Wat wil je ontdekken?',
     emptySubtitle: 'Stel vragen over je DairyTop verkoop- en financiële gegevens.',
     placeholder: 'Stel een vraag…',

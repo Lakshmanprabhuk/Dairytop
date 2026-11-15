@@ -1,4 +1,4 @@
-// Auto-generated on 2026-11-14 18:25 UTC
+// Auto-generated on 2026-11-15 12:57 UTC
 // Do not edit manually — re-run the GitHub Action instead.
 
 export const monthly = [
@@ -23092,7 +23092,7 @@ export const categoriesWeekly = [
 
 export const totalClients = 1517;
 
-export const lastUpdated = '14/11/2026';
+export const lastUpdated = '15/11/2026';
 
 export const maxFactuurDatum = '13/11/2026';
 

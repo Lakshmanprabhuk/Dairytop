@@ -35,15 +35,7 @@ import {
   finSummary,
   finCategories,
   finLines,
-  fmtPct,
-  debtorAsOf,
-  debtorKPI,
-  debtorAgeing,
-  debtorTrendlineCohort,
-  debtorTrendlineSnapshot,
-  debtorCustomers,
-  debtorOpenItems,
-  debtorQuarterlyYearly
+  fmtPct
 } from './utils/data.js';
 
 
@@ -3050,9 +3042,8 @@ const NAV = [
   {section:'Catalogue',items:[{id:'products',icon:'◻',label:'Products',desc:'Product-level revenue breakdown'},{id:'categories',icon:'⊞',label:'Categories',desc:'Category split & revenue share'}]},
   {section:'Channels',items:[{id:'channels',icon:'⇌',label:'Channel Mix',desc:'Direct sales vs webshop split'}]},
   {section:'Finance',items:[{id:'plsummary',icon:'⟡',label:'P&L Summary',desc:'Margins & profit & loss summary'},{id:'finrevcosts',icon:'↕',label:'Revenue & Costs',desc:'Revenue vs cost lines over time'},{id:'finledger',icon:'≣',label:'Ledger',desc:'Full financial ledger detail'}]},
-  {section:'Debtors',items:[{id:'debtors',icon:'◎',label:'AR Overview',desc:'Open invoices & ageing buckets'},{id:'debtorcustomers',icon:'◑',label:'Customers',desc:'Customer scorecard & open invoices'},{id:'debtortrend',icon:'⌛',label:'Payment Trends',desc:'Days to pay & quarterly performance'}]},
 ];
-const PAGE_NAMES={overview:'Overview Dashboard',revenue:'Revenue Trends',salesreps:'Verkoper',customers:'Top Customers',products:'Product Analysis',categories:'Category Breakdown',channels:'Channel Mix',plsummary:'P&L Summary',finrevcosts:'Revenue & Costs',finledger:'Ledger',debtors:'AR Overview',debtorcustomers:'Customer Scorecard',debtortrend:'Payment Trends'};
+const PAGE_NAMES={overview:'Overview Dashboard',revenue:'Revenue Trends',salesreps:'Verkoper',customers:'Top Customers',products:'Product Analysis',categories:'Category Breakdown',channels:'Channel Mix',plsummary:'P&L Summary',finrevcosts:'Revenue & Costs',finledger:'Ledger'};
 
 const SUGGESTED_QUESTIONS={
   overview:['How is revenue trending this month?','Which category is driving sales right now?','Who is this month\'s top verkoper?'],
@@ -3065,9 +3056,6 @@ const SUGGESTED_QUESTIONS={
   plsummary:['How is gross margin trending?','What is driving EBITDA this period?'],
   finrevcosts:['What are our biggest cost drivers?','How do revenue and costs compare year over year?'],
   finledger:['What are the largest YoY swings in the ledger?','Which accounts saw the biggest cost increases?'],
-  debtors:['What is the total open AR?','Which customers have the oldest outstanding invoices?','How much AR is over 90 days?'],
-  debtorcustomers:['Which customer has the highest open AR?','How many customers are flagged as non-payer?','Show me all Risk D customers'],
-  debtortrend:['What is the average days to pay this year?','How has the % paid within 30 days changed over time?','Which quarter had the best payment performance?'],
   default:['What can you tell me about this page?','Summarize the key numbers here'],
 };
 
@@ -3154,7 +3142,6 @@ export default function App() {
   const SESSION_PAGE_KEY='dairytop_last_page';
   const SESSION_FILTER_KEY='dairytop_last_filter';
   const [page,setPage]=useState(()=>sessionStorage.getItem(SESSION_PAGE_KEY)||'overview');
-  const [debtorBucketFilter,setDebtorBucketFilter]=useState(null);
   const [filter,setFilter]=useState(()=>{
     try{
       const saved=sessionStorage.getItem(SESSION_FILTER_KEY);
@@ -3317,9 +3304,6 @@ export default function App() {
       case'plsummary':return<PLSummary/>;
       case'finrevcosts':return<FinRevCosts/>;
       case'finledger':return<FinLedger/>;
-      case'debtors':return<Debtors setPage={setPage} setBucketFilter={setDebtorBucketFilter}/>;
-      case'debtorcustomers':return<DebtorCustomers bucketFilter={debtorBucketFilter} clearBucketFilter={()=>setDebtorBucketFilter(null)}/>;
-      case'debtortrend':return<DebtorTrend/>;
       default:return<Overview{...props}/>;
     }
   };

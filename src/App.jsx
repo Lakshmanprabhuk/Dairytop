@@ -1,75 +1,534 @@
-import { useState, useMemo, useEffect, useLayoutEffect, useCallback, useRef } from "react";
-import { createPortal } from "react-dom";
-import ReactECharts from "echarts-for-react";
+/* ════════════════════════════════════════════════════════════════════════
+   DairyTop Business Intelligence — the whole dashboard in one file.
+   Data:     src/dash.json (schema 5.0.0) is the only source of figures.
+   Chatbot:  src/ChatBot.jsx + src/utils/chat*.js (gets the data model as a prop).
+   Sections: format · data model · typography · UI kit · shell (CSS, login) ·
+             filters · pages · app shell.
+   ════════════════════════════════════════════════════════════════════════ */
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, createContext, useContext } from 'react';
+import { createPortal } from 'react-dom';
+import ReactECharts from 'echarts-for-react';
 import * as XLSX from 'xlsx';
+import RAW from './dash.json';
 import ChatBot from './ChatBot.jsx';
-import {
-  monthly,
-  weekly,
-  salesreps as salesrepsRaw,
-  salesrepsWeekly as salesrepsWeeklyRaw,
-  categories as categoriesRaw,
-  categoriesWeekly as categoriesWeeklyRaw,
-  customers as customersRaw,
-  customersWeekly as customersWeeklyRaw,
-  products as _productsRaw,
-  productsWeekly as _productsWeeklyRaw,
-  salesmanCategorySales,
-  tonnagePerSalesman,
-  totalTonnageByCategory,
-  totalClients,
-  lastUpdated,
-  maxFactuurDatum,
-  openOrderValueFuture,
-  openOrderValuePresent,
-  openOrderValueMTD,
-  projectedMTD,
-  turnoverMTD,
-  melkpoederTonnage2025,
-  PALETTE,
-  fmt,
-  fmtFull,
-  fmtN,
-  fmtNum,
-  finPeriodLabel,
-  finSummary,
-  finCategories,
-  finLines,
-  fmtPct
-} from './utils/data.js';
 
+/* ══════════════════════════════════════════════════════════════════════
+   format.js
+   ══════════════════════════════════════════════════════════════════════ */
+/* Number formatting shared by every page (European style: € 1.234.567, 12,5 t). */
+const PALETTE = [
+  '#40BCF3', '#1F3741', '#35A9DE', '#8FD5F5', '#5B8FA3', '#C8EAF9',
+  '#2E9B62', '#E5A93D', '#D95C5C', '#6C7A80', '#8A9AA1', '#17303A',
+];
+const EU = 'de-DE';
+const bad = n => n === null || n === undefined || Number.isNaN(n);
 
-/* Strip trailing asterisks from product names (e.g. "Pro Elite 40 - GMO Controlled*" → "Pro Elite 40 - GMO Controlled") */
-const _normProductName = n => typeof n === 'string' ? n.replace(/\*+\s*$/, '').trimEnd() : n;
-const productsRaw = _productsRaw.map(p => ({...p, n: _normProductName(p.n)}));
-const productsWeeklyRaw = _productsWeeklyRaw.map(p => ({...p, n: _normProductName(p.n)}));
+function fmtFull(n) {
+  if (bad(n)) return '—';
+  const sign = n < 0 ? '-' : '';
+  return sign + '€' + Math.abs(Math.round(n)).toLocaleString(EU);
+}
+function fmt(n) {
+  if (bad(n)) return '—';
+  const sign = n < 0 ? '-' : '', abs = Math.abs(n);
+  if (abs >= 1e6) return sign + '€' + (abs / 1e6).toLocaleString(EU, { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + 'M';
+  return sign + '€' + Math.round(abs).toLocaleString(EU);
+}
+function fmtN(n) {
+  if (bad(n)) return '—';
+  return Math.round(n).toLocaleString(EU);
+}
+function fmtNum(n) {
+  if (bad(n)) return '—';
+  const sign = n < 0 ? '-' : '', abs = Math.abs(n);
+  if (abs >= 1e6) return sign + (abs / 1e6).toLocaleString(EU, { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + 'M';
+  return sign + Math.round(abs).toLocaleString(EU);
+}
+const fmtPct = n => bad(n) ? '—' : (n >= 0 ? '+' : '') + n.toLocaleString(EU, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+const fmtEur2 = n => bad(n) ? '—' : (n < 0 ? '-' : '') + '€' + Math.abs(n).toLocaleString(EU, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtShare = x => bad(x) || !Number.isFinite(x) ? '—' : x.toLocaleString(EU, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+const growth = (a, b) => (b == null || b <= 0 || a == null) ? null : (a - b) / b * 100;
 
-function formatDisplayName(username) {
-  if (!username) return '';
-  const first = username.split(/[.\s_-]+/)[0];
-  if (!first) return '';
-  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+/* ══════════════════════════════════════════════════════════════════════
+   model.js
+   ══════════════════════════════════════════════════════════════════════ */
+/* ─────────────────────────────────────────────────────────────────────────
+   DairyTop data model — dash.json is the ONLY source of figures.
+   All amounts in dash.json are cents excl. VAT; this module returns euros
+   unless a name ends in "C" (cents).
+   ───────────────────────────────────────────────────────────────────────── */
+const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const GROUPS = ['Milk powder', 'Feed', 'Calf housing', 'Calf supplies', 'Perfect Udder', 'Other'];
+const GROUP_COLORS = ['#40BCF3', '#2E9B62', '#E5A93D', '#D95C5C', '#5B8FA3', '#8A9AA1'];
+const AGE = ['Current', '1–30', '31–60', '61–90', '91+'];
+const AGE_COLORS = ['#2E9B62', '#40BCF3', '#E5A93D', '#E07B39', '#D95C5C'];
+const DAY = 864e5;
+
+const pad = n => String(n).padStart(2, '0');
+const isoOfT = t => new Date(t * DAY).toISOString().slice(0, 10);
+const dLab = iso => { const x = new Date(iso + 'T00:00:00Z'); return x.getUTCDate() + ' ' + MN[x.getUTCMonth()] + ' ' + x.getUTCFullYear(); };
+const mLong = ym => MN[+ym.slice(5) - 1] + ' ' + ym.slice(0, 4);
+const mShort = ym => MN[+ym.slice(5) - 1] + ' ' + ym.slice(2, 4);
+const tOf = iso => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / DAY;
+const ddmmyy = t => { const d = new Date(t * DAY); return pad(d.getUTCDate()) + '/' + pad(d.getUTCMonth() + 1) + '/' + String(d.getUTCFullYear()).slice(2); };
+
+/* ISO week of a day serial → { key:'W15 26', mon:serial } */
+function isoWeek(t) {
+  const wd = (new Date(t * DAY).getUTCDay() + 6) % 7;      // Mon=0
+  const thu = t - wd + 3, yr = new Date(thu * DAY).getUTCFullYear();
+  const wk = 1 + Math.floor((thu - Date.UTC(yr, 0, 1) / DAY) / 7);
+  return { key: 'W' + pad(wk) + ' ' + String(yr).slice(2), mon: t - wd };
 }
 
-/* ── CATEGORY GROUPS ─────────────────────────────────────────── */
-const CATEGORY_GROUPS = {
-  'Melkpoeder & Veevoer':  ['Melkpoeder','Overig veevoer','Veevoeders','Aanvullende diervoeders','Aanvullende Veevoeders'],
-  'Kalverhuisvesting':     ['Kalverhuisvesting','CalfOtel'],
-  'Kalverbenodigdheden':   ['Milkbar','Kleine Kalverbenodigdheden','Overige Artikelen','Overige artikelen','Geen Groep'],
-  'Kalverpasteurs':        ['Perfect Udder'],
+function prepare(R) {
+  const X = R, F = R.facts, n = F.r.length;
+  X.n = n;
+  X.gOfCat = R.categories.map(c => { const g = GROUPS.indexOf(c[1]); return g < 0 ? 5 : g; });
+  X.mkts = [...new Set(R.customers.map(c => c[1]))].sort();
+  X.cMkt = R.customers.map(c => X.mkts.indexOf(c[1]));
+  X.repIdx = new Map(R.verkopers.map((v, i) => [v, i]));
+  F.G = F.g.map(g => X.gOfCat[g] ?? 5);
+  F.M = F.c.map(c => X.cMkt[c]);
+  X.nM = R.months.length;
+  X.mLabel = R.months.map(mShort);
+  X.portal = new Set(R.meta.portalMonths);
+  X.isPortalM = R.months.map(m => X.portal.has(m));
+  X.firstDaily = X.isPortalM.indexOf(false);               // first month with day detail
+  const lt = R.meta.ledgerThrough, lastM = lt.slice(0, 7);
+  const dim = new Date(Date.UTC(+lastM.slice(0, 4), +lastM.slice(5), 0)).getUTCDate();
+  X.partial = { m: R.months.indexOf(lastM), day: +lt.slice(8), dim };
+  if (X.partial.day >= dim) X.partial.m = -1;
+  X.lastFull = X.partial.m >= 0 ? X.partial.m - 1 : X.nM - 1;
+  X.ltT = tOf(lt);
+  // products sold by weight
+  const pk = new Map();
+  for (let i = 0; i < n; i++) if (F.k[i]) pk.set(F.p[i], (pk.get(F.p[i]) || 0) + F.k[i]);
+  X.kgProd = new Set([...pk].filter(([, k]) => k > 0).map(([p]) => p));
+  // day serial + ISO week per fact (Microfas months only)
+  F.T = new Array(n); F.W = new Array(n);
+  X.weekMon = new Map();
+  for (let i = 0; i < n; i++) {
+    if (!F.d[i]) { F.T[i] = null; F.W[i] = null; continue; }
+    const ym = R.months[F.m[i]];
+    const t = Date.UTC(+ym.slice(0, 4), +ym.slice(5) - 1, F.d[i]) / DAY;
+    const w = isoWeek(t);
+    F.T[i] = t; F.W[i] = w.key; X.weekMon.set(w.key, w.mon);
+  }
+  X.weeks = [...X.weekMon.keys()].sort((a, b) => X.weekMon.get(a) - X.weekMon.get(b));
+  X.reps = [...new Set([...R.verkopers, ...R.customers.map(c => c[2])])].sort((a, b) => a.localeCompare(b));
+  // invoices: one entry per invoice number
+  const inv = new Map();
+  for (const r of R.invoices) {
+    let x = inv.get(r[0]);
+    if (!x) { x = { no: r[0], m: r[1], d: r[2], c: r[3], groups: new Set(), cents: 0 }; inv.set(r[0], x); }
+    x.groups.add(r[4]); x.cents += r[5];
+  }
+  X.inv = [...inv.values()];
+  X.snapshotLabel = dLab(R.meta.snapshot);
+  X.ledgerLabel = dLab(lt);
+  return X;
+}
+
+const X = prepare(RAW);
+
+/* ── Filters ────────────────────────────────────────────────────────────── */
+const DEFAULT_PRESET = 'ytdNow';
+function presetList() {
+  const L = X.lastFull, ly = X.months[L].slice(0, 4), pm = X.partial.m;
+  const out = [];
+  if (pm >= 0) out.push(['ytdNow', `Year to date ${X.months[pm].slice(0, 4)} (Jan–${MN[+X.months[pm].slice(5) - 1]} ${X.partial.day})`]);
+  out.push(['ytd', `Year to date ${ly} (Jan–${MN[+X.months[L].slice(5) - 1]}, complete months)`]);
+  out.push(['lm', `Last complete month (${mLong(X.months[L])})`], ['l3', 'Last 3 complete months'], ['l12', 'Last 12 complete months']);
+  if (pm >= 0) out.push(['mtd', `${mLong(X.months[pm])} so far (1–${X.partial.day})`]);
+  for (const y of [...new Set(X.months.map(m => m.slice(0, 4)))]) if (X.months.filter(m => m.startsWith(y)).length === 12) out.push(['y' + y, 'Full year ' + y]);
+  out.push(['all', `Full period (${mShort(X.months[0])} – ${mShort(X.months[X.nM - 1])})`], ['custom', 'Custom months']);
+  return out;
+}
+function applyPreset(f, p) {
+  const L = X.lastFull, pm = X.partial.m, last = X.nM - 1, g = { ...f, preset: p };
+  const idx = ym => X.months.indexOf(ym);
+  if (p === 'ytdNow') { g.from = idx(X.months[last].slice(0, 4) + '-01'); g.to = last; }
+  else if (p === 'ytd') { g.from = idx(X.months[L].slice(0, 4) + '-01'); g.to = L; }
+  else if (p === 'lm') { g.from = g.to = L; }
+  else if (p === 'l3') { g.from = Math.max(0, L - 2); g.to = L; }
+  else if (p === 'l12') { g.from = Math.max(0, L - 11); g.to = L; }
+  else if (p === 'mtd') { g.from = g.to = pm; }
+  else if (p === 'all') { g.from = 0; g.to = last; }
+  else if (p[0] === 'y') { const y = p.slice(1); g.from = idx(y + '-01'); g.to = idx(y + '-12'); }
+  if (g.from < 0) g.from = 0;
+  return g;
+}
+function defaultFilter() {
+  return applyPreset({ cmp: 'none', reps: [], grps: [], mkts: [], grain: 'month' }, DEFAULT_PRESET);
+}
+const filterKey = f => JSON.stringify([f.from, f.to, f.cmp, f.reps, f.grps, f.mkts]);
+const dimsKey = f => JSON.stringify([f.reps || [], f.grps || [], f.mkts || []]);
+
+function dimText(f) {
+  const p = [];
+  if (f.reps?.length) p.push('Verkoper: ' + f.reps.join(', '));
+  if (f.grps?.length) p.push('Group: ' + f.grps.join(', '));
+  if (f.mkts?.length) p.push('Market: ' + f.mkts.join(', '));
+  return p.join(' · ') || 'All verkopers, groups and markets';
+}
+
+/* Fact predicate for the dimension filters */
+function dimPred(f) {
+  const F = X.facts;
+  const rs = f.reps?.length ? new Set(f.reps.map(r => X.repIdx.get(r)).filter(v => v != null)) : null;
+  const gs = f.grps?.length ? new Set(f.grps.map(g => GROUPS.indexOf(g))) : null;
+  const ms = f.mkts?.length ? new Set(f.mkts.map(m => X.mkts.indexOf(m))) : null;
+  if (f.reps?.length && !rs.size) return () => false;
+  return i => (!rs || rs.has(F.v[i])) && (!gs || gs.has(F.G[i])) && (!ms || ms.has(F.M[i]));
+}
+/* Customer predicate (for receivables, orders, invoices): verkoper + market only */
+function custPred(f) {
+  const rs = f.reps?.length ? new Set(f.reps) : null, ms = f.mkts?.length ? new Set(f.mkts) : null;
+  return c => c >= 0 && (!rs || rs.has(X.customers[c][2])) && (!ms || ms.has(X.customers[c][1]));
+}
+
+/* ── Periods (current + comparison) ─────────────────────────────────────── */
+function period(f) {
+  const cur = [];
+  for (let m = f.from; m <= f.to; m++) cur.push({ m, cap: m === X.partial.m ? X.partial.day : 99 });
+  const lab = (a, b) => a === b ? mLong(X.months[a]) : mLong(X.months[a]) + ' – ' + mLong(X.months[b]);
+  const P = { cur, cmp: null, curCmp: cur, note: '', label: lab(f.from, f.to) + (f.to === X.partial.m ? ` (to ${X.partial.day})` : '') };
+  P.months = cur.map(c => c.m);
+  if (f.cmp === 'none') { P.note = 'No comparison selected.'; return P; }
+  const shift = f.cmp === 'py' ? 12 : cur.length, cmp = [], used = [];
+  for (const c of cur) {
+    const m = c.m - shift;
+    if (m < 0) { P.note = f.cmp === 'py' ? `No data for the same months a year earlier (data starts ${mLong(X.months[0])}).` : `No data before ${mLong(X.months[0])}.`; return P; }
+    if (c.cap < 99 && X.isPortalM[m]) {
+      P.note = `${mLong(X.months[c.m])} runs to day ${c.cap}, ${mLong(X.months[m])} has monthly totals only, so it is left out of the change.`;
+      continue;
+    }
+    cmp.push({ m, cap: c.cap }); used.push(c);
+  }
+  if (!cmp.length) return P;
+  P.cmp = cmp; P.curCmp = used;
+  P.cmpLabel = lab(cmp[0].m, cmp[cmp.length - 1].m) + (cmp[cmp.length - 1].cap < 99 ? ` (days 1–${cmp[cmp.length - 1].cap})` : '');
+  return P;
+}
+
+/* Fact indexes for a list of {m,cap} with an extra predicate */
+const _monIdx = (() => {
+  const by = Array.from({ length: X.nM }, () => []);
+  for (let i = 0; i < X.n; i++) by[X.facts.m[i]].push(i);
+  return by;
+})();
+function pick(list, pred) {
+  if (!list) return null;
+  const F = X.facts, out = [];
+  for (const { m, cap } of list) for (const i of _monIdx[m]) {
+    if (cap < 99 && F.d[i] > cap) continue;
+    if (pred && !pred(i)) continue;
+    out.push(i);
+  }
+  return out;
+}
+const sumCol = (ix, col) => { if (!ix) return null; const a = X.facts[col]; let s = 0; for (const i of ix) s += a[i]; return s; };
+function by(ix, keyFn, col = 'r') { const m = new Map(); if (!ix) return m; const a = X.facts[col]; for (const i of ix) { const k = keyFn(i); m.set(k, (m.get(k) || 0) + a[i]); } return m; }
+
+/* Sales KPI for a filter (+ optional extra predicate) */
+function sales(f, extra) {
+  const P = period(f), dp = dimPred(f), pred = extra ? i => dp(i) && extra(i) : dp;
+  const cur = pick(P.cur, pred), curC = P.cmp ? pick(P.curCmp, pred) : null, cmp = pick(P.cmp, pred);
+  return {
+    P, cur, cmp, curC,
+    rev: sumCol(cur, 'r') / 100, revC: cmp ? sumCol(cmp, 'r') / 100 : null, revCur4Cmp: curC ? sumCol(curC, 'r') / 100 : null,
+    kg: sumCol(cur, 'k'), kgC: cmp ? sumCol(cmp, 'k') : null, kgCur4Cmp: curC ? sumCol(curC, 'k') : null,
+    q: sumCol(cur, 'q') / X.qScale, qC: cmp ? sumCol(cmp, 'q') / X.qScale : null, qCur4Cmp: curC ? sumCol(curC, 'q') / X.qScale : null,
+  };
+}
+
+/* Invoices (orders) for a filter — Microfas months only */
+function invoices(f, monthsList) {
+  const cp = custPred(f), gs = f.grps?.length ? new Set(f.grps.map(g => GROUPS.indexOf(g))) : null;
+  const ms = new Set(monthsList);
+  return X.inv.filter(v => ms.has(v.m) && cp(v.c) && (!gs || [...v.groups].some(g => gs.has(g))));
+}
+
+/* Volume of a fact in its own unit (kg for weight products, pieces otherwise) */
+const qtyOf = i => X.kgProd.has(X.facts.p[i]) ? X.facts.k[i] : X.facts.q[i] / X.qScale;
+
+/* ── Legacy-shaped series (what the original pages consume) ──────────────
+   Built once per dimension filter; every page then slices by month/week. */
+const _legacyCache = new Map();
+function legacy(f) {
+  const key = dimsKey(f);
+  if (_legacyCache.has(key)) return _legacyCache.get(key);
+  const F = X.facts, pred = dimPred(f), cp = custPred(f);
+  const gs = f.grps?.length ? new Set(f.grps.map(g => GROUPS.indexOf(g))) : null;
+  const M = X.mLabel;
+  const mk = () => new Map();
+  const add = (map, k, r, qty, kg, extra) => { let x = map.get(k); if (!x) { x = { rev: 0, qty: 0, kg: 0, ...extra }; map.set(k, x); } x.rev += r; x.qty += qty; x.kg += kg; return x; };
+  const mon = mk(), wk = mk(), dy = mk(), repM = mk(), repW = mk(), cuM = mk(), cuW = mk(), prM = mk(), prW = mk(), caM = mk(), caW = mk(), grM = mk(), mkM = mk();
+  const daySets = new Map(); // product/category order-days
+  const ds = (k, c, t) => { let s = daySets.get(k); if (!s) { s = new Set(); daySets.set(k, s); } s.add(c + ':' + t); };
+  for (let i = 0; i < X.n; i++) {
+    if (!pred(i)) continue;
+    const r = F.r[i] / 100, kg = F.k[i], qty = qtyOf(i), m = F.m[i];
+    const rep = X.verkopers[F.v[i]], cu = X.customers[F.c[i]][0], pr = X.products[F.p[i]][0], ca = X.categories[F.g[i]][0];
+    add(mon, m, r, qty, kg); add(grM, F.G[i] + '|' + m, r, qty, kg); add(mkM, F.M[i] + '|' + m, r, qty, kg);
+    add(repM, rep + '|' + m, r, qty, kg); add(cuM, cu + '|' + m, r, qty, kg); add(prM, pr + '|' + m, r, qty, kg, { cat: ca }); add(caM, ca + '|' + m, r, qty, kg);
+    if (F.T[i] != null) {
+      const w = F.W[i], t = F.T[i];
+      add(wk, w, r, qty, kg); add(dy, t, r, qty, kg);
+      add(repW, rep + '|' + w, r, qty, kg); add(cuW, cu + '|' + w, r, qty, kg); add(prW, pr + '|' + w, r, qty, kg); add(caW, ca + '|' + w, r, qty, kg);
+      ds('pm|' + pr + '|' + m, F.c[i], t); ds('pw|' + pr + '|' + w, F.c[i], t);
+      ds('cm|' + ca + '|' + m, F.c[i], t); ds('cw|' + ca + '|' + w, F.c[i], t);
+    }
+  }
+  // invoices → order counts (total, per rep, per customer) by month / week / day
+  const oM = new Map(), oW = new Map(), oD = new Map(), oRepM = new Map(), oRepW = new Map(), oCuM = new Map(), oCuW = new Map();
+  const inc = (map, k) => map.set(k, (map.get(k) || 0) + 1);
+  for (const v of X.inv) {
+    if (!cp(v.c) || (gs && ![...v.groups].some(g => gs.has(g)))) continue;
+    const ym = X.months[v.m], t = Date.UTC(+ym.slice(0, 4), +ym.slice(5) - 1, v.d) / DAY, w = isoWeek(t).key;
+    const rep = X.customers[v.c][2], cu = X.customers[v.c][0];
+    inc(oM, v.m); inc(oW, w); inc(oD, t); inc(oRepM, rep + '|' + v.m); inc(oRepW, rep + '|' + w); inc(oCuM, cu + '|' + v.m); inc(oCuW, cu + '|' + w);
+  }
+  const ordM = m => X.isPortalM[m] ? null : (oM.get(m) || 0);
+  const r0 = v => Math.round(v);
+  const monthly = X.months.map((ym, m) => { const x = mon.get(m) || { rev: 0, qty: 0, kg: 0 }; return { m: M[m], mi: m, iso: ym, rev: r0(x.rev), orders: ordM(m), qty: x.qty, kg: x.kg }; });
+  const weekly = X.weeks.map(w => { const x = wk.get(w) || { rev: 0, qty: 0, kg: 0 }, mon0 = X.weekMon.get(w); return { w, mon: mon0, start: ddmmyy(mon0), end: ddmmyy(mon0 + 6), rev: r0(x.rev), orders: oW.get(w) || 0, qty: x.qty, kg: x.kg }; });
+  const daily = [...dy.keys()].sort((a, b) => a - b).map(t => { const x = dy.get(t); return { d: ddmmyy(t), t, iso: isoOfT(t), rev: r0(x.rev), orders: oD.get(t) || 0, qty: x.qty, kg: x.kg }; });
+  const flatM = (map, oMap, daysKey) => [...map].map(([k, x]) => { const [n, mm] = k.split('|'); const m = +mm; return { n, m: M[m], mi: m, rev: r0(x.rev), qty: x.qty, kg: x.kg, cat: x.cat, orders: X.isPortalM[m] ? null : (oMap ? (oMap.get(n + '|' + m) || 0) : (daySets.get(daysKey + '|' + n + '|' + m)?.size || 0)) }; });
+  const flatW = (map, oMap, daysKey) => [...map].map(([k, x]) => { const [n, w] = k.split('|'); return { n, w, rev: r0(x.rev), qty: x.qty, kg: x.kg, orders: oMap ? (oMap.get(n + '|' + w) || 0) : (daySets.get(daysKey + '|' + n + '|' + w)?.size || 0) }; });
+  const out = {
+    monthly, weekly, daily,
+    salesreps: flatM(repM, oRepM), salesrepsWeekly: flatW(repW, oRepW),
+    customers: flatM(cuM, oCuM), customersWeekly: flatW(cuW, oCuW),
+    products: flatM(prM, null, 'pm'), productsWeekly: flatW(prW, null, 'pw'),
+    categories: flatM(caM, null, 'cm'), categoriesWeekly: flatW(caW, null, 'cw'),
+    groupsMonthly: [...grM].map(([k, x]) => { const [g, m] = k.split('|').map(Number); return { g, n: GROUPS[g], mi: m, m: M[m], rev: r0(x.rev), kg: x.kg, qty: x.qty }; }),
+    marketsMonthly: [...mkM].map(([k, x]) => { const [g, m] = k.split('|').map(Number); return { k: g, n: X.mkts[g], mi: m, m: M[m], rev: r0(x.rev), kg: x.kg }; }),
+  };
+  _legacyCache.set(key, out);
+  return out;
+}
+
+
+
+/* ── Receivables ───────────────────────────────────────────────────────── */
+function arKPI(f, inPeriod) {
+  const cp = custPred(f);
+  let R = X.ar.filter(a => cp(a[0]));
+  if (inPeriod) { const lo = X.months[f.from], hi = X.months[f.to]; R = R.filter(a => a[2].slice(0, 7) >= lo && a[2].slice(0, 7) <= hi); }
+  let open = 0, over = 0, over30 = 0, credit = 0, nOpen = 0, billed = 0;
+  const byAge = new Map(AGE.map(a => [a, 0]));
+  for (const a of R) {
+    billed += a[4];
+    const b = a[6];
+    if (b > 0) { open += b; nOpen++; byAge.set(a[7], (byAge.get(a[7]) || 0) + b); if (a[7] !== 'Current') over += b; if (a[7] !== 'Current' && a[7] !== '1–30') over30 += b; }
+    if (b < 0) credit += b;
+  }
+  return { R, open: open / 100, over: over / 100, over30: over30 / 100, credit: credit / 100, nOpen, net: (open + credit) / 100, billed: billed / 100, byAge: new Map([...byAge].map(([k, v]) => [k, v / 100])) };
+}
+
+
+/* Open order value (needs dash.json ≥ 5.0.0: order lines carry € values) */
+const hasOrderValues = (X.openLines || []).some(l => l.length >= 12);
+function orderValue(O) {
+  const sg = new Map(O.map(o => [o[0], o[12]])); let del = 0, left = 0, unp = 0; const rows = [];
+  for (const l of X.openLines || []) {
+    const g = sg.get(l[0]); if (g !== 'toDeliver' && g !== 'deliveredNotInvoiced') continue;
+    if (!l[11]) { unp++; continue; }
+    const vd = l[10], vr = Math.max(0, l[9] - l[10]); del += vd; left += vr; rows.push({ l, g, vd: vd / 100, vr: vr / 100 });
+  }
+  return { del: del / 100, left: left / 100, tot: (del + left) / 100, rows, unp };
+}
+/* Receivables tie-out, whichever dash.json schema is loaded */
+function reconSteps() {
+  const R = X.recon;
+  if ('legacyOpenCents' in R) {
+    const ex = R.cohortBalanceCents + R.legacyOpenCents + R.unallocatedOpenCents, inc = ex + R.vatInOpenItemsCents, tot = inc + R.matchedResidualCents;
+    return { steps: [['Open from invoices since ' + dLab(X.meta.arStart), R.cohortBalanceCents, '+'], ['Open from before ' + dLab(X.meta.arStart), R.legacyOpenCents, R.unallocatedOpenCents < 0 ? '−' : '+'], ['Open items without an invoice', Math.abs(R.unallocatedOpenCents), '='], ['Receivables excl. VAT', ex, '+', true], ['VAT on these items', R.vatInOpenItemsCents, '='], ['Open items incl. VAT', inc, '+', true], ['Matched items that do not net to zero', R.matchedResidualCents, '='], ['Debtors account 132000', R.controlCents, '', true]], ok: tot === R.controlCents, diff: R.controlCents - tot };
+  }
+  const ex = R.cohortBalanceCents + R.legacyOpeningCents + R.legacySettlementCents + R.unallocatedCents + (R.unmatchedInvoiceCents || 0), inc = ex + R.vatInOpenItemsCents;
+  return { steps: [['Open from invoices since ' + dLab(X.meta.arStart), R.cohortBalanceCents, '+'], ['Opening balance (before ' + dLab(X.meta.arStart) + ')', R.legacyOpeningCents, '−'], ['Settled from opening balance', -R.legacySettlementCents, '−'], ['Open items without an invoice', -R.unallocatedCents, '='], ['Receivables excl. VAT', ex, '+', true], ['VAT on these items', R.vatInOpenItemsCents, '='], ['Debtors account 132000', R.controlCents, '', true]], ok: inc === R.controlCents, diff: R.controlCents - inc };
+}
+/* Product group of a product (falls back to the product lines for products without a category) */
+const LINE_GRP = { proElite: 0, milkPowder: 0, feed: 1, calfPens: 2, calfHousing: 2, calfSupplies: 3, perfectUdder: 4 };
+let _pg = null;
+function groupOfProduct(p) {
+  if (!_pg) { _pg = new Map(); for (const l of X.lines || []) if (LINE_GRP[l.key] != null) for (const q of l.products) _pg.set(q, LINE_GRP[l.key]); }
+  const c = X.products[p][1];
+  return c >= 0 ? (X.gOfCat[c] ?? 5) : (_pg.has(p) ? _pg.get(p) : 5);
+}
+
+/* ── Reorder radar (same rules as the Business Cockpit) ───────────────── */
+const days = (a, b) => Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / DAY);
+const addDays = (d, n) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+function reorder(f, inPeriod) {
+  const snap = X.meta.ledgerThrough, F = X.facts, cp = custPred(f);
+  const gs = f.grps?.length ? new Set(f.grps) : null;
+  let W = null;
+  if (inPeriod) {
+    const a = X.months[f.from] + '-01', e = X.months[f.to];
+    const end = e + '-' + pad(new Date(+e.slice(0, 4), +e.slice(5), 0).getDate());
+    W = [a, end < snap ? end : snap];
+  }
+  const msF = X.months.map((m, i) => i).filter(i => !X.isPortalM[i] && i !== X.partial.m);
+  const win = new Set(msF.slice(-6)), rv = new Map();
+  for (let i = 0; i < X.n; i++) if (win.has(F.m[i])) { const k = F.c[i] + '|' + F.p[i]; rv.set(k, (rv.get(k) || 0) + F.r[i]); }
+  const out = [];
+  for (const [c, p, n, last, gap] of X.cadence) {
+    const g = X.gOfCat[X.products[p][1]] ?? 5;
+    if (!cp(c) || (gs && !gs.has(GROUPS[g]))) continue;
+    const since = days(last, snap), due = Math.round(since - gap), fell = addDays(last, Math.floor(1.5 * gap) + 1);
+    if (W && (fell < W[0] || fell > W[1])) continue;
+    if (since > 1.5 * gap && since <= 120) out.push({ c, p, n, last, gap, since, due, fell, g, mrev: Math.round((rv.get(c + '|' + p) || 0) / win.size) / 100 });
+  }
+  return { rows: out.sort((a, b) => b.mrev - a.mrev), window: W };
+}
+
+
+/* ── Overview (live view, not filtered) ────────────────────────────────── */
+function liveMonth() {
+  const m = X.nM - 1, F = X.facts;
+  let rev = 0;
+  for (const i of _monIdx[m]) rev += F.r[i];
+  return { m, label: X.mLabel[m], iso: X.months[m], day: X.partial.m === m ? X.partial.day : null, rev: rev / 100 };
+}
+
+const totals = (() => {
+  const F = X.facts; let r = 0; for (let i = 0; i < X.n; i++) r += F.r[i];
+  return { revenue: r / 100, customers: X.customers.length, invoices: X.inv.length };
+})();
+
+/* ── Entity aggregation straight from facts (exact, respects partial-month caps) ── */
+function aggregate(ix, keyFn) {
+  const F = X.facts, m = new Map();
+  if (!ix) return m;
+  for (const i of ix) {
+    const k = keyFn(i);
+    let x = m.get(k);
+    if (!x) { x = { k, rev: 0, revO: 0, kg: 0, qty: 0, pcs: 0, days: new Set(), cust: new Set() }; m.set(k, x); }
+    const r = F.r[i] / 100;
+    x.rev += r; x.kg += F.k[i]; x.qty += qtyOf(i); if (!X.kgProd.has(F.p[i])) x.pcs += F.q[i] / X.qScale;
+    if (!X.isPortalM[F.m[i]]) { x.revO += r; if (F.T[i] != null) x.days.add(F.c[i] + ':' + F.T[i]); }
+    if (F.r[i] > 0) x.cust.add(F.c[i]);
+  }
+  return m;
+}
+/* Invoice counts per key over Microfas months of a period list */
+function invoiceCounts(f, list, keyFn) {
+  const ms = (list || []).map(x => x.m).filter(m => !X.isPortalM[m]);
+  const m = new Map();
+  for (const v of invoices(f, ms)) { const k = keyFn(v); m.set(k, (m.get(k) || 0) + 1); }
+  return { map: m, known: ms.length > 0, total: [...m.values()].reduce((s, v) => s + v, 0) };
+}
+const ordersCoverage = list => {
+  const ms = (list || []).map(x => x.m), known = ms.filter(m => !X.isPortalM[m]);
+  if (!known.length) return 'Orders not available for portal months (Jan 2025 – Mar 2026)';
+  if (known.length === ms.length) return '';
+  return `Orders & avg order value from ${mLong(X.months[known[0]])} (portal months have no invoice detail)`;
 };
-const GROUP_NAMES = Object.keys(CATEGORY_GROUPS);
-const CAT_TO_GROUP = {};
-GROUP_NAMES.forEach(g => CATEGORY_GROUPS[g].forEach(c => { CAT_TO_GROUP[c] = g; }));
-const GROUP_PALETTE = ['#40BCF3','#2E9B62','#E5A93D','#D95C5C'];
+const repName = i => X.verkopers[X.facts.v[i]];
 
-/* ── MOBILE HELPER ───────────────────────────────────────────── */
-function isMobileViewport() {
-  return typeof window !== 'undefined' && window.matchMedia &&
-    window.matchMedia('(max-width: 900px)').matches;
+/* The data model handed to the chatbot (it answers from the same dash.json) */
+// eslint-disable-next-line react-refresh/only-export-components
+export const DASH = { X, GROUPS, sales, applyPreset, defaultFilter, aggregate, arKPI, reorder, liveMonth, mLong, invoices, legacy, orderValue, hasOrderValues, fmtFull, fmtN, fmtShare, growth };
+
+/* ══════════════════════════════════════════════════════════════════════
+   typography.js
+   ══════════════════════════════════════════════════════════════════════ */
+/* Typography shared with the migrated cockpit pages. */
+const SCALE_POINTS=[[6, 10], [7, 10.5], [8, 11], [9, 12], [10, 12.5], [11, 13], [12, 13.5], [13, 14], [14, 15], [15, 16], [16, 18], [20, 24], [28, 32], [40, 44]];
+function scaleFont(px){const P=SCALE_POINTS;if(px<=P[0][0])return P[0][1];for(let i=1;i<P.length;i++){const[x0,y0]=P[i-1],[x1,y1]=P[i];if(px<=x1)return Math.round((y0+(y1-y0)*(px-x0)/(x1-x0))*10)/10}return Math.round(px*11)/10}
+/* Returns a copy of an ECharts option with every fontSize moved onto the same scale and Inter as the chart font. */
+function scaleChartFonts(option){const seen=new WeakMap();const walk=v=>{if(Array.isArray(v)){if(seen.has(v))return seen.get(v);const a=[];seen.set(v,a);v.forEach(x=>a.push(walk(x)));return a}if(v&&typeof v==='object'&&Object.getPrototypeOf(v)===Object.prototype){if(seen.has(v))return seen.get(v);const o={};seen.set(v,o);for(const k in v){const x=v[k];o[k]=k==='fontSize'&&typeof x==='number'?scaleFont(x):walk(x)}return o}return v};const o=walk(option);if(o&&typeof o==='object'&&!Array.isArray(o)){o.textStyle={fontFamily:"Inter, system-ui, sans-serif",fontSize:12,...(o.textStyle||{})}}return o}
+const TYPO_CSS=`/* Uniform typography: Lakshman's pages on the DairyTop cockpit type scale (Inter text, JetBrains Mono figures).
+   Generated from the sizes in App.jsx; sidebar, top bar and login keep their own sizes. */
+.page-area,.filter-bar{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif}
+.filter-label{font-size:12.5px}
+.filter-chip{font-size:13.0px}
+.filter-meta-row{font-size:12.5px}
+.filter-clear{font-size:12.0px}
+.kpi-icon{font-size:18.0px}
+.kpi-lbl{font-size:12.8px}
+.kpi-val{font-size:24.0px}
+.kpi-val.sm{font-size:18.0px}
+.kpi-chg{font-size:13.0px}
+.kpi-trend{font-size:12.2px}
+.kpi-mini .kpi-val.sm{font-size:13.5px}
+.cp-title{font-size:12.8px}
+.cp-sub{font-size:12.5px}
+.cp-tag{font-size:12.0px}
+.panel-select{font-size:12.2px}
+.panel-btn{font-size:12.2px}
+.vt-btn{font-size:12.5px}
+.itbl{font-size:13.0px}
+.itbl th{font-size:12.0px}
+.rank{font-size:12.5px}
 }
 
-/* ── SHARED ECHARTS DEFAULTS ──────────────────────────────────── */
+.sec-title{font-size:12.5px}
+.fin-note{font-size:12.5px}
+.fin-badge{font-size:12.0px}
+.indicative-tag{font-size:10.8px}
+.gauge-label{font-size:12.0px}
+.gauge-val{font-size:24.0px}
+.gauge-py{font-size:12.5px}
+.ledger-search{font-size:13.0px}
+.ledger-count{font-size:12.0px}
+.watch-col-title{font-size:12.0px}
+.watch-row-desc{font-size:12.2px}
+.watch-row-amt{font-size:12.0px}
+.watch-empty{font-size:12.5px}
+@media(max-width:1200px) and (min-width:901px){
+.kpi-val{font-size:19.5px}
+.kpi-val.sm{font-size:15.0px}
+.cp-title{font-size:13.0px}
+}
+@media(max-width:900px){
+.filter-chip{font-size:12.0px}
+.filter-label{font-size:12.0px}
+.filter-clear{font-size:11.0px}
+.filter-meta-row{font-size:11.0px}
+.kpi-icon{font-size:14.0px}
+.kpi-lbl{font-size:12.0px}
+.kpi-val{font-size:16.0px}
+.kpi-val.sm{font-size:14.0px}
+.kpi-chg{font-size:12.0px}
+.cp-title{font-size:13.0px}
+.cp-sub{font-size:12.0px}
+.vt-btn{font-size:12.0px}
+.itbl{font-size:12.0px}
+.rank{font-size:11.0px}
+.fin-note{font-size:12.0px}
+.gauge-val{font-size:18.0px}
+.ledger-search{font-size:12.5px}
+.ledger-count{font-size:11.0px}
+.kpi-val.sm{font-size:14.0px}
+.kpi-chg{font-size:12.0px}
+}
+.cp-insight{font-size:12.8px}
+.cp-insight-icon{font-size:13.0px}
+.cp-expand-btn{font-size:13.5px}
+.cfs-title{font-size:16.0px}
+.cfs-sub{font-size:13.0px}
+.cfs-close{font-size:18.0px}
+.delta{font-size:12.2px}
+.cmp-toggle{font-size:12.2px}
+.drill-chip{font-size:12.5px}
+.drill-chip button{font-size:12.0px}
+.back-btn{font-size:13.0px}
+.tbl-search-wrap input{font-size:13.0px}
+.tbl-search-count{font-size:12.0px}
+`;
+
+/* ══════════════════════════════════════════════════════════════════════
+   ui.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Shared UI: Panel (chart/table toggle, chart magnifier, enlarge), EC (ECharts),
+   InlineTable, KPI helpers, export buttons. Styles live in App.jsx's css. */
+function isMobileViewport() {
+  return typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
+}
+
 const TOOLTIP_STYLE = {
   backgroundColor: 'rgba(15,35,45,0.96)',
   borderColor: 'rgba(64,188,243,0.25)',
@@ -84,138 +543,305 @@ function withCrosshair(option, yFormatter = fmt) {
   return {
     ...option,
     tooltip: {
-      ...TOOLTIP_STYLE,
-      ...option.tooltip,
+      ...TOOLTIP_STYLE, ...option.tooltip,
       axisPointer: {
         type: 'cross',
         crossStyle: { color: 'rgba(64,188,243,0.5)', width: 1, type: 'dashed' },
-        label: {
-          backgroundColor: '#1F3741',
-          color: '#40BCF3',
-          fontSize: 11,
-          fontFamily: 'JetBrains Mono, monospace',
-          padding: [4, 8],
-          borderRadius: 4,
-          formatter: (p) => {
-            if (p.axisDimension === 'y') return yFormatter(p.value);
-            return p.value;
-          }
-        },
+        label: { backgroundColor: '#1F3741', color: '#40BCF3', fontSize: 11, fontFamily: 'JetBrains Mono, monospace', padding: [4, 8], borderRadius: 4,
+          formatter: p => p.axisDimension === 'y' ? yFormatter(p.value) : p.value },
       },
     },
   };
 }
 
-function withDataZoom(option) {
-  if (isMobileViewport()) return option;
+/* Pinch (trackpad / touch) or Ctrl + wheel zooms the time window; plain wheel scrolls the page. */
+function withDataZoom(option, axis = 'x') {
   return {
     ...option,
-    dataZoom: [{
-      type: 'inside',
-      minSpan: 5,
-      maxSpan: 100,
-      zoomOnMouseWheel: true,
-      moveOnMouseMove: true,
-      preventDefaultMouseMove: false
-    }]
+    dataZoom: [{ type: 'inside', [axis === 'y' ? 'yAxisIndex' : 'xAxisIndex']: 0, minSpan: 5, maxSpan: 100,
+      zoomOnMouseWheel: 'ctrl', moveOnMouseWheel: false, moveOnMouseMove: true, preventDefaultMouseMove: false }],
   };
 }
 
 function catAxisLabel(count, baseFontSize, forceRotate) {
-  const mobile = isMobileViewport();
-  const fs = baseFontSize || 9;
-  const crowded = mobile && (forceRotate || count > 3);
-  return {
-    color: '#5F7078',
-    fontSize: mobile ? Math.max(7, fs - 1) : fs,
-    hideOverlap: true,
-    interval: 0,
-    rotate: crowded ? 40 : 0,
-    margin: crowded ? 10 : 8,
-  };
+  const mobile = isMobileViewport(), fs = baseFontSize || 9, crowded = mobile && (forceRotate || count > 3);
+  return { color: '#5F7078', fontSize: mobile ? Math.max(7, fs - 1) : fs, hideOverlap: true, interval: 0, rotate: crowded ? 40 : 0, margin: crowded ? 10 : 8 };
 }
 
-/* ── TIME GRANULARITY HELPERS ─────────────────────────────────── */
-/* 'Apr 26' -> '26' */
-function yearSuffixFromLabel(label) {
-  const parts = String(label).trim().split(' ');
-  return parts[parts.length - 1];
-}
-/* 'Apr 26' -> '2026' */
-function yearFullFromLabel(label) {
-  return '20' + yearSuffixFromLabel(label);
-}
-
-/* How granular is the user's selection for each year?
-   Weekly if any weeks are ticked, monthly if months are ticked, otherwise yearly. */
-function perYearFinestGrain(filter) {
-  const years = filter.years || [];
-  const map = {};
-  years.forEach(y => {
-    const wCount = (filter.eeks || filter.weeks?.[y] || []).length;
-    const mCount = (filter.months?.[y] || []).length;
-    if (wCount > 0) map[y] = 'weekly';
-    else if (mCount > 0) map[y] = 'monthly';
-    else map[y] = 'yearly';
-  });
-  return map;
-}
-
-/* Coarsest grain that all selected years can support. */
-function effGrainFor(filter) {
-  const map = perYearFinestGrain(filter);
-  const vals = Object.values(map);
-  if (vals.length === 0) return 'monthly';
-  const rank = { weekly: 3, monthly: 2, yearly: 1 };
-  const min = Math.min(...vals.map(v => rank[v]));
-  return Object.keys(rank).find(k => rank[k] === min);
-}
-
-/* Yearly bars, respecting weekly ticks when present. */
-function deriveYearlyFromFilter(filter, fm) {
-  const map = perYearFinestGrain(filter);
-  const buckets = {};
-  const ensure = (y) => {
-    const full = '20' + y;
-    if (!buckets[full]) buckets[full] = { year: full, rev: 0, orders: 0 };
-    return buckets[full];
-  };
-  Object.entries(map).forEach(([y, grain]) => {
-    if (grain === 'weekly') {
-      const set = new Set(filter.weeks?.[y] || []);
-      weekly.forEach(w => {
-        if (set.has(w.w)) { const b = ensure(y); b.rev += w.rev || 0; b.orders += w.orders || 0; }
-      });
-    } else {
-      fm.forEach(m => {
-        if (m.m.endsWith(y)) { const b = ensure(y); b.rev += m.rev || 0; b.orders += m.orders || 0; }
-      });
+/* ── Chart magnifier: scales fonts, bars and markers of every chart inside a Panel ── */
+const ChartScale = createContext(1);
+const SCALE_KEYS = new Set(['fontSize', 'barMaxWidth', 'symbolSize', 'itemWidth', 'itemHeight', 'barWidth']);
+function scaleOption(o, s) {
+  if (s === 1) return o;
+  const seen = new WeakMap();
+  const walk = v => {
+    if (Array.isArray(v)) { if (seen.has(v)) return seen.get(v); const a = []; seen.set(v, a); v.forEach(x => a.push(walk(x))); return a; }
+    if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) {
+      if (seen.has(v)) return seen.get(v);
+      const r = {}; seen.set(v, r);
+      for (const k in v) { const x = v[k]; r[k] = SCALE_KEYS.has(k) && typeof x === 'number' ? Math.round(x * s * 10) / 10 : (k === 'width' && typeof x === 'number' && x < 8 ? x * s : walk(x)); }
+      return r;
     }
-  });
-  return Object.values(buckets).sort((a, b) => a.year.localeCompare(b.year));
+    return v;
+  };
+  const r = walk(o);
+  if (r && r.textStyle) r.textStyle = { ...r.textStyle, fontSize: Math.round(12 * s) };
+  return r;
 }
 
-/* 'dd/mm/yy' -> 'Apr 26' */
-function weekOwnerMonth(weekRow) {
-  const parts = String(weekRow.start).split('/');
-  const mo = parseInt(parts[1], 10);
-  const yy = parts[2];
-  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return `${names[mo - 1]} ${yy}`;
+/* Keep a bottom legend clear of the x-axis labels: reserve fixed pixels below the grid. */
+function legendSpace(o) {
+  const lg = Array.isArray(o.legend) ? o.legend[0] : o.legend;
+  if (!lg || lg.show === false || lg.bottom == null || !o.grid || Array.isArray(o.grid)) return o;
+  const rot = [].concat(o.xAxis || []).some(a => a?.axisLabel?.rotate);
+  const need = rot ? 58 : 44, b = o.grid.bottom;
+  const px = typeof b === 'number' ? b : null;
+  if (px != null && px >= need) return o;
+  return { ...o, grid: { ...o.grid, bottom: need, containLabel: true }, legend: Array.isArray(o.legend) ? o.legend : { ...lg, bottom: 2 } };
+}
+const liveChartInstances = new Set();
+/* Legend click highlights a series (others fade) instead of hiding it. Click again to clear. */
+function legendHighlight(o, hl) {
+  if (!o.legend || !o.series) return o;
+  const ser = [].concat(o.series);
+  const names = new Set();
+  ser.forEach(x => { if (x.type === 'pie') (x.data || []).forEach(d => names.add(d.name)); else if (x.name) names.add(x.name); });
+  const legend = [].concat(o.legend).map(l => ({ ...l, selectedMode: true, selected: Object.fromEntries([...names].map(n => [n, true])) }));
+  const dim = x => ({ ...x, itemStyle: { ...(x.itemStyle || {}), opacity: 0.18 }, lineStyle: x.lineStyle ? { ...x.lineStyle, opacity: 0.18 } : undefined, areaStyle: x.areaStyle ? { ...x.areaStyle, opacity: 0.04 } : undefined, label: x.label ? { ...x.label, show: false } : undefined, z: 1 });
+  const series = !hl || !names.has(hl) ? ser : ser.map(x => {
+    if (x.type === 'pie') return { ...x, data: (x.data || []).map(d => d.name === hl ? d : { ...d, itemStyle: { ...(d.itemStyle || {}), opacity: 0.25 } }) };
+    if (x.name === hl) return { ...x, z: 5, lineStyle: x.lineStyle ? { ...x.lineStyle, width: (x.lineStyle.width || 2) + 1 } : x.lineStyle };
+    if (!x.name) return x;
+    return { ...dim(x), data: Array.isArray(x.data) ? x.data.map(d => d && typeof d === 'object' && !Array.isArray(d) && d.itemStyle ? { ...d, itemStyle: { ...d.itemStyle, opacity: 0.18 } } : d) : x.data };
+  });
+  return { ...o, legend: Array.isArray(o.legend) ? legend : legend[0], series };
 }
 
-/* { 'Apr 26': ['W15 26', ...] } */
-const WEEKS_BY_MONTH = (() => {
-  const map = {};
-  weekly.forEach(w => {
-    const m = weekOwnerMonth(w);
-    if (!map[m]) map[m] = [];
-    map[m].push(w.w);
-  });
-  return map;
-})();
+function EC({ option, onEvents, style, onAxisClick }) {
+  const s = useContext(ChartScale);
+  const [hl, setHl] = useState(null);
+  const scaled = useMemo(() => scaleOption(scaleChartFonts(legendSpace(legendHighlight(option, hl))), s), [option, s, hl]);
+  const inst = useRef(null);
+  /* handlers always see the latest props (echarts-for-react keeps the first bound functions) */
+  const live = useRef({});
+  useEffect(() => { live.current = { onEvents: onEvents || {}, onAxisClick }; });
+  const ready = i => {
+    inst.current = i; liveChartInstances.add(i);
+    i.getZr().on('click', e => {
+      const cb = live.current.onAxisClick; if (!cb) return;
+      const pt = [e.offsetX, e.offsetY];
+      try { if (!i.containPixel('grid', pt)) return; const v = i.convertFromPixel({ seriesIndex: 0 }, pt); if (v && v[0] != null) cb(Math.round(v[0])); } catch { /* ignore */ }
+    });
+  };
+  useEffect(() => () => { if (inst.current) liveChartInstances.delete(inst.current); }, []);
+  useEffect(() => { const t = setTimeout(() => { try { inst.current?.resize(); } catch { /* ignore */ } }, 60); return () => clearTimeout(t); }, [s]);
+  const keys = Object.keys(onEvents || {}).sort().join('|');
+  const events = useMemo(() => {
+    const ev = { legendselectchanged: e => setHl(h => h === e.name ? null : e.name) };
+    for (const k of keys ? keys.split('|') : []) ev[k] = (...a) => live.current.onEvents[k]?.(...a);
+    return ev;
+  }, [keys]);
+  return <ReactECharts option={scaled} style={{ height: '100%', width: '100%', ...style }} opts={{ renderer: 'svg' }} notMerge onEvents={events} onChartReady={ready} />;
+}
 
-/* ── CSS ─────────────────────────────────────────────────────── */
+function InlineTable({ headers, rows, height, searchable, initialQuery, onRowClick, footer }) {
+  const [sc, setSc] = useState(null);
+  const [sd, setSd] = useState('asc');
+  const [q, setQ] = useState(initialQuery || '');
+  const s = useContext(ChartScale);
+  const [prevIQ, setPrevIQ] = useState(initialQuery);
+  if (initialQuery !== prevIQ) { setPrevIQ(initialQuery); if (initialQuery !== undefined) setQ(initialQuery || ''); }
+  const sort = i => { if (sc === i) setSd(d => d === 'asc' ? 'desc' : 'asc'); else { setSc(i); setSd('asc'); } };
+  const indexed = rows.map((r, i) => [r, i]);
+  const filtered = searchable && q.trim() ? indexed.filter(([row]) => row.some(c => String(c).toLowerCase().includes(q.trim().toLowerCase()))) : indexed;
+  const num = v => parseFloat(String(v).replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, ''));
+  const sorted = [...filtered].sort((A, B) => {
+    if (sc === null) return 0;
+    const a = A[0][sc], b = B[0][sc], an = num(a), bn = num(b);
+    const c = !isNaN(an) && !isNaN(bn) ? an - bn : String(a).localeCompare(String(b));
+    return sd === 'asc' ? c : -c;
+  });
+  return (
+    <div className="tbl-wrap" style={{ height, display: 'flex', flexDirection: 'column' }}>
+      {searchable && (
+        <div className="tbl-search-wrap">
+          <input type="text" placeholder="Search this table…" value={q} onChange={e => setQ(e.target.value)} aria-label="Search table" />
+          {q.trim() && <span className="tbl-search-count">{sorted.length}/{rows.length}</span>}
+        </div>
+      )}
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+        <table className="itbl" style={s !== 1 ? { zoom: s } : undefined}>
+          <thead><tr>{headers.map((h, i) => <th key={i} onClick={() => sort(i)}>{h} <span style={{ opacity: .5, fontSize: 11 }}>{sc === i ? (sd === 'asc' ? '↑' : '↓') : '⇅'}</span></th>)}</tr></thead>
+          <tbody>{sorted.map(([row, oi], ri) => (
+            <tr key={oi} onClick={onRowClick ? () => onRowClick(oi) : undefined} style={onRowClick ? { cursor: 'pointer' } : undefined}>{row.map((cell, ci) => {
+              if (ci === 0 && headers[0] === '#') return <td key={ci}><span className={`rank ${ri === 0 ? 'r1' : ri === 1 ? 'r2' : ri === 2 ? 'r3' : 'rn'}`}>{cell}</span></td>;
+              return <td key={ci}>{cell}</td>;
+            })}</tr>
+          ))}</tbody>
+          {footer && <tfoot><tr className="tot">{footer.map((c, i) => <td key={i}>{c}</td>)}</tr></tfoot>}
+        </table>
+      </div>
+    </div>
+  );
+}
+
+const ICON_EXPAND = <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M1 5V2a1 1 0 0 1 1-1h3M9 1h3a1 1 0 0 1 1 1v3M13 9v3a1 1 0 0 1-1 1H9M5 13H2a1 1 0 0 1-1-1V9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>;
+const ICON_CHART = <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1" y="7" width="3" height="6" rx="1" fill="currentColor" /><rect x="5.5" y="4" width="3" height="9" rx="1" fill="currentColor" /><rect x="10" y="1" width="3" height="12" rx="1" fill="currentColor" /></svg>;
+const ICON_TABLE = <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="2.5" rx="1" fill="currentColor" /><rect x="1" y="5.5" width="12" height="2" rx=".5" fill="currentColor" opacity=".6" /><rect x="1" y="9.5" width="12" height="2" rx=".5" fill="currentColor" opacity=".4" /></svg>;
+const Mag = ({ plus }) => <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="6.8" cy="6.8" r="4.8" /><path d="M10.4 10.4 14.5 14.5M4.6 6.8h4.4" />{plus && <path d="M6.8 4.6v4.4" />}</svg>;
+
+/* Panel = the chart/table card used on every page. */
+function Panel({ title, subtitle, tag, controls, flex, height, style, className, children, defaultView = 'chart', tableHeaders, tableRows, insight, searchableTable, tableInitialQuery, headerExtra, hideToggle, onRowClick, noZoom }) {
+  const [view, setView] = useState(defaultView);
+  const [ready, setReady] = useState(false);
+  const [full, setFull] = useState(false);
+  const [cz, setCz] = useState(1);
+  useEffect(() => { const t = setTimeout(() => setReady(true), 260); return () => clearTimeout(t); }, []);
+  useEffect(() => {
+    if (!full) return;
+    const k = e => { if (e.key === 'Escape') setFull(false); };
+    document.addEventListener('keydown', k);
+    return () => document.removeEventListener('keydown', k);
+  }, [full]);
+  const hasToggle = tableHeaders && tableRows && !hideToggle;
+  const base = height != null ? { flex: '0 0 auto', height } : flex ? { flex } : {};
+  const grow = cz > 1 ? { minHeight: Math.round(320 * cz), flex: base.flex ? `${(parseFloat(base.flex) || 1) * cz} 0 auto` : undefined } : {};
+  const fixedVars = height != null ? { '--fin-fixed-h': typeof height === 'number' ? `${height * Math.max(1, cz)}px` : height } : undefined;
+  const step = d => setCz(z => Math.min(1.6, Math.max(0.8, Math.round((z + d) * 10) / 10)));
+
+  const zoomBtns = !noZoom && (
+    <div className="cp-zoom" role="group" aria-label="Chart size">
+      <button className="cp-expand-btn" title="Smaller chart text" onClick={() => step(-0.1)} disabled={cz <= 0.8}><Mag /></button>
+      {cz !== 1 && <button className="cp-zoom-val" title="Reset chart size" onClick={() => setCz(1)}>{Math.round(cz * 100)}%</button>}
+      <button className="cp-expand-btn" title="Bigger chart text" onClick={() => step(0.1)} disabled={cz >= 1.6}><Mag plus /></button>
+    </div>
+  );
+  const toggle = hasToggle && (
+    <div className="view-tog">
+      <button className={`vt-btn${view === 'chart' ? ' active' : ''}`} onClick={() => setView('chart')}>{ICON_CHART}Chart</button>
+      <button className={`vt-btn${view === 'table' ? ' active' : ''}`} onClick={() => setView('table')}>{ICON_TABLE}Table</button>
+    </div>
+  );
+  const body = view === 'chart' || !hasToggle ? children
+    : <InlineTable headers={tableHeaders} rows={tableRows} height="100%" searchable={searchableTable} initialQuery={tableInitialQuery} onRowClick={onRowClick} />;
+
+  return (
+    <>
+      <div className={`chart-panel${className ? ' ' + className : ''}${cz > 1 ? ' cp-grown' : ''}`} style={{ ...base, ...grow, ...style, ...(fixedVars || {}) }}>
+        <div className="cp-head">
+          <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+            <div className="cp-title">{title}</div>
+            {subtitle && <div className="cp-sub">{subtitle}</div>}
+            {headerExtra && <div style={{ marginTop: 4 }}>{headerExtra}</div>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 1, minWidth: 0, maxWidth: '100%', flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
+            {controls}
+            {tag && <div className="cp-tag">{tag}</div>}
+            {toggle}
+            {zoomBtns}
+            <button className="cp-expand-btn" title="Enlarge" onClick={() => setFull(true)}>{ICON_EXPAND}</button>
+          </div>
+        </div>
+        {insight && <div className="cp-insight"><span className="cp-insight-icon">💡</span><span>{insight}</span></div>}
+        <div className="cp-body">
+          {!ready && view === 'chart' && (
+            <div className="cp-skeleton" aria-hidden="true">
+              {[40, 70, 55, 85, 30].map((h, i) => <div key={i} className="cp-skeleton-bar" style={{ height: h + '%' }} />)}
+            </div>
+          )}
+          <ChartScale.Provider value={cz}>{body}</ChartScale.Provider>
+        </div>
+      </div>
+      {full && createPortal(
+        <div className="cfs-overlay" onClick={e => { if (e.target === e.currentTarget) setFull(false); }}>
+          <div className="cfs-panel">
+            <div className="cfs-hdr">
+              <div className="cfs-titles">
+                <div className="cfs-title">{title}</div>
+                {subtitle && <div className="cfs-sub">{subtitle}</div>}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{controls}{toggle}{zoomBtns}</div>
+              <button className="cfs-close" onClick={() => setFull(false)} title="Close (Esc)">✕</button>
+            </div>
+            <div className="cfs-body"><ChartScale.Provider value={cz}>{body}</ChartScale.Provider></div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+function KpiNote({ text = 'KPIs match your selected period and filters', extra }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginBottom: -2, flexWrap: 'wrap' }}>
+      <span className="cp-tag" style={{ background: 'rgba(64,188,243,0.08)', color: 'var(--accent2)', borderColor: 'rgba(64,188,243,0.25)' }}>Period-aware</span>
+      <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>{text}</span>
+      {extra && <span style={{ fontSize: 12, color: 'var(--muted2)' }}>· {extra}</span>}
+    </div>
+  );
+}
+
+/* KPI card: clickable → opens the "how this number is built" panel */
+function Kpi({ color = 'blue', label, value, sub, onClick, title }) {
+  return (
+    <div className={`kpi-card ${color}${onClick ? ' clickable' : ''}`} onClick={onClick} title={title || (onClick ? 'Click to see how this number is built' : undefined)} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={onClick ? e => e.key === 'Enter' && onClick() : undefined}>
+      <div className="kpi-lbl">{label}</div>
+      <div className="kpi-val sm">{value}</div>
+      {sub != null && <div className="kpi-chg">{sub}</div>}
+    </div>
+  );
+}
+function Trend({ g, inv, suffix }) {
+  if (g == null) return <span className="kpi-trend" style={{ color: 'var(--muted2)' }}>No comparison</span>;
+  const good = inv ? g <= 0 : g >= 0;
+  return <span className={`kpi-trend ${good ? 'up' : 'down'}`}>{g >= 0 ? '▲' : '▼'} {Math.abs(g).toFixed(1).replace('.', ',')}%{suffix ? ' ' + suffix : ''}</span>;
+}
+
+const csvEscape = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+function downloadCSV(filename, headers, rows) {
+  const lines = [headers, ...rows].map(r => r.map(csvEscape).join(','));
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = filename.replace(/\.xlsx$/i, '.csv');
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+function ExportExcelButton({ filename, headers, rows }) {
+  const xl = () => { const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Data'); XLSX.writeFile(wb, filename); };
+  return (
+    <span style={{ display: 'inline-flex', gap: 5 }}>
+      <button className="panel-btn" onClick={xl} title="Export to Excel">⬇ Excel</button>
+      <button className="panel-btn" style={{ color: 'var(--accent2)', background: 'rgba(64,188,243,0.08)', borderColor: 'rgba(64,188,243,0.25)' }} onClick={() => downloadCSV(filename, headers, rows)} title="Export to CSV">⬇ CSV</button>
+    </span>
+  );
+}
+
+/* Pagination used by the long ranking charts */
+function Pager({ count, total, step, setCount, extra }) {
+  const b = (dis) => ({ padding: '3px 10px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--surface3)', color: 'var(--muted)', cursor: dis ? 'not-allowed' : 'pointer', fontSize: 13, fontFamily: 'inherit', opacity: dis ? .5 : 1 });
+  const all = count >= total;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginTop: 4, padding: '4px 0', flexWrap: 'wrap' }}>
+      <button onClick={() => setCount(c => Math.max(c - step, step))} disabled={count <= step} style={b(count <= step)}>‹ Less</button>
+      <span style={{ fontSize: 12.5, color: 'var(--muted)', fontFamily: 'JetBrains Mono, monospace', minWidth: 80, textAlign: 'center' }}>{all ? `All ${total}` : `1-${count} / ${total}`}</span>
+      <button onClick={() => setCount(c => Math.min(c + step, total))} disabled={all} style={b(all)}>More ›</button>
+      <button onClick={() => setCount(all ? step : total)} style={{ ...b(false), borderColor: all ? 'var(--accent)' : 'var(--border)', color: all ? 'var(--accent2)' : 'var(--muted)' }}>{all ? 'Reset' : 'Show all'}</button>
+      {extra}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   shell.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Shell pieces kept from the original app: global CSS, Login, Welcome, ScrollHint. */
+function formatDisplayName(username) {
+  if (!username) return '';
+  const first = username.split(/[.\s_-]+/)[0];
+  if (!first) return '';
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+}
+
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
@@ -1209,8 +1835,6 @@ html,body{overscroll-behavior:none;-webkit-text-size-adjust:100%;text-size-adjus
 @media print{.scroll-hint,.scroll-fade{display:none !important;}}
 `;
 
-/* ── COMPONENTS ─────────────────────────────────────────────────── */
-
 function Login({ onLogin }) {
   const screenRef = useRef(null);
 
@@ -1485,1514 +2109,7 @@ function DashboardWelcome({ userName, onComplete }) {
   );
 }
 
-function InlineTable({ headers, rows, height, searchable, initialQuery }) {
-  const [sc, setSc] = useState(null);
-  const [sd, setSd] = useState('asc');
-  const [q, setQ] = useState(initialQuery || '');
-  useEffect(() => { if (initialQuery !== undefined) setQ(initialQuery || ''); }, [initialQuery]);
-  const handleSort = (i) => { if (sc === i) setSd(d => d === 'asc' ? 'desc' : 'asc'); else { setSc(i); setSd('asc'); } };
-  const filteredRows = (searchable && q.trim())
-    ? rows.filter(row => row.some(cell => String(cell).toLowerCase().includes(q.trim().toLowerCase())))
-    : rows;
-  const sorted = [...filteredRows].sort((a, b) => {
-    if (sc === null) return 0;
-    const av = a[sc], bv = b[sc];
-    const an = parseFloat(String(av).replace(/[^0-9.-]/g,'')), bn = parseFloat(String(bv).replace(/[^0-9.-]/g,''));
-    const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : String(av).localeCompare(String(bv));
-    return sd === 'asc' ? cmp : -cmp;
-  });
-  return (
-    <div className="tbl-wrap" style={{height, display:'flex', flexDirection:'column'}}>
-      {searchable && (
-        <div className="tbl-search-wrap">
-          <input type="text" placeholder="Search this table…" value={q} onChange={e => setQ(e.target.value)} aria-label="Search table" />
-          {q.trim() && <span className="tbl-search-count">{sorted.length}/{rows.length}</span>}
-        </div>
-      )}
-      <div style={{flex:1, minHeight:0, overflow:'auto'}}>
-        <table className="itbl">
-          <thead><tr>{headers.map((h,i) => <th key={i} onClick={()=>handleSort(i)}>{h} <span style={{opacity:.5,fontSize:8}}>{sc===i?(sd==='asc'?'↑':'↓'):'⇅'}</span></th>)}</tr></thead>
-          <tbody>{sorted.map((row,ri) => (
-            <tr key={ri}>{row.map((cell,ci) => {
-              if (ci === 0 && (headers[0] === '#' || typeof cell === 'number' || /^\d+$/.test(String(cell)))) {
-                return <td key={ci}><span className={`rank ${ri===0?'r1':ri===1?'r2':ri===2?'r3':'rn'}`}>{cell}</span></td>;
-              }
-              return <td key={ci}>{cell}</td>;
-            })}</tr>
-          ))}</tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
-function Panel({ title, subtitle, tag, controls, flex, height, style, className, children, defaultView = 'chart', tableHeaders, tableRows, insight, searchableTable, tableInitialQuery, headerExtra, hideToggle }) {
-  const [view, setView] = useState(defaultView);
-  const [ready, setReady] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
-  useEffect(() => { const t = setTimeout(() => setReady(true), 260); return () => clearTimeout(t); }, []);
-  useEffect(() => {
-    if (!fullscreen) return;
-    const onKey = e => { if (e.key === 'Escape') setFullscreen(false); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [fullscreen]);
-  const hasToggle = tableHeaders && tableRows && !hideToggle;
-  const panelStyle = { ...(height != null ? { flex: '0 0 auto', height } : flex ? { flex } : {}), ...style };
-  const fixedVars = height != null ? { '--fin-fixed-h': typeof height === 'number' ? `${height}px` : height } : undefined;
-
-  const expandBtn = (
-    <button className="cp-expand-btn" title="Expand chart" onClick={()=>setFullscreen(true)}>
-      <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-        <path d="M1 5V2a1 1 0 0 1 1-1h3M9 1h3a1 1 0 0 1 1 1v3M13 9v3a1 1 0 0 1-1 1H9M5 13H2a1 1 0 0 1-1-1V9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-    </button>
-  );
-
-  const headerControls = (
-    <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0,flexWrap:'wrap',marginLeft:8}}>
-      {controls}
-      {tag && <div className="cp-tag">{tag}</div>}
-      {hasToggle && (
-        <div className="view-tog">
-          <button className={`vt-btn${view==='chart'?' active':''}`} onClick={()=>setView('chart')}>
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1" y="7" width="3" height="6" rx="1" fill="currentColor"/><rect x="5.5" y="4" width="3" height="9" rx="1" fill="currentColor"/><rect x="10" y="1" width="3" height="12" rx="1" fill="currentColor"/></svg>
-            Chart
-          </button>
-          <button className={`vt-btn${view==='table'?' active':''}`} onClick={()=>setView('table')}>
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><rect x="1" y="1" width="12" height="2.5" rx="1" fill="currentColor"/><rect x="1" y="5.5" width="12" height="2" rx=".5" fill="currentColor" opacity=".6"/><rect x="1" y="9.5" width="12" height="2" rx=".5" fill="currentColor" opacity=".4"/></svg>
-            Table
-          </button>
-        </div>
-      )}
-      {!hideToggle && expandBtn}
-    </div>
-  );
-
-  return (
-    <>
-      <div className={`chart-panel${className ? ' ' + className : ''}`} style={{ ...panelStyle, ...(fixedVars || {}) }}>
-        <div className="cp-head">
-          <div style={{flex:1,minWidth:0}}>
-            <div className="cp-title">{title}</div>
-            {subtitle && <div className="cp-sub">{subtitle}</div>}
-            {headerExtra && <div style={{marginTop:4}}>{headerExtra}</div>}
-          </div>
-          {headerControls}
-        </div>
-        {insight && <div className="cp-insight"><span className="cp-insight-icon">💡</span><span>{insight}</span></div>}
-        <div className="cp-body">
-          {!ready && view === 'chart' && (
-            <div className="cp-skeleton" aria-hidden="true">
-              <div className="cp-skeleton-bar" style={{height:'40%'}}/>
-              <div className="cp-skeleton-bar" style={{height:'70%'}}/>
-              <div className="cp-skeleton-bar" style={{height:'55%'}}/>
-              <div className="cp-skeleton-bar" style={{height:'85%'}}/>
-              <div className="cp-skeleton-bar" style={{height:'30%'}}/>
-            </div>
-          )}
-          {view === 'chart' ? children : <InlineTable headers={tableHeaders} rows={tableRows} height="100%" searchable={searchableTable} initialQuery={tableInitialQuery} />}
-        </div>
-      </div>
-
-      {fullscreen && createPortal(
-        <div className="cfs-overlay" onClick={e=>{ if(e.target===e.currentTarget) setFullscreen(false); }}>
-          <div className="cfs-panel">
-            <div className="cfs-hdr">
-              <div className="cfs-titles">
-                <div className="cfs-title">{title}</div>
-                {subtitle && <div className="cfs-sub">{subtitle}</div>}
-              </div>
-              {controls && <div style={{display:'flex',alignItems:'center',gap:6}}>{controls}</div>}
-              <button className="cfs-close" onClick={()=>setFullscreen(false)} title="Close (Esc)">✕</button>
-            </div>
-            <div className="cfs-body">{children}</div>
-          </div>
-        </div>,
-        document.body
-      )}
-    </>
-  );
-}
-
-const liveChartInstances = new Set();
-function EC({ option, onEvents }) {
-  const instRef = useRef(null);
-  const handleReady = (inst) => { instRef.current = inst; liveChartInstances.add(inst); };
-  useEffect(() => () => { if (instRef.current) liveChartInstances.delete(instRef.current); }, []);
-  return (
-    <ReactECharts
-      option={option}
-      style={{height:'100%',width:'100%'}}
-      opts={{renderer:'svg'}}
-      notMerge={true}
-      onEvents={onEvents}
-      onChartReady={handleReady}
-    />
-  );
-}
-
-function csvEscape(val) {
-  const s = String(val ?? '');
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-function downloadCSV(filename, headers, rows) {
-  const lines = [headers, ...rows].map(r => r.map(csvEscape).join(','));
-  const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename.replace(/\.xlsx$/i, '.csv');
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-}
-function ExportExcelButton({ filename, headers, rows, grain }) {
-  const prefix = grain ? `${grain}_` : '';
-  const finalName = prefix && !filename.startsWith(prefix) ? prefix + filename : filename;
-  const handleExport = () => {
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Data');
-    XLSX.writeFile(wb, finalName);
-  };
-  return (
-    <span style={{display:'inline-flex',gap:5}}>
-      <button className="panel-btn" onClick={handleExport} title="Export to Excel">⬇ Excel</button>
-      <button className="panel-btn" style={{color:'var(--accent2)',background:'rgba(64,188,243,0.08)',borderColor:'rgba(64,188,243,0.25)'}} onClick={() => downloadCSV(finalName, headers, rows)} title="Export to CSV">⬇ CSV</button>
-    </span>
-  );
-}
-
-/* ── DATE FILTER ─────────────────────────────────────────────── */
-function DateFilterBar({ filter, setFilter }) {
-  const years = [...new Set(monthly.map(m => m.m.split(' ')[1]))].sort();
-  const [expandedYear, setExpandedYear] = useState(null);
-  const [expandedMonth, setExpandedMonth] = useState(null);
-  const popRef = useRef(null);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (popRef.current && !popRef.current.contains(e.target)) {
-        setExpandedYear(null);
-        setExpandedMonth(null);
-      }
-    };
-    const closeOnScroll = () => { setExpandedYear(null); setExpandedMonth(null); };
-    document.addEventListener('mousedown', handler);
-    document.addEventListener('touchstart', handler, { passive: true });
-    window.addEventListener('scroll', closeOnScroll, { passive: true });
-    return () => {
-      document.removeEventListener('mousedown', handler);
-      document.removeEventListener('touchstart', handler);
-      window.removeEventListener('scroll', closeOnScroll);
-    };
-  }, []);
-
-  // Reset nested month expansion when the year popover switches
-  useEffect(() => { setExpandedMonth(null); }, [expandedYear]);
-
-  const toggleYear = (yr) => {
-    const isActive = filter.years.includes(yr);
-    if (isActive) {
-      const newYears = filter.years.filter(y => y !== yr);
-      const newMonths = { ...filter.months }; delete newMonths[yr];
-      const newWeeks = { ...filter.weeks }; delete newWeeks[yr];
-      setFilter({ years: newYears, months: newMonths, weeks: newWeeks });
-    } else {
-      setFilter({
-        years: [...filter.years, yr],
-        months: { ...filter.months, [yr]: filter.months[yr] || [] },
-        weeks: { ...filter.weeks, [yr]: filter.weeks[yr] || [] }
-      });
-    }
-  };
-
-  const toggleMonth = (yr, m) => {
-    const ym = filter.months[yr] || [];
-    const isTicked = ym.includes(m);
-    const newYm = isTicked ? ym.filter(x => x !== m) : [...ym, m];
-
-    let weeksForYear = filter.weeks?.[yr] || [];
-    if (isTicked) {
-      const monthWeeks = WEEKS_BY_MONTH[m] || [];
-      weeksForYear = weeksForYear.filter(w => !monthWeeks.includes(w));
-    }
-
-    setFilter({
-      ...filter,
-      months: { ...filter.months, [yr]: newYm },
-      weeks: { ...filter.weeks, [yr]: weeksForYear }
-    });
-  };
-
-  const toggleWeek = (yr, weekLabel, ownerMonth) => {
-    const currentWeeks = filter.weeks?.[yr] || [];
-    const isTicked = currentWeeks.includes(weekLabel);
-    const newWeeks = isTicked ? currentWeeks.filter(w => w !== weekLabel) : [...currentWeeks, weekLabel];
-
-    const currentMonths = filter.months?.[yr] || [];
-    let newMonths = currentMonths;
-
-    if (!isTicked) {
-      // Auto-tick the parent month
-      if (!currentMonths.includes(ownerMonth)) newMonths = [...currentMonths, ownerMonth];
-    } else {
-      // Unticking a week — if no other week of this month remains, drop the month
-      const weeksOfMonth = WEEKS_BY_MONTH[ownerMonth] || [];
-      const stillTicked = weeksOfMonth.some(w => newWeeks.includes(w));
-      if (!stillTicked) newMonths = currentMonths.filter(m => m !== ownerMonth);
-    }
-
-    setFilter({
-      ...filter,
-      months: { ...filter.months, [yr]: newMonths },
-      weeks: { ...filter.weeks, [yr]: newWeeks }
-    });
-  };
-
-  const selectAllMonths = (yr) => {
-    const allMonths = monthly.filter(m => m.m.includes(yr)).map(m => m.m);
-    setFilter({ ...filter, months: { ...filter.months, [yr]: allMonths } });
-  };
-  const clearMonths = (yr) => {
-    setFilter({
-      ...filter,
-      months: { ...filter.months, [yr]: [] },
-      weeks: { ...filter.weeks, [yr]: [] }
-    });
-  };
-
-  const eff = effGrainFor(filter);
-  const hasBothYears = filter.years.includes('25') && filter.years.includes('26');
-  const y26HasWeeks = (filter.weeks?.['26'] || []).length > 0;
-  const showCrossYearNotice = hasBothYears && y26HasWeeks && eff !== 'weekly';
-  const showWeeklyBadge = eff === 'weekly';
-
-  return (
-    <div className="filter-bar" ref={popRef} style={{ position:'relative', overflow:'visible', zIndex:100 }}>
-      <span className="filter-label">🔍 Filter</span>
-      {showWeeklyBadge && (
-        <span className="cp-tag" style={{ background:'rgba(64,188,243,0.10)', color:'var(--accent2)', borderColor:'rgba(64,188,243,0.30)' }}>
-          Weekly view
-        </span>
-      )}
-      <div className="filter-chips" style={{ display:'flex', gap:'6px', flexWrap:'nowrap', alignItems:'center', overflow:'visible', padding:'4px 0', flex:1, minWidth:0, position:'relative' }}>
-        {years.map(yr => {
-          const active = filter.years.includes(yr);
-          const mc = (filter.months[yr]||[]).length;
-          const wc = (filter.weeks?.[yr]||[]).length;
-          const isExpanded = expandedYear === yr;
-          const summary = [
-            mc > 0 ? `${mc}m` : null,
-            wc > 0 ? `${wc}w` : null
-          ].filter(Boolean).join(' · ');
-          return (
-            <div key={yr} style={{ position:'relative', display:'inline-flex', alignItems:'center', gap:3, zIndex: isExpanded ? 9999 : 1 }}>
-              <button className={`filter-chip${active?' active':''}`} onClick={() => toggleYear(yr)} style={{ whiteSpace:'nowrap' }}>
-                {active ? '☑' : '☐'} 20{yr}{active && summary ? ` (${summary})` : ''}
-              </button>
-              {active && (
-                <button style={{ padding:'2px 5px', border:'1px solid var(--border)', borderRadius:4, background:'var(--surface3)', cursor:'pointer', fontSize:9, color:'var(--muted)', flexShrink:0 }}
-                  onClick={(e) => { e.stopPropagation(); setExpandedYear(isExpanded ? null : yr); }}>
-                  {isExpanded ? '▲' : '▼'}
-                </button>
-              )}
-              {isExpanded && (
-                <div
-                  style={{ position:'fixed', marginTop:'4px', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:10, zIndex:99999, boxShadow:'0 8px 32px rgba(0,0,0,0.25)', minWidth:240, maxWidth:340, maxHeight:420, overflowY:'auto', transform:'translateY(4px)' }}
-                  onClick={(e) => e.stopPropagation()}
-                  ref={(el) => {
-                    if (el) {
-                      const rect = el.parentElement.getBoundingClientRect();
-                      const w = el.offsetWidth || 280;
-                      el.style.top = (rect.bottom + 4) + 'px';
-                      el.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8)) + 'px';
-                    }
-                  }}
-                >
-                  <div style={{ display:'flex', gap:4, marginBottom:8, flexWrap:'wrap' }}>
-                    <button onClick={() => selectAllMonths(yr)} style={{ padding:'3px 10px', border:'1px solid var(--accent)', borderRadius:4, background:'rgba(64,188,243,0.08)', color:'var(--accent2)', cursor:'pointer', fontSize:10, fontWeight:600, fontFamily:'inherit' }}>Select All</button>
-                    <button onClick={() => clearMonths(yr)} style={{ padding:'3px 10px', border:'1px solid var(--muted)', borderRadius:4, background:'transparent', color:'var(--muted)', cursor:'pointer', fontSize:10, fontFamily:'inherit' }}>Clear</button>
-                  </div>
-                  <div style={{ display:'flex', flexDirection:'column', gap:1, maxHeight:300, overflowY:'auto' }}>
-                    {monthly.filter(m => m.m.includes(yr)).map(({m}) => {
-                      const sel = (filter.months[yr]||[]).includes(m);
-                      const monthWeeks = yr === '26' ? (WEEKS_BY_MONTH[m] || []) : [];
-                      const hasWeeks = monthWeeks.length > 0;
-                      const isMonthExpanded = expandedMonth === m;
-                      const tickedWeeks = filter.weeks?.[yr] || [];
-
-                      return (
-                        <div key={m}>
-                          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                            <label style={{
-                              flex:1, display:'flex', alignItems:'center', gap:6,
-                              padding:'4px 8px', borderRadius:4, cursor:'pointer',
-                              background: sel ? 'rgba(64,188,243,.08)' : 'transparent',
-                              fontSize:11, fontFamily:'inherit', transition:'background .14s'
-                            }}
-                              onMouseEnter={(e) => e.currentTarget.style.background = sel ? 'rgba(64,188,243,.15)' : 'rgba(64,188,243,.05)'}
-                              onMouseLeave={(e) => e.currentTarget.style.background = sel ? 'rgba(64,188,243,.08)' : 'transparent'}>
-                              <input type="checkbox" checked={sel} onChange={() => toggleMonth(yr, m)}
-                                style={{ width:12, height:12, cursor:'pointer', accentColor:'var(--accent)', flexShrink:0 }} />
-                              <span style={{ whiteSpace:'nowrap' }}>{m}</span>
-                            </label>
-                            {hasWeeks && (
-                              <button onClick={() => setExpandedMonth(isMonthExpanded ? null : m)}
-                                title={isMonthExpanded ? 'Hide weeks' : 'Show weeks'}
-                                style={{
-                                  border:'none', background:'transparent', cursor:'pointer',
-                                  fontSize:10, color:'var(--muted)', padding:'2px 6px', borderRadius:4,
-                                  fontFamily:'inherit'
-                                }}>
-                                {isMonthExpanded ? '▾' : '▸'}
-                              </button>
-                            )}
-                          </div>
-                          {isMonthExpanded && (
-                            <div style={{ paddingLeft:22, display:'flex', flexDirection:'column', gap:1, marginTop:2, marginBottom:4 }}>
-                              {monthWeeks.map(w => {
-                                const wTicked = tickedWeeks.includes(w);
-                                return (
-                                  <label key={w} style={{
-                                    display:'flex', alignItems:'center', gap:6,
-                                    padding:'3px 6px', borderRadius:4, cursor:'pointer',
-                                    fontSize:10.5, fontFamily:'inherit',
-                                    background: wTicked ? 'rgba(64,188,243,.10)' : 'transparent',
-                                    transition:'background .14s'
-                                  }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = wTicked ? 'rgba(64,188,243,.18)' : 'rgba(64,188,243,.05)'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = wTicked ? 'rgba(64,188,243,.10)' : 'transparent'}>
-                                    <input type="checkbox" checked={wTicked} onChange={() => toggleWeek(yr, w, m)}
-                                      style={{ width:11, height:11, cursor:'pointer', accentColor:'var(--accent)', flexShrink:0 }} />
-                                    <span style={{ color: wTicked ? 'var(--accent2)' : 'var(--muted)', fontWeight: wTicked ? 600 : 500 }}>{w}</span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {filter.years.length > 0 && (
-          <>
-            <div className="filter-divider"/>
-            <button className="filter-clear" onClick={() => setFilter({years:[],months:{},weeks:{}})} style={{ flexShrink:0 }}>✕ Clear</button>
-          </>
-        )}
-        {showCrossYearNotice && (
-          <span style={{ fontSize:9, color:'var(--amber)', fontWeight:600, whiteSpace:'nowrap', marginLeft:'auto', paddingRight:6 }}>
-            ⚠ 2025 has no weekly data — 2026 shown at {eff} level
-          </span>
-        )}
-      </div>
-      <div className="filter-meta">
-        <div className="filter-meta-row">Last update: <strong>{lastUpdated}</strong></div>
-        <div className="filter-meta-row">Last invoice: <strong>{maxFactuurDatum}</strong></div>
-      </div>
-    </div>
-  );
-}
-
-/* ── KPI NOTE (small reminder above the KPI strip) ───────────── */
-function KpiNote() {
-  return (
-    <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, marginBottom:-2 }}>
-      <span className="cp-tag" style={{ background:'rgba(64,188,243,0.08)', color:'var(--accent2)', borderColor:'rgba(64,188,243,0.25)' }}>
-        Period-aware
-      </span>
-      <span style={{ fontSize:10, color:'var(--muted)' }}>
-        KPIs match your selected period
-      </span>
-    </div>
-  );
-}
-
-/* ── PAGES ───────────────────────────────────────────────────── */
-
-function Overview() {
-  const currentMonthEntry = monthly[monthly.length - 1];
-  const currentMonth = currentMonthEntry?.m;
-  const last3 = monthly.slice(-3);
-  const last3WithPY = last3.map(cur => {
-    const [name, yy] = cur.m.split(' ');
-    const pyYear = String(parseInt(yy, 10) - 1).padStart(2, '0');
-    const py = monthly.find(x => x.m === `${name} ${pyYear}`);
-    return { name, cyLabel: cur.m, cy: cur.rev, py: py ? py.rev : null, pyLabel: py ? py.m : null };
-  });
-  const last3Names = last3.map(m => m.m);
-  const cats = useMemo(() => {
-    const g = {};
-    categoriesRaw.filter(c => last3Names.includes(c.m)).forEach(c => {
-      const k = c.n.trim();
-      if (!g[k]) g[k] = { n: k, rev: 0, orders: 0 };
-      g[k].rev += c.rev; g[k].orders += c.orders;
-    });
-    return Object.values(g).sort((a, b) => b.rev - a.rev);
-  }, [last3Names.join(',')]);
-  const catsTotalRev = cats.reduce((s, c) => s + c.rev, 0);
-
-  const melkSalesmen = useMemo(() => [...new Set(melkpoederTonnage2025.map(t => t.salesman))].filter(n => n !== 'Unknown' && n !== 'Webshop').sort(), []);
-  const [melkSalesman, setMelkSalesman] = useState('All');
-  const melkCYMonths = useMemo(() => {
-    const seen = new Set();
-    tonnagePerSalesman.filter(t => t.category === 'Melkpoeder').forEach(t => (t.monthly || []).forEach(mo => seen.add(mo.m)));
-    const order = monthly.map(m => m.m);
-    return [...seen].sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  }, []);
-  const melkPeriods = useMemo(() => ['Full period', ...melkCYMonths], [melkCYMonths]);
-  const [melkPeriod, setMelkPeriod] = useState('Full period');
-  const melkTonChartData = useMemo(() => {
-    const months = melkPeriod === 'Full period' ? melkCYMonths : [melkPeriod];
-    return months.map(cyM => {
-      const [name, yy] = cyM.split(' ');
-      const pyM = `${name} ${String(parseInt(yy, 10) - 1).padStart(2, '0')}`;
-      let cyTon = 0, pyTon = null, cyRev = null, pyRev = null;
-      if (melkSalesman === 'All') {
-        const melkTotal = totalTonnageByCategory.find(c => c.category === 'Melkpoeder');
-        const cyEntry = melkTotal?.monthly.find(x => x.m === cyM);
-        cyTon = cyEntry?.tonnage ?? 0; cyRev = cyEntry?.revenue ?? null;
-        const pyEntry = melkTotal?.monthly.find(x => x.m === pyM);
-        pyTon = pyEntry?.tonnage ?? null;
-        const pyRevSum = melkpoederTonnage2025.reduce((s, rec) => { const e = rec.monthly.find(x => x.m === pyM); return s + (e?.revenue ?? 0); }, 0);
-        pyRev = pyRevSum > 0 ? pyRevSum : null;
-      } else {
-        const cyRec = tonnagePerSalesman.find(t => t.salesman === melkSalesman && t.category === 'Melkpoeder');
-        const cyEntry = cyRec?.monthly.find(x => x.m === cyM);
-        cyTon = cyEntry?.tonnage ?? 0; cyRev = cyEntry?.revenue ?? null;
-        const pyRec = melkpoederTonnage2025.find(t => t.salesman === melkSalesman);
-        const pyEntry = pyRec?.monthly.find(x => x.m === pyM);
-        pyTon = pyEntry?.tonnage ?? null; pyRev = pyEntry?.revenue ?? null;
-      }
-      return { label: name, cyM, pyM, cy: cyTon, py: pyTon, cyRev, pyRev };
-    });
-  }, [melkSalesman, melkPeriod, melkCYMonths]);
-
-  const fmtTon = v => (v === null || v === undefined || isNaN(v)) ? '—' : v.toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' t';
-  const fmtRev = v => (v === null || v === undefined || isNaN(v)) ? '—' : '€' + v.toLocaleString('de-DE', { maximumFractionDigits: 0 });
-
-  const melkTonOpt = useMemo(() => withDataZoom({
-    tooltip: { ...TOOLTIP_STYLE, trigger:'axis', axisPointer:{ type:'shadow' },
-      formatter: function (params) {
-        const idx = params[0].dataIndex; const d = melkTonChartData[idx];
-        let html = `<strong>${params[0].axisValue}</strong><br/>`;
-        html += `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#73D4F2;margin-right:4px"></span>This Year &nbsp; ${fmtTon(d.cy)} &nbsp;|&nbsp; ${fmtRev(d.cyRev)}<br/>`;
-        html += `<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0891B2;margin-right:4px"></span>Last Year &nbsp; ${d.py != null ? fmtTon(d.py) : '—'} &nbsp;|&nbsp; ${fmtRev(d.pyRev)}<br/>`;
-        return html;
-      }
-    },
-    legend: { bottom:2, textStyle:{ color:'#5F7078', fontSize:10 }, icon:'roundRect', selectedMode:false, padding:[0,8] },
-    grid: { left:'3%', right:'4%', bottom: isMobileViewport() && melkTonChartData.length>3 ? '28%' : '22%', top:'5%', containLabel:true },
-    xAxis: { type:'category', data:melkTonChartData.map(d=>d.label), axisLabel:catAxisLabel(melkTonChartData.length,9) },
-    yAxis: { type:'value', minInterval:0.1, axisLabel:{ color:'#5F7078', fontSize:9, formatter: v => v.toLocaleString('de-DE',{maximumFractionDigits:0})+' t' }, splitLine:{ lineStyle:{ color:'#F0F3F4' } } },
-    series: [
-      { name:'Last Year', type:'bar', data:melkTonChartData.map(d=>d.py), itemStyle:{ color:'#0891B2', borderRadius:[3,3,0,0] }, barGap:'0%', barCategoryGap:'30%' },
-      { name:'This Year', type:'bar', data:melkTonChartData.map(d=>d.cy), itemStyle:{ color:'#73D4F2', borderRadius:[3,3,0,0] }, barGap:'0%', barCategoryGap:'30%' },
-    ]
-  }), [melkTonChartData]);
-
-  const melkTonTable = { headers:['Month','Ton TY','Rev TY','Ton LY','Rev LY'], rows:melkTonChartData.map(d=>[d.cyM,fmtTon(d.cy),fmtRev(d.cyRev),d.py!=null?fmtTon(d.py):'—',fmtRev(d.pyRev)]) };
-  const melkTonControls = (
-    <>
-      <select className="panel-select" value={melkSalesman} onChange={e=>setMelkSalesman(e.target.value)}><option value="All">All salesmen</option>{melkSalesmen.map(n=><option key={n} value={n}>{n}</option>)}</select>
-      <select className="panel-select" value={melkPeriod} onChange={e=>setMelkPeriod(e.target.value)}>{melkPeriods.map(p=><option key={p} value={p}>{p}</option>)}</select>
-    </>
-  );
-  const melkTotCY = melkTonChartData.reduce((s,d)=>s+(d.cy||0),0);
-  const melkTotPY = melkTonChartData.some(d=>d.py!=null) ? melkTonChartData.reduce((s,d)=>s+(d.py||0),0) : null;
-  const melkDeltaPct = melkTotPY ? ((melkTotCY-melkTotPY)/melkTotPY*100) : null;
-  const melkTonInsight = `Melkpoeder${melkSalesman!=='All'?` · ${melkSalesman.split(' ')[0]}`:''}  — ${melkPeriod}: ${fmtTon(melkTotCY)}${melkDeltaPct!=null?` · ${melkDeltaPct>=0?'▲':'▼'} ${Math.abs(melkDeltaPct).toFixed(1)}% vs last year`:''}`;
-
-  const repsLast3Months = useMemo(() => {
-    const g = {};
-    salesrepsRaw.filter(r=>last3Names.includes(r.m)).forEach(r=>{const k=r.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};g[k].rev+=r.rev;g[k].qty+=r.qty;g[k].orders+=r.orders;});
-    return Object.values(g).sort((a,b)=>b.rev-a.rev);
-  }, [last3Names.join(',')]);
-
-  const cmpOpt = withDataZoom({
-    tooltip:{ ...TOOLTIP_STYLE, trigger:'axis', axisPointer:{type:'shadow'}, formatter:function(params){let html=`<strong>${params[0].name}</strong><br/>`;params.forEach(p=>{const val=p.value;html+=`${p.marker} ${p.seriesName}: ${val!=null?fmtFull(val):'—'}<br/>`;});return html;}},
-    legend:{bottom:2,textStyle:{color:'#5F7078',fontSize:10},icon:'roundRect',selectedMode:false,padding:[0,8]},
-    grid:{left:'3%',right:'4%',bottom:'22%',top:'5%',containLabel:true},
-    xAxis:{type:'category',data:last3WithPY.map(d=>d.name),axisLabel:catAxisLabel(last3WithPY.length,9)},
-    yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    series:[
-      {name:'Last Year',type:'bar',data:last3WithPY.map(d=>d.py),itemStyle:{color:'#0891B2',borderRadius:[3,3,0,0]},barGap:'0%',barCategoryGap:'30%'},
-      {name:'This Year',type:'bar',data:last3WithPY.map(d=>d.cy),itemStyle:{color:'#73D4F2',borderRadius:[3,3,0,0]},barGap:'0%',barCategoryGap:'30%'},
-    ]
-  });
-
-  const repOpt = withDataZoom({
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},
-    grid:{left:'2%',right:'6%',bottom:'12%',top:'5%',containLabel:true},
-xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisLabel:{color:'#5F7078',fontSize:isMobileViewport()?8:9,formatter:v=>fmt(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    yAxis:{type:'category',data:repsLast3Months.map(d=>d.n.split(' ')[0]),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
-    legend:{show:false},
-    series:[{type:'bar',data:repsLast3Months.map((d,i)=>({value:d.rev,itemStyle:{color:PALETTE[i%PALETTE.length],borderRadius:[0,3,3,0]}})),barMaxWidth:22}]
-  });
-
-  const cmpTable={headers:['Month','This Year','Last Year'],rows:last3WithPY.map(d=>[d.cyLabel,fmtFull(d.cy),d.py!=null?fmtFull(d.py):'—'])};
-  const repTable={headers:['#','Verkoper','Revenue','Orders'],rows:repsLast3Months.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders)])};
-
-  const momDelta = last3.length>=2 && last3[last3.length-2].rev ? ((last3[last3.length-1].rev-last3[last3.length-2].rev)/last3[last3.length-2].rev)*100 : null;
-  const turnoverInsight = momDelta!=null ? `Revenue ${momDelta>=0?'up':'down'} ${Math.abs(momDelta).toFixed(1)}% vs last month${cats[0]?` · Top category: ${cats[0].n} (${catsTotalRev>0?(cats[0].rev/catsTotalRev*100).toFixed(0):0}% of last 3 months)`:''}` : null;
-  const repTotalRev = repsLast3Months.reduce((s,r)=>s+r.rev,0);
-  const repInsight = repsLast3Months[0] ? `Leading over last 3 months: ${repsLast3Months[0].n} with ${fmtFull(repsLast3Months[0].rev)}${repsLast3Months.length>1?` (${repTotalRev>0?(repsLast3Months[0].rev/repTotalRev*100).toFixed(0):0}% of last 3 months' revenue)`:''}` : null;
-
-  // Category trends chart: weekly (default) or monthly (CY vs PY)
-  const [catGrain, setCatGrain] = useState('weekly');
-
-  const catWeeklyOpt = useMemo(()=>{
-    const allWeeks = [...new Set(weekly.map(w=>w.w))].sort().slice(-12);
-    const series = [];
-    GROUP_NAMES.forEach((grp,gi)=>{
-      const cats = CATEGORY_GROUPS[grp];
-      const thisYear = allWeeks.map(wk=>
-        categoriesWeeklyRaw.filter(r=>r.w===wk&&cats.includes(r.n.trim())).reduce((s,r)=>s+r.rev,0)
-      );
-      series.push({name:`${grp}`,type:'line',data:thisYear,itemStyle:{color:GROUP_PALETTE[gi]},lineStyle:{width:2,type:'solid'},symbol:'circle',symbolSize:4});
-    });
-    return withCrosshair({
-      tooltip:{...TOOLTIP_STYLE,trigger:'axis',confine:false,appendToBody:true,extraCssText:'border-radius:10px;padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,0.3);max-width:none !important;width:auto !important;white-space:nowrap;overflow:visible;',formatter:p=>{const rows=p.filter(s=>s.value!=null&&s.value!==0);const half=Math.ceil(rows.length/2);const col=(arr)=>arr.map(s=>`<div style="display:flex;align-items:center;gap:4px;line-height:1.6;white-space:nowrap">${s.marker}<span style="font-size:10px;white-space:nowrap">${s.seriesName}: ${fmtFull(s.value)}</span></div>`).join('');return`<div style="font-size:11px;font-weight:700;margin-bottom:4px">${p[0].axisValue}</div><div style="display:flex;gap:16px;white-space:nowrap"><div>${col(rows.slice(0,half))}</div><div>${col(rows.slice(half))}</div></div>`;}},
-      legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:8},type:'scroll',itemWidth:10,itemHeight:10},
-      grid:{left:'2%',right:'2%',bottom:'22%',top:'8%',containLabel:true},
-      xAxis:{type:'category',data:allWeeks,axisLabel:{color:'#5F7078',fontSize:8,rotate:30,hideOverlap:true}},
-      yAxis:{type:'value',axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-      series
-    });
-  },[]);
-
-  const catMonthlyOpt = useMemo(()=>{
-    // Find months present in both 2025 and 2026 by month number (1–12)
-    const monthNums25 = new Set(categoriesRaw.filter(r=>r.m&&r.m.endsWith('25')).map(r=>r.m.split(' ')[0]));
-    const monthNums26 = new Set(categoriesRaw.filter(r=>r.m&&r.m.endsWith('26')).map(r=>r.m.split(' ')[0]));
-    const monthOrder = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const commonMonths = monthOrder.filter(mn=>monthNums25.has(mn)&&monthNums26.has(mn));
-    const series = [];
-    GROUP_NAMES.forEach((grp,gi)=>{
-      const cats = CATEGORY_GROUPS[grp];
-      const cy = commonMonths.map(mn=>{
-        const key=`${mn} 26`;
-        return categoriesRaw.filter(r=>r.m===key&&cats.includes(r.n.trim())).reduce((s,r)=>s+r.rev,0);
-      });
-      const py = commonMonths.map(mn=>{
-        const key=`${mn} 25`;
-        return categoriesRaw.filter(r=>r.m===key&&cats.includes(r.n.trim())).reduce((s,r)=>s+r.rev,0);
-      });
-      series.push({name:`${grp} '26`,type:'line',data:cy,itemStyle:{color:GROUP_PALETTE[gi]},lineStyle:{width:2,type:'solid'},symbol:'circle',symbolSize:4,smooth:true});
-      series.push({name:`${grp} '25`,type:'line',data:py,itemStyle:{color:GROUP_PALETTE[gi]},lineStyle:{width:1.5,type:'dashed',opacity:0.6},symbol:'none',smooth:true});
-    });
-    return withCrosshair({
-      tooltip:{...TOOLTIP_STYLE,trigger:'axis',confine:false,appendToBody:true,extraCssText:'border-radius:10px;padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,0.3);max-width:none !important;width:auto !important;white-space:nowrap;overflow:visible;',formatter:p=>{const rows=p.filter(s=>s.value!=null&&s.value!==0);const half=Math.ceil(rows.length/2);const col=(arr)=>arr.map(s=>`<div style="display:flex;align-items:center;gap:4px;line-height:1.6;white-space:nowrap">${s.marker}<span style="font-size:10px;white-space:nowrap">${s.seriesName}: ${fmtFull(s.value)}</span></div>`).join('');return`<div style="font-size:11px;font-weight:700;margin-bottom:4px">${p[0].axisValue}</div><div style="display:flex;gap:16px;white-space:nowrap"><div>${col(rows.slice(0,half))}</div><div>${col(rows.slice(half))}</div></div>`;}},
-      legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:8},type:'scroll',itemWidth:10,itemHeight:10},
-      grid:{left:'2%',right:'2%',bottom:'22%',top:'8%',containLabel:true},
-      xAxis:{type:'category',data:commonMonths,axisLabel:{color:'#5F7078',fontSize:9}},
-      yAxis:{type:'value',axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-      series
-    });
-  },[]);
-
-  const catSubtitle = catGrain==='weekly'
-    ? '4 groups · this year · prior year unavailable — click Monthly for CY vs PY'
-    : '4 groups · solid = 2026, dashed = 2025 · same month comparison';
-
-  return (
-    <div className="page-area" key="overview">
-      <div className="kpi-strip">
-        <div className="kpi-card green"><div className="kpi-lbl">Turnover MTD</div><div className="kpi-val sm">{fmtFull(turnoverMTD)}</div><div className="kpi-chg">Revenue this month, to date</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">Projected MTD</div><div className="kpi-val sm">{fmtFull(projectedMTD)}</div><div className="kpi-chg">Open MTD + Revenue MTD</div></div>
-        <div className="kpi-card blue"><div className="kpi-lbl">Open Orders (Future) – Kalverhuisvesting</div><div className="kpi-val sm">{fmtFull(openOrderValueFuture)}</div><div className="kpi-chg">Due after today</div></div>
-        <div className="kpi-card sky"><div className="kpi-lbl">Open Value MTD</div><div className="kpi-val sm">{fmtFull(openOrderValueMTD)}</div><div className="kpi-chg">Open orders due this month</div></div>
-        <div className="kpi-card teal"><div className="kpi-lbl">Open Value (Full)</div><div className="kpi-val sm">{fmtFull(openOrderValuePresent)}</div><div className="kpi-chg">All open orders due today or earlier</div></div>
-      </div>
-      <div className="charts-row">
-        <div className="charts-col" style={{flex:1.4}}>
-          <Panel title="Turnover — Last 3 Months" subtitle={`This year vs last year · through ${currentMonth||'—'}`} flex={1} tableHeaders={cmpTable.headers} tableRows={cmpTable.rows} insight={turnoverInsight}><EC option={cmpOpt}/></Panel>
-        </div>
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title="Melkpoeder Tonnage" subtitle={melkSalesman==='All'?'Per month · this year vs last year':`${melkSalesman.split(' ')[0]} · this year vs last year`} flex={1} controls={melkTonControls} tableHeaders={melkTonTable.headers} tableRows={melkTonTable.rows} insight={melkTonInsight}><EC option={melkTonOpt}/></Panel>
-        </div>
-      </div>
-      <div className="charts-row" style={{flex:0.8}}>
-        <Panel title="Category Trends" subtitle={catSubtitle} flex={1} controls={
-          <div className="view-tog">
-            <button className={`vt-btn${catGrain==='weekly'?' active':''}`} onClick={()=>setCatGrain('weekly')}>Weekly</button>
-            <button className={`vt-btn${catGrain==='monthly'?' active':''}`} onClick={()=>setCatGrain('monthly')}>Monthly</button>
-          </div>
-        }><EC option={catGrain==='weekly'?catWeeklyOpt:catMonthlyOpt}/></Panel>
-      </div>
-    </div>
-  );
-}
-
-function Revenue({ fm, label, effGrain, filter }) {
-  const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
-  const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
-  const useYearly = effGrain === 'yearly';
-  /* Detect if user has applied a specific filter (vs default all-data view) */
-  const filterApplied = useWeekly || useYearly || (filter.years?.length > 0);
-
-  /* ── LTM: last 12 months trailing from monthly dataset ───────── */
-  const ltmMonths = useMemo(() => monthly.slice(-12), []);
-  const ltmRev = ltmMonths.reduce((s, m) => s + m.rev, 0);
-  const ltmOrders = ltmMonths.reduce((s, m) => s + m.orders, 0);
-  const ltmAvg = ltmMonths.length ? ltmRev / ltmMonths.length : 0;
-
-  /* ── YTD: current calendar year months ───────────────────────── */
-  const allYears = [...new Set(monthly.map(m => m.m.split(' ')[1]))].sort();
-  const latestYear = allYears[allYears.length - 1] || '26';
-  const prevYear = String(parseInt(latestYear, 10) - 1).padStart(2, '0');
-  const ytdMonths = monthly.filter(m => m.m.endsWith(latestYear));
-  const ytdMonthNames = ytdMonths.map(m => m.m.split(' ')[0]);
-  const ytdRev = ytdMonths.reduce((s, m) => s + m.rev, 0);
-  const prevYtdRev = monthly.filter(m => m.m.endsWith(prevYear) && ytdMonthNames.includes(m.m.split(' ')[0])).reduce((s, m) => s + m.rev, 0);
-  const ytdDelta = prevYtdRev > 0 ? ((ytdRev - prevYtdRev) / prevYtdRev) * 100 : null;
-
-  /* ── Periods: LTM default, filter-specific when applied ──────── */
-  const periods = useMemo(() => {
-    if (useWeekly) {
-      const set = new Set(tickedWeeks);
-      return weekly.filter(w => set.has(w.w)).map(w => ({ key: w.w, rev: w.rev, orders: w.orders }));
-    }
-    if (useYearly) {
-      return deriveYearlyFromFilter(filter, fm).map(y => ({ key: y.year, rev: y.rev, orders: y.orders }));
-    }
-    if (!filterApplied) {
-      /* Default: LTM */
-      return ltmMonths.map(m => ({ key: m.m, rev: m.rev, orders: m.orders }));
-    }
-    return fm.map(m => ({ key: m.m, rev: m.rev, orders: m.orders }));
-  }, [useWeekly, useYearly, filterApplied, tickedWeeks, fm, filter, ltmMonths]);
-
-  const periodLabel = useWeekly ? 'Week' : useYearly ? 'Year' : 'Month';
-  const isLTM = !filterApplied && !useWeekly && !useYearly;
-
-  const totalRev = periods.reduce((s, m) => s + m.rev, 0);
-  const totalOrders = periods.reduce((s, m) => s + m.orders, 0);
-  const best = periods.length ? periods.reduce((b, c) => c.rev > b.rev ? c : b, periods[0]) : null;
-
-  const [selectedMonth, setSelectedMonth] = useState(null);
-  const [showPrevOverlay, setShowPrevOverlay] = useState(false);
-  const prevPeriod = useMemo(() => {
-    if (useWeekly || useYearly || isLTM) return [];
-    if (!fm.length) return [];
-    const startIdx = monthly.findIndex(m => m.m === fm[0].m);
-    if (startIdx <= 0) return [];
-    const from = Math.max(0, startIdx - fm.length);
-    return monthly.slice(from, startIdx);
-  }, [fm, useWeekly, useYearly, isLTM]);
-  const canShowPrev = !useWeekly && !useYearly && prevPeriod.length > 0;
-  const prevTotal = prevPeriod.reduce((s, m) => s + m.rev, 0);
-  const periodDelta = (canShowPrev && prevTotal) ? ((totalRev - prevTotal) / prevTotal) * 100 : null;
-
-  const granTag = useWeekly ? 'W' : useYearly ? 'Y' : 'M';
-
-  /* ── Main Revenue Bar chart ──────────────────────────────────── */
-  const barOpt = withDataZoom(withCrosshair({
-    tooltip: { trigger: 'axis', formatter: p => { let html = `<strong>${p[0].name}</strong><br/>`; p.forEach(s => { html += `${s.marker} ${s.seriesName}: ${s.value != null ? fmtFull(s.value) : '—'}<br/>`; }); return html; } },
-    legend: showPrevOverlay && canShowPrev ? { bottom: 0, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false } : undefined,
-    grid: { left: '3%', right: '4%', bottom: isMobileViewport() && periods.length > 3 ? '28%' : (showPrevOverlay && canShowPrev ? '18%' : '12%'), top: '8%', containLabel: true },
-    xAxis: { type: 'category', data: periods.map(d => d.key), axisLabel: catAxisLabel(periods.length, 9) },
-    yAxis: { type: 'value', splitNumber: 5, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v), hideOverlap: true }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
-    series: [
-      { name: isLTM ? 'LTM Revenue' : 'Current period', type: 'bar', data: periods.map(d => ({ value: d.rev, itemStyle: { color: selectedMonth && selectedMonth !== d.key ? 'rgba(8,145,178,0.2)' : 'rgba(8,145,178,0.75)', borderRadius: [3, 3, 0, 0] } })), barMaxWidth: 28 },
-      ...(showPrevOverlay && canShowPrev ? [{ name: 'Previous period', type: 'line', data: periods.map((_, i) => prevPeriod[i] ? prevPeriod[i].rev : null), smooth: true, symbol: 'circle', symbolSize: 5, lineStyle: { color: '#E5A93D', width: 2, type: 'dashed' }, itemStyle: { color: '#E5A93D' } }] : [])
-    ]
-  }));
-
-  /* ── Cumulative YoY chart (center panel) ─────────────────────── */
-  const MONTH_ORDER = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const all25 = monthly.filter(m => m.m.endsWith('25'));
-  const all26 = monthly.filter(m => m.m.endsWith('26'));
-  const yoyMonths = [...new Set([...all25.map(m => m.m.split(' ')[0]), ...all26.map(m => m.m.split(' ')[0])])].sort((a,b)=>MONTH_ORDER.indexOf(a)-MONTH_ORDER.indexOf(b));
-  let cum25 = 0, cum26 = 0;
-  const cumData25 = [], cumData26 = [];
-  yoyMonths.forEach(mo => {
-    const e25 = all25.find(m => m.m.startsWith(mo)); const e26 = all26.find(m => m.m.startsWith(mo));
-    if (e25) cum25 += e25.rev; if (e26) cum26 += e26.rev;
-    cumData25.push(e25 ? cum25 : null);
-    cumData26.push(e26 ? cum26 : null);
-  });
-  const cumYoYOpt = withCrosshair({
-    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s=>s.value!=null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
-    legend: { bottom: 4, data: [{ name: '2025', icon: 'path://M0,3 L10,3 L10,9 L0,9 Z M12,3 L22,3 L22,9 L12,9 Z M24,3 L34,3 L34,9 L24,9 Z' }, { name: '2026', icon: 'path://M0,3 L34,3 L34,9 L0,9 Z' }], textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
-    grid: { left: '3%', right: '4%', bottom: '22%', top: '8%', containLabel: true },
-    xAxis: { type: 'category', data: yoyMonths, axisLabel: catAxisLabel(yoyMonths.length, 9) },
-    yAxis: { type: 'value', axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
-    series: [
-      { name: '2025', type: 'line', data: cumData25, smooth: true, symbol: 'none', lineStyle: { color: '#0891B2', width: 2, type: 'dashed' }, itemStyle: { color: '#0891B2' }, areaStyle: { color: 'rgba(8,145,178,.07)' }, connectNulls: false },
-      { name: '2026', type: 'line', data: cumData26, smooth: true, symbol: 'none', lineStyle: { color: '#40BCF3', width: 2 }, itemStyle: { color: '#40BCF3' }, areaStyle: { color: 'rgba(64,188,243,.08)' }, connectNulls: false },
-    ]
-  });
-
-  /* ── Monthly overlay (left bottom panel) ────────────────────── */
-  const n25 = all25.map(m => m.m.split(' ')[0]), n26 = all26.map(m => m.m.split(' ')[0]);
-  let cMonths = (all25.length && all26.length) ? n25.filter(m => n26.includes(m)) : [...new Set([...n25, ...n26])];
-  cMonths.sort((a, b) => MONTH_ORDER.indexOf(a) - MONTH_ORDER.indexOf(b));
-  const lineSeries = [];
-  if (all25.length) lineSeries.push({ name: '2025', type: 'line', symbol: 'none', data: cMonths.map(m => all25.find(d => d.m.startsWith(m))?.rev || null), lineStyle: { color: '#0891B2', width: 2, type: 'dashed' }, itemStyle: { color: '#0891B2' }, areaStyle: { color: 'rgba(8,145,178,.07)' }, smooth: true });
-  if (all26.length) lineSeries.push({ name: '2026', type: 'line', symbol: 'none', data: cMonths.map(m => all26.find(d => d.m.startsWith(m))?.rev || null), lineStyle: { color: '#73D4F2', width: 2 }, itemStyle: { color: '#73D4F2' }, areaStyle: { color: 'rgba(115,212,242,.07)' }, smooth: true });
-  const cmpOpt = withDataZoom(withCrosshair({
-    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s=>s.value!=null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
-    legend: { bottom: 4, data: [{ name: '2025', icon: 'path://M0,3 L10,3 L10,9 L0,9 Z M12,3 L22,3 L22,9 L12,9 Z M24,3 L34,3 L34,9 L24,9 Z' }, { name: '2026', icon: 'path://M0,3 L34,3 L34,9 L0,9 Z' }], textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false },
-    grid: { left: '3%', right: '4%', bottom: isMobileViewport() && cMonths.length > 3 ? '28%' : '26%', top: '8%', containLabel: true },
-    xAxis: { type: 'category', data: cMonths, axisLabel: catAxisLabel(cMonths.length, 9) },
-    yAxis: { type: 'value', splitNumber: 5, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v), hideOverlap: true }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
-    series: lineSeries
-  }));
-
-  /* ── Order Volume chart ──────────────────────────────────────── */
-  const ordersOpt = withDataZoom(withCrosshair({
-    tooltip: { trigger: 'axis', formatter: p => `<strong>${p[0].name}</strong><br/>Orders: ${fmtN(p[0].value)}` },
-    grid: { left: '3%', right: '4%', bottom: isMobileViewport() && periods.length > 3 ? '28%' : '12%', top: '8%', containLabel: true },
-    xAxis: { type: 'category', data: periods.map(d => d.key), axisLabel: catAxisLabel(periods.length, 9), axisLine: { lineStyle: { color: '#DDE6E9' } } },
-    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmtN(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
-    series: [{ type: 'line', data: periods.map(d => d.orders), step: 'middle', symbol: 'circle', symbolSize: (val, params) => { const m = periods[params.dataIndex]?.key; return selectedMonth && selectedMonth === m ? 8 : 5; }, lineStyle: { color: '#0369A1', width: 2 }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(3,105,161,.18)' }, { offset: 1, color: 'rgba(3,105,161,.01)' }] } }, itemStyle: { color: '#0369A1', borderColor: '#fff', borderWidth: 1.5 }, emphasis: { itemStyle: { color: '#0369A1' } } }]
-  }, fmtN));
-
-  const prevToggleControl = (
-    <button className={`cmp-toggle${showPrevOverlay ? ' active' : ''}`} onClick={() => setShowPrevOverlay(v => !v)} disabled={!canShowPrev}>
-      ↔ {showPrevOverlay ? 'Hide' : 'vs'} Previous period
-    </button>
-  );
-  const revenueInsight = (() => { const parts = []; if (periodDelta != null) parts.push(`Revenue ${periodDelta >= 0 ? 'up' : 'down'} ${Math.abs(periodDelta).toFixed(1)}% vs the previous period`); if (best) parts.push(`Best ${periodLabel.toLowerCase()}: ${best.key} (${fmtFull(best.rev)})`); return parts.length ? parts.join(' · ') : null; })();
-
-  const barTbl = { headers: [periodLabel, 'Revenue', 'Orders', 'Avg Order Value'], rows: periods.map(m => [m.key, fmtFull(m.rev), fmtN(m.orders), fmtFull(Math.round(m.rev / (m.orders || 1)))]) };
-  const ordTbl = { headers: [periodLabel, 'Orders'], rows: periods.map(m => [m.key, fmtN(m.orders)]) };
-  const handleMonthClick = (p) => { const month = periods[p.dataIndex]?.key; setSelectedMonth(selectedMonth === month ? null : month); };
-
-  return (
-    <div className="page-area" key="revenue">
-      <KpiNote/>
-      <div className="kpi-strip">
-        <div className="kpi-card blue">
-          <div className="kpi-lbl">Turnover YTD ({latestYear.startsWith('2') ? latestYear : '20'+latestYear})</div>
-          <div className="kpi-val sm">{fmtFull(ytdRev)}</div>
-          <div className="kpi-chg">
-            {ytdDelta != null ? (
-              <span className={`kpi-trend ${ytdDelta >= 0 ? 'up' : 'down'}`}>{ytdDelta >= 0 ? '▲' : '▼'} {Math.abs(ytdDelta).toFixed(1)}% vs {prevYear.startsWith('2') ? prevYear : '20'+prevYear}</span>
-            ) : null}
-            <span>{ytdMonths.length}m · vs same period prior year</span>
-          </div>
-        </div>
-        <div className="kpi-card teal">
-          <div className="kpi-lbl">Last 12 Months (LTM)</div>
-          <div className="kpi-val sm">{fmtFull(ltmRev)}</div>
-          <div className="kpi-chg">{fmtN(ltmOrders)} transactions · trailing 12m</div>
-        </div>
-        <div className="kpi-card green">
-          <div className="kpi-lbl">Best {periodLabel} {isLTM ? '(LTM)' : `(${label})`}</div>
-          <div className="kpi-val sm">{best ? best.key : '—'}</div>
-          <div className="kpi-chg">{best ? fmtFull(best.rev) : ''}</div>
-        </div>
-        <div className="kpi-card amber">
-          <div className="kpi-lbl">Avg / Month (LTM)</div>
-          <div className="kpi-val sm">{fmtFull(ltmAvg)}</div>
-          <div className="kpi-chg">12-month trailing average</div>
-        </div>
-      </div>
-      {/* Layout: 4-col grid matching KPI strip — 50% | 25% | 25% */}
-      <div className="charts-row" style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gridTemplateRows:'1fr 1fr',alignItems:'stretch'}}>
-        <Panel title={isLTM ? 'Revenue — Last 12 Months' : 'Revenue Over Time'} subtitle={isLTM ? `LTM · ${periods.length} months · ${ltmMonths[0]?.m} → ${ltmMonths[ltmMonths.length-1]?.m}` : `${label} · ${periods.length} ${periodLabel.toLowerCase()}${periods.length===1?'':'s'}`} tag={isLTM ? 'LTM' : `${periods.length}${granTag}`} flex={1} controls={!isLTM?prevToggleControl:undefined} tableHeaders={barTbl.headers} tableRows={barTbl.rows} insight={revenueInsight} style={{gridColumn:'1/span 2',gridRow:'1',minWidth:0}}><EC option={barOpt} onEvents={{ 'click': handleMonthClick }}/></Panel>
-        <Panel title="2025 vs 2026 Monthly" subtitle="Same-month comparison" flex={1} style={{gridColumn:'1/span 2',gridRow:'2',minWidth:0}}><EC option={cmpOpt}/></Panel>
-        <Panel title="Cumulative Revenue YoY" subtitle="Running total by calendar month" flex={1} style={{gridColumn:'3',gridRow:'1/span 2',minWidth:0}}><EC option={cumYoYOpt}/></Panel>
-        <Panel title="Order Volume" subtitle={`Per ${periodLabel.toLowerCase()}${isLTM?' · LTM':''}`} flex={1} style={{gridColumn:'4',gridRow:'1/span 2',minWidth:0}} tableHeaders={ordTbl.headers} tableRows={ordTbl.rows}><EC option={ordersOpt} onEvents={{ 'click': handleMonthClick }}/></Panel>
-      </div>
-    </div>
-  );
-}
-
-function SalesReps({ fm, label, highlightQuery, effGrain, filter }) {
-  const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
-  const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
-  const useYearly = effGrain === 'yearly';
-  const months = fm.map(m => m.m);
-  const periodLabel = useWeekly ? 'Week' : useYearly ? 'Year' : 'Month';
-
-  const [excludeJohan, setExcludeJohan] = useState(false);
-  const [selRep,setSelRep]=useState(null);
-
-  const reps=useMemo(()=>{
-    let rows;
-    if (useWeekly) {
-      const set = new Set(tickedWeeks);
-      rows = salesrepsWeeklyRaw.filter(r => set.has(r.w));
-    } else {
-      rows = salesrepsRaw.filter(r=>months.includes(r.m));
-    }
-    const g={};
-    const filtered = excludeJohan ? rows.filter(r => { const n=r.n.trim().toLowerCase(); return !n.startsWith('johan') && !n.startsWith('joahan'); }) : rows;
-    filtered.forEach(r=>{const k=r.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};g[k].rev+=r.rev;g[k].qty+=r.qty;g[k].orders+=r.orders;});
-    return Object.values(g).sort((a,b)=>b.rev-a.rev);
-  },[months, useWeekly, tickedWeeks, excludeJohan]);
-
-  const totalRev=reps.reduce((s,r)=>s+r.rev,0);
-  const top3=reps.slice(0,3);
-
-  const barOpt=withDataZoom({
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{const pct=totalRev>0?(p[0].value/totalRev*100).toFixed(2).replace('.',',' ):'0';return `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)} (${pct}%)`;}},
-    grid:{left:'2%',right:'6%',bottom:'12%',top:'5%',containLabel:true},
-xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisLabel:{color:'#5F7078',fontSize:isMobileViewport()?8:9,formatter:v=>fmt(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    yAxis:{type:'category',data:reps.map(d=>d.n.split(' ')[0]),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
-    legend:{show:false},
-    series:[{type:'bar',data:reps.map((d,i)=>({value:d.rev,itemStyle:{color:selRep&&selRep!==d.n?PALETTE[i%PALETTE.length]+'44':PALETTE[i%PALETTE.length],borderRadius:[0,3,3,0]}})),barMaxWidth:18}]
-  });
-  const tbl={headers:['#','Verkoper','Revenue','Orders','Avg Order Value'],rows:reps.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),fmtFull(Math.round(d.rev/(d.orders||1)))])};
-  const handleRepClick=(p)=>{const repName=reps[p.dataIndex]?.n;setSelRep(selRep===repName?null:repName);};
-  const leaderboardRows=selRep?tbl.rows.filter(r=>r[1]===selRep):tbl.rows;
-  const repsInsight=reps[0]?`${reps[0].n} leads with ${fmtFull(reps[0].rev)}${totalRev>0?` (${(reps[0].rev/totalRev*100).toFixed(0)}% of shown revenue)`:''}`  :null;
-
-  // Sales-per-rep-by-category stays monthly only (no weekly source)
-  const smPeriods=useMemo(()=>{const seen=new Set();salesmanCategorySales.forEach(s=>(s.monthly||[]).forEach(mo=>seen.add(mo.m)));return[...seen];},[]);
-  const [smPeriod,setSmPeriod]=useState('All');
-  const smRevFor=(rec,period)=>{if(!rec)return 0;if(period==='All')return rec.rev;const mo=(rec.monthly||[]).find(m=>m.m===period);return mo?mo.rev:0;};
-  const smOrdersFor=(rec,period)=>{if(!rec)return 0;if(period==='All')return rec.orders;const mo=(rec.monthly||[]).find(m=>m.m===period);return mo?mo.orders:0;};
-  const smOrder=useMemo(()=>{const totals={};salesmanCategorySales.forEach(s=>{if(s.salesman==='Unknown')return;const nl=s.salesman.trim().toLowerCase();if(excludeJohan&&(nl.startsWith('johan')||nl.startsWith('joahan')))return;totals[s.salesman]=(totals[s.salesman]||0)+smRevFor(s,smPeriod);});return Object.entries(totals).sort((a,b)=>b[1]-a[1]).map(([n])=>n);},[smPeriod,excludeJohan]);
-  const smSeries=GROUP_NAMES.map((grp,gi)=>({
-    name: grp, type:'bar', stack:'total',
-    data: smOrder.map(n => {
-      const cats = CATEGORY_GROUPS[grp];
-      return salesmanCategorySales
-        .filter(s => s.salesman===n && cats.includes(s.category))
-        .reduce((sum, s) => sum + smRevFor(s, smPeriod), 0);
-    }),
-    itemStyle:{color:GROUP_PALETTE[gi]}
-  }));
-  const smOpt=withDataZoom({
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;let sum=0;p.forEach(s=>{if(s.value){html+=`${s.marker} ${s.seriesName}: ${fmtFull(s.value)}<br/>`;sum+=s.value;}});html+=`<strong>Total: ${fmtFull(sum)}</strong>`;return html;}},
-    legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:8},type:'scroll',itemWidth:10,itemHeight:10},
-    grid:{left:'2%',right:'6%',bottom:'20%',top:'5%',containLabel:true},
-xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisLabel:{color:'#5F7078',fontSize:isMobileViewport()?8:9,formatter:v=>fmt(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    yAxis:{type:'category',data:smOrder.map(n=>n.split(' ')[0]),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
-    series:smSeries
-  });
-  const smTbl={headers:['Verkoper','Category','Revenue','Orders'],rows:[...salesmanCategorySales].filter(s=>{if(s.salesman==='Unknown')return false;const nl=s.salesman.trim().toLowerCase();if(excludeJohan&&(nl.startsWith('johan')||nl.startsWith('joahan')))return false;return true;}).map(s=>({...s,_rev:smRevFor(s,smPeriod),_orders:smOrdersFor(s,smPeriod)})).filter(s=>smPeriod==='All'||s._rev!==0||s._orders!==0).sort((a,b)=>b._rev-a._rev).map(s=>[s.salesman,s.category,fmtFull(s._rev),fmtN(s._orders)])};
-  const smPeriodControl=(<select className="panel-select" value={smPeriod} onChange={e=>setSmPeriod(e.target.value)}><option value="All">Full period</option>{smPeriods.map(p=><option key={p} value={p}>{p}</option>)}</select>);
-
-  const vmSalesmen=useMemo(()=>[...new Set(tonnagePerSalesman.map(t=>t.salesman))].filter(n=>n!=='Unknown').sort(),[]);
-  const [vmSalesman,setVmSalesman]=useState('All');
-  const VM_CATS=['Melkpoeder','Veevoeders'];
-  const vmMonths=useMemo(()=>{const seen=new Set();totalTonnageByCategory.forEach(c=>(c.monthly||[]).forEach(mo=>seen.add(mo.m)));return[...seen].sort();},[]);
-  const vmMonthlyData=useMemo(()=>{
-    const source=vmSalesman==='All'?totalTonnageByCategory:tonnagePerSalesman.filter(t=>t.salesman===vmSalesman);
-    return vmMonths.map(mo=>{
-      const row={month:mo};
-      VM_CATS.forEach(cat=>{
-        const rec=source.find(c=>c.category===cat);
-        const m=rec?(rec.monthly||[]).find(x=>x.m===mo):null;
-        row[cat+'_rev']=m?m.revenue:0;
-        row[cat+'_ton']=m?m.tonnage:0;
-      });
-      return row;
-    });
-  },[vmSalesman]);
-  const vmOpt=withDataZoom({
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>{let html=`<strong>${p[0].name}</strong><br/>`;p.forEach(s=>{html+=`${s.marker} ${s.seriesName}: ${s.seriesName.includes('Tonnage')?fmtNum(s.value)+' t':fmtFull(s.value)}<br/>`;});return html;}},
-    legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:9},type:'scroll',itemWidth:10,itemHeight:10},
-    grid:{left:'2%',right:'6%',bottom:'22%',top:'8%',containLabel:true},
-    xAxis:{type:'category',data:vmMonths,axisLabel:{color:'#5F7078',fontSize:8,rotate:30,hideOverlap:true}},
-    yAxis:[
-      {type:'value',name:'Revenue',nameTextStyle:{color:'#5F7078',fontSize:9},axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-      {type:'value',name:'Tonnage (t)',nameTextStyle:{color:'#5F7078',fontSize:9},axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtNum(v)},splitLine:{show:false}}
-    ],
-    series:[
-      {name:'Melkpoeder Revenue',type:'bar',barGap:'10%',data:vmMonthlyData.map(r=>r['Melkpoeder_rev']),itemStyle:{color:'#40BCF3',borderRadius:[2,2,0,0]},barMaxWidth:18},
-      {name:'Veevoeders Revenue',type:'bar',data:vmMonthlyData.map(r=>r['Veevoeders_rev']),itemStyle:{color:'#2E9B62',borderRadius:[2,2,0,0]},barMaxWidth:18},
-      {name:'Melkpoeder Tonnage',type:'line',yAxisIndex:1,data:vmMonthlyData.map(r=>r['Melkpoeder_ton']),itemStyle:{color:'#1F3741'},lineStyle:{width:2,type:'solid'},symbol:'circle',symbolSize:5},
-      {name:'Veevoeders Tonnage',type:'line',yAxisIndex:1,data:vmMonthlyData.map(r=>r['Veevoeders_ton']),itemStyle:{color:'#666'},lineStyle:{width:2,type:'dashed'},symbol:'diamond',symbolSize:5}
-    ]
-  });
-  const vmTbl={headers:['Month','Melkpoeder Rev','Melkpoeder Ton','Veevoeders Rev','Veevoeders Ton'],rows:vmMonthlyData.map(r=>[r.month,fmtFull(r['Melkpoeder_rev']),fmtNum(r['Melkpoeder_ton'])+' t',fmtFull(r['Veevoeders_rev']),fmtNum(r['Veevoeders_ton'])+' t'])};
-  const vmControls=(<select className="panel-select" value={vmSalesman} onChange={e=>setVmSalesman(e.target.value)}><option value="All">All salesmen</option>{vmSalesmen.map(n=><option key={n} value={n}>{n}</option>)}</select>);
-
-  return (
-    <div className="page-area" key="reps">
-      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:0}}>
-        <KpiNote/>
-        <button className={`cmp-toggle${excludeJohan?' active':''}`} onClick={()=>setExcludeJohan(v=>!v)}>
-          {excludeJohan ? '✓ Johan excluded' : 'Exclude Johan'}
-        </button>
-        {excludeJohan && <span style={{fontSize:10,color:'var(--muted)'}}>Johan's rows hidden from all charts and table</span>}
-      </div>
-      <div className="kpi-strip">
-        <div className="kpi-card blue"><div className="kpi-lbl">#1 — {top3[0]?.n?.split(' ')[0]||'—'}</div><div className="kpi-val sm">{fmtFull(top3[0]?.rev||0)}</div><div className="kpi-chg">{fmtN(top3[0]?.orders||0)} orders</div></div>
-        <div className="kpi-card teal"><div className="kpi-lbl">#2 — {top3[1]?.n?.split(' ')[0]||'—'}</div><div className="kpi-val sm">{fmtFull(top3[1]?.rev||0)}</div><div className="kpi-chg">{fmtN(top3[1]?.orders||0)} orders</div></div>
-        <div className="kpi-card navy"><div className="kpi-lbl">#3 — {top3[2]?.n?.split(' ')[0]||'—'}</div><div className="kpi-val sm">{fmtFull(top3[2]?.rev||0)}</div><div className="kpi-chg">{fmtN(top3[2]?.orders||0)} orders</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">Top 3 Share</div><div className="kpi-val sm">{totalRev>0?((top3.reduce((s,r)=>s+r.rev,0)/totalRev)*100).toFixed(0):0}%</div><div className="kpi-chg">of total revenue</div></div>
-      </div>
-      <div className="charts-row">
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title="Omzet per Verkoper" subtitle={`${label} · ${periodLabel.toLowerCase()}-based`} flex={1} controls={<ExportExcelButton grain={effGrain} filename="omzet_per_verkoper.xlsx" headers={tbl.headers} rows={tbl.rows}/>} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={repsInsight}><EC option={barOpt} onEvents={{'click':handleRepClick}}/></Panel>
-          <Panel title="Verkoper Leaderboard" subtitle={selRep?'Filtered · click the chart to change':'Ranked by revenue · click a bar above to drill in'} flex={1}>
-            <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
-              {selRep&&(<div className="drill-chip">Showing: {selRep}<button onClick={()=>setSelRep(null)} title="Clear selection">✕</button></div>)}
-              <div style={{flex:1,minHeight:0}}><InlineTable headers={tbl.headers} rows={leaderboardRows} height="100%" searchable initialQuery={highlightQuery}/></div>
-            </div>
-          </Panel>
-        </div>
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title="Sales per Verkoper by Category" subtitle="Stacked by category · monthly periods" flex={1} controls={<>{smPeriodControl}<ExportExcelButton filename="sales_per_verkoper_by_category.xlsx" headers={smTbl.headers} rows={smTbl.rows}/></>} tableHeaders={smTbl.headers} tableRows={smTbl.rows}><EC option={smOpt}/></Panel>
-          <Panel title="Veevoeder & Melkpoeder" subtitle={vmSalesman==='All'?'Revenue vs tonnage':`Revenue vs tonnage — ${vmSalesman}`} flex={1} controls={vmControls} tableHeaders={vmTbl.headers} tableRows={vmTbl.rows}><EC option={vmOpt}/></Panel>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Customers({ fm, label, highlightQuery, effGrain, filter }) {
-  const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
-  const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
-  const months=fm.map(m=>m.m);
-  const periodLabel = useWeekly ? 'Week' : effGrain === 'yearly' ? 'Year' : 'Month';
-
-  const totalRevenue = useWeekly
-    ? (() => { const set = new Set(tickedWeeks); return customersWeeklyRaw.filter(c => set.has(c.w)).reduce((s,c)=>s+c.rev,0); })()
-    : fm.reduce((s,m)=>s+m.rev,0);
-
-  const custs=useMemo(()=>{
-    let rows;
-    if (useWeekly) {
-      const set = new Set(tickedWeeks);
-      rows = customersWeeklyRaw.filter(c => set.has(c.w));
-    } else {
-      rows = customersRaw.filter(c=>months.includes(c.m));
-    }
-    const g={};
-    rows.forEach(c=>{if(!g[c.n])g[c.n]={n:c.n,rev:0,orders:0};g[c.n].rev+=c.rev;g[c.n].orders+=c.orders;});
-    return Object.values(g).sort((a,b)=>b.rev-a.rev);
-  },[months, useWeekly, tickedWeeks]);
-
-  const top15=custs.slice(0,15);
-  const top15Rev=top15.reduce((s,c)=>s+c.rev,0);
-  const itemsPerPage=15;
-  const [currentCount,setCurrentCount]=useState(15);
-  const currentItems=custs.slice(0,currentCount);
-  const showMore=()=>setCurrentCount(c=>Math.min(c+itemsPerPage,custs.length));
-  const showLess=()=>setCurrentCount(c=>Math.max(c-itemsPerPage,itemsPerPage));
-  const showAll=()=>setCurrentCount(custs.length);
-  const resetToDefault=()=>setCurrentCount(itemsPerPage);
-
-  const barOpt=withDataZoom({
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},
-    grid:{left:'2%',right:'6%',bottom:'12%',top:'5%',containLabel:true},
-xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisLabel:{color:'#5F7078',fontSize:isMobileViewport()?8:9,formatter:v=>fmt(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    yAxis:{type:'category',data:currentItems.map(d=>d.n.length>20?d.n.slice(0,20)+'…':d.n),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
-    legend:{show:false},
-    series:[{type:'bar',data:currentItems.map((d,i)=>({value:d.rev,itemStyle:{color:PALETTE[i%PALETTE.length]+'cc',borderRadius:[0,3,3,0]}})),barMaxWidth:16}]
-  });
-
-  const tbl={headers:['#','Customer','Revenue','Orders','Avg Order Value'],rows:currentItems.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),fmtFull(Math.round(d.rev/(d.orders||1)))])};
-  const fullTbl={headers:['#','Customer','Revenue','Orders','Avg Order Value'],rows:custs.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),fmtFull(Math.round(d.rev/(d.orders||1)))])};
-  const customersInsight=custs[0]?`Top customer: ${custs[0].n} — ${fmtFull(custs[0].rev)}${totalRevenue>0?` (${(custs[0].rev/totalRevenue*100).toFixed(1)}% of total revenue)`:''}`  :null;
-
-  const PaginationControls=()=>(
-    <div style={{display:'flex',alignItems:'center',gap:'8px',flexShrink:0,marginTop:'4px',padding:'4px 0',flexWrap:'wrap'}}>
-      <button onClick={showLess} disabled={currentCount<=itemsPerPage} style={{padding:'3px 10px',border:'1px solid var(--border)',borderRadius:'4px',background:'var(--surface3)',color:'var(--muted)',cursor:currentCount<=itemsPerPage?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',opacity:currentCount<=itemsPerPage?0.4:1,transition:'all .14s'}}>◀ Show Less</button>
-      <span style={{fontSize:'10px',color:'var(--muted)',fontFamily:'JetBrains Mono, monospace',minWidth:'80px',textAlign:'center'}}>{currentCount>=custs.length?`All ${custs.length}`:`1-${currentCount} / ${custs.length}`}</span>
-      <button onClick={showMore} disabled={currentCount>=custs.length} style={{padding:'3px 10px',border:'1px solid var(--border)',borderRadius:'4px',background:'var(--surface3)',color:'var(--muted)',cursor:currentCount>=custs.length?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',opacity:currentCount>=custs.length?0.4:1,transition:'all .14s'}}>Show More ▶</button>
-      <button onClick={currentCount>=custs.length?resetToDefault:showAll} style={{padding:'2px 8px',border:`1px solid ${currentCount>=custs.length?'var(--accent)':'var(--border)'}`,borderRadius:'4px',background:currentCount>=custs.length?'rgba(64,188,243,0.1)':'var(--surface3)',color:currentCount>=custs.length?'var(--accent2)':'var(--muted)',cursor:'pointer',fontSize:'9px',fontFamily:'inherit',marginLeft:'4px',transition:'all .14s'}}>{currentCount>=custs.length?`📋 ${itemsPerPage}`:'📋 Full'}</button>
-    </div>
-  );
-
-  return (
-    <div className="page-area" key="customers">
-      <KpiNote/>
-      <div className="kpi-strip">
-        <div className="kpi-card blue"><div className="kpi-lbl">Total Customers</div><div className="kpi-val sm">{totalClients.toLocaleString('de-DE')}</div><div className="kpi-chg">Billing accounts</div></div>
-        <div className="kpi-card sky"><div className="kpi-lbl">Top Customer</div><div className="kpi-val sm">{custs[0]?.n?.slice(0,16)||'—'}</div><div className="kpi-chg">{fmtFull(custs[0]?.rev||0)}</div></div>
-        <div className="kpi-card green"><div className="kpi-lbl">Top 15 Revenue</div><div className="kpi-val sm">{fmtFull(top15Rev)}</div><div className="kpi-chg">{totalRevenue>0?((top15Rev/totalRevenue)*100).toFixed(0):0}% of total</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">Avg Rev / Client</div><div className="kpi-val sm">{fmtFull(Math.round(totalRevenue/totalClients))}</div><div className="kpi-chg">Across all accounts</div></div>
-      </div>
-      <div className="charts-row">
-        <div className="charts-col" style={{flex:2}}>
-          <Panel title="Customers by Revenue" subtitle={`${label} · ${periodLabel.toLowerCase()}-based`} flex={1} controls={<ExportExcelButton grain={effGrain} filename="customers_by_revenue.xlsx" headers={fullTbl.headers} rows={fullTbl.rows}/>} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={customersInsight}>
-            <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
-              <div style={{flex:1,minHeight:0}}><EC option={barOpt}/></div>
-              <PaginationControls/>
-            </div>
-          </Panel>
-        </div>
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title="Leaderboard" subtitle="All clients · searchable" flex={1}><InlineTable headers={fullTbl.headers} rows={fullTbl.rows} height="100%" searchable initialQuery={highlightQuery}/></Panel>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Products({ fm, label, highlightQuery, effGrain, filter }) {
-  const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
-  const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
-  const months=fm.map(m=>m.m);
-  const periodLabel = useWeekly ? 'Week' : effGrain === 'yearly' ? 'Year' : 'Month';
-
-  const prods=useMemo(()=>{
-    let rows;
-    if (useWeekly) {
-      const set = new Set(tickedWeeks);
-      rows = productsWeeklyRaw.filter(p => set.has(p.w));
-    } else {
-      rows = productsRaw.filter(p=>months.includes(p.m));
-    }
-    const g={};
-    rows.forEach(p=>{const k=p.n.trim();if(!g[k])g[k]={n:k,rev:0,qty:0,orders:0};g[k].rev+=p.rev;g[k].qty+=p.qty;g[k].orders+=p.orders;});
-    return Object.values(g).sort((a,b)=>b.rev-a.rev);
-  },[months, useWeekly, tickedWeeks]);
-
-  const totalRev=prods.reduce((s,p)=>s+p.rev,0);
-  const top5Rev=prods.slice(0,5).reduce((s,p)=>s+p.rev,0);
-  const productsInsight=prods.length?`Top product: ${prods[0].n}${totalRev>0?` (${(prods[0].rev/totalRev*100).toFixed(0)}% of revenue)`:''} · Top 5 lines make up ${totalRev>0?(top5Rev/totalRev*100).toFixed(0):0}% of total`:null;
-  const [selProd,setSelProd]=useState(null);
-  const [itemsPerPage]=useState(15);
-  const [currentCount,setCurrentCount]=useState(15);
-  useEffect(()=>{if(highlightQuery)setCurrentCount(prods.length);},[highlightQuery,prods.length]);
-  const [donutItemsPerPage]=useState(10);
-  const [donutCurrentCount,setDonutCurrentCount]=useState(10);
-  const currentItems=prods.slice(0,currentCount);
-  const donutCurrentItems=prods.slice(0,donutCurrentCount);
-  const [autoZoom,setAutoZoom]=useState(true);
-
-  const showMore=()=>setCurrentCount(c=>Math.min(c+itemsPerPage,prods.length));
-  const showLess=()=>setCurrentCount(c=>Math.max(c-itemsPerPage,itemsPerPage));
-  const showAll=()=>setCurrentCount(prods.length);
-  const resetToDefault=()=>setCurrentCount(itemsPerPage);
-  const showMoreDonut=()=>setDonutCurrentCount(c=>Math.min(c+donutItemsPerPage,prods.length));
-  const showLessDonut=()=>setDonutCurrentCount(c=>Math.max(c-donutItemsPerPage,donutItemsPerPage));
-  const showAllDonut=()=>setDonutCurrentCount(prods.length);
-  const resetToDefaultDonut=()=>setDonutCurrentCount(donutItemsPerPage);
-
-  const barOpt=withDataZoom({
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},
-    grid:{left:'2%',right:'6%',bottom:'12%',top:'5%',containLabel:true},
-    xAxis:{type:'value',min:0,minInterval:1,splitNumber:isMobileViewport()?4:5,axisLabel:{color:'#5F7078',fontSize:isMobileViewport()?8:9,formatter:v=>fmt(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}},max:(value)=>{if(autoZoom&&currentItems.length>0){const maxVal=Math.max(...currentItems.map(p=>p.rev));const minVal=Math.min(...currentItems.map(p=>p.rev));if(maxVal<60000&&maxVal>0)return maxVal*1.3;if(maxVal<200000&&maxVal>0)return maxVal*1.2;return null;}return null;}},
-    yAxis:{type:'category',data:currentItems.map(d=>d.n.length>22?d.n.slice(0,22)+'…':d.n),axisLabel:{color:'#5F7078',fontSize:9},inverse:true},
-    legend:{show:false},
-    series:[{type:'bar',data:currentItems.map((d,i)=>({value:d.rev,itemStyle:{color:selProd&&selProd!==d.n?PALETTE[i%PALETTE.length]+'44':PALETTE[i%PALETTE.length],borderRadius:[0,3,3,0]}})),barMaxWidth:18}]
-  });
-
-  const donutData=donutCurrentItems.map((d,i)=>({name:d.n.length>16?d.n.slice(0,16)+'…':d.n,fullName:d.n,value:d.rev,itemStyle:{color:selProd&&selProd!==d.n?PALETTE[i%PALETTE.length]+'44':PALETTE[i%PALETTE.length]}}));
-  const donutOpt={tooltip:{...TOOLTIP_STYLE,trigger:'item',formatter:p=>`${p.name}: ${fmtFull(p.value)} (${p.percent}%)`},legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:9},type:'scroll',selectedMode:'multiple'},series:[{type:'pie',radius:['48%','70%'],center:['50%','44%'],data:donutData,itemStyle:{borderRadius:3,borderColor:'#fff',borderWidth:2},label:{show:false},emphasis:{scaleSize:6}}]};
-
-  const tbl={headers:['#','Product','Revenue','Orders','Share'],rows:currentItems.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),((d.rev/totalRev)*100).toFixed(1).replace('.',','  )+'%'])};
-
-  const PaginationControls=()=>(
-    <div style={{display:'flex',alignItems:'center',gap:'8px',flexShrink:0,marginTop:'4px',padding:'4px 0',flexWrap:'wrap'}}>
-      <button onClick={showLess} disabled={currentCount<=itemsPerPage} style={{padding:'3px 10px',border:'1px solid var(--border)',borderRadius:'4px',background:'var(--surface3)',color:'var(--muted)',cursor:currentCount<=itemsPerPage?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',opacity:currentCount<=itemsPerPage?0.4:1,transition:'all .14s'}}>◀ Show Less</button>
-      <span style={{fontSize:'10px',color:'var(--muted)',fontFamily:'JetBrains Mono, monospace',minWidth:'80px',textAlign:'center'}}>{currentCount>=prods.length?`All ${prods.length}`:`1-${currentCount} / ${prods.length}`}</span>
-      <button onClick={showMore} disabled={currentCount>=prods.length} style={{padding:'3px 10px',border:'1px solid var(--border)',borderRadius:'4px',background:'var(--surface3)',color:'var(--muted)',cursor:currentCount>=prods.length?'not-allowed':'pointer',fontSize:'11px',fontFamily:'inherit',opacity:currentCount>=prods.length?0.4:1,transition:'all .14s'}}>Show More ▶</button>
-      <button onClick={currentCount>=prods.length?resetToDefault:showAll} style={{padding:'2px 8px',border:`1px solid ${currentCount>=prods.length?'var(--accent)':'var(--border)'}`,borderRadius:'4px',background:currentCount>=prods.length?'rgba(64,188,243,0.1)':'var(--surface3)',color:currentCount>=prods.length?'var(--accent2)':'var(--muted)',cursor:'pointer',fontSize:'9px',fontFamily:'inherit',marginLeft:'4px',transition:'all .14s'}}>{currentCount>=prods.length?`📋 ${itemsPerPage}`:'📋 Full'}</button>
-      <button onClick={()=>setAutoZoom(!autoZoom)} style={{padding:'2px 8px',border:`1px solid ${autoZoom?'var(--accent)':'var(--border)'}`,borderRadius:'4px',background:autoZoom?'rgba(64,188,243,0.1)':'var(--surface3)',color:autoZoom?'var(--accent2)':'var(--muted)',cursor:'pointer',fontSize:'9px',fontFamily:'inherit',marginLeft:'4px',transition:'all .14s'}}>🔍 {autoZoom?'Auto':'Fixed'}</button>
-    </div>
-  );
-  const DonutPaginationControls=()=>(
-    <div style={{display:'flex',alignItems:'center',gap:'6px',justifyContent:'center',marginTop:'4px',padding:'2px 0',flexWrap:'wrap'}}>
-      <button onClick={showLessDonut} disabled={donutCurrentCount<=donutItemsPerPage} style={{padding:'2px 8px',border:'1px solid var(--border)',borderRadius:'4px',background:'var(--surface3)',color:'var(--muted)',cursor:donutCurrentCount<=donutItemsPerPage?'not-allowed':'pointer',fontSize:'10px',fontFamily:'inherit',opacity:donutCurrentCount<=donutItemsPerPage?0.4:1,transition:'all .14s'}}>◀</button>
-      <span style={{fontSize:'9px',color:'var(--muted)',fontFamily:'JetBrains Mono, monospace',minWidth:'60px',textAlign:'center'}}>{donutCurrentCount>=prods.length?`All ${prods.length}`:`1-${donutCurrentCount} / ${prods.length}`}</span>
-      <button onClick={showMoreDonut} disabled={donutCurrentCount>=prods.length} style={{padding:'2px 8px',border:'1px solid var(--border)',borderRadius:'4px',background:'var(--surface3)',color:'var(--muted)',cursor:donutCurrentCount>=prods.length?'not-allowed':'pointer',fontSize:'10px',fontFamily:'inherit',opacity:donutCurrentCount>=prods.length?0.4:1,transition:'all .14s'}}>▶</button>
-      <button onClick={donutCurrentCount>=prods.length?resetToDefaultDonut:showAllDonut} style={{padding:'2px 6px',border:`1px solid ${donutCurrentCount>=prods.length?'var(--accent)':'var(--border)'}`,borderRadius:'4px',background:donutCurrentCount>=prods.length?'rgba(64,188,243,0.1)':'var(--surface3)',color:donutCurrentCount>=prods.length?'var(--accent2)':'var(--muted)',cursor:'pointer',fontSize:'8px',fontFamily:'inherit',marginLeft:'4px',transition:'all .14s'}}>{donutCurrentCount>=prods.length?`📋 ${donutItemsPerPage}`:'📋 Full'}</button>
-    </div>
-  );
-
-  const allProductsTableRows=prods.map(d=>[d.n,fmtFull(d.rev),((d.rev/totalRev)*100).toFixed(1).replace('.',','  )+'%']);
-  const handleBarClick=(p)=>{const item=currentItems[p.dataIndex];if(item){setSelProd(selProd===item.n?null:item.n);}};
-  const handleDonutClick=(p)=>{const fullName=donutCurrentItems.find(x=>x.n.startsWith(p.name.replace('…','')))?.n;setSelProd(selProd===fullName?null:fullName||null);};
-  const handleDonutLegend=(params,echartsInstance)=>{if(echartsInstance){echartsInstance.dispatchAction({type:'legendSelect',name:params.name});}const fullName=donutCurrentItems.find(x=>x.n.startsWith(params.name.replace('…','')))?.n;setSelProd(prev=>prev===(fullName||null)?null:(fullName||null));};
-
-  return (
-    <div className="page-area" key="products">
-      <KpiNote/>
-      <div className="kpi-strip">
-        <div className="kpi-card blue"><div className="kpi-lbl">#1 Product</div><div className="kpi-val sm">{prods[0]?.n?.split(' - ')[0]||'—'}</div><div className="kpi-chg">{fmtFull(prods[0]?.rev||0)} · {totalRev>0?((prods[0]?.rev||0)/totalRev*100).toFixed(0):0}% share</div></div>
-        <div className="kpi-card teal"><div className="kpi-lbl">#2 Product</div><div className="kpi-val sm">{prods[1]?.n?.split(' - ')[0]||'—'}</div><div className="kpi-chg">{fmtFull(prods[1]?.rev||0)} · {totalRev>0?((prods[1]?.rev||0)/totalRev*100).toFixed(0):0}% share</div></div>
-        <div className="kpi-card navy"><div className="kpi-lbl">#3 Product</div><div className="kpi-val sm">{prods[2]?.n?.split(' - ')[0]||'—'}</div><div className="kpi-chg">{fmtFull(prods[2]?.rev||0)} · {totalRev>0?((prods[2]?.rev||0)/totalRev*100).toFixed(0):0}% share</div></div>
-        <div className="kpi-card green"><div className="kpi-lbl">Products Tracked</div><div className="kpi-val sm">{prods.length}</div><div className="kpi-chg">Active lines</div></div>
-      </div>
-      <div className="charts-row">
-        <div className="charts-col" style={{flex:2}}>
-          <Panel title="Top Products by Revenue" subtitle={`${label} · ${periodLabel.toLowerCase()}-based`} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows} defaultView={highlightQuery?'table':'chart'} searchableTable tableInitialQuery={highlightQuery} insight={productsInsight}>
-            <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
-              <div style={{flex:1,minHeight:0}}><EC option={barOpt} onEvents={{'click':handleBarClick}}/></div>
-              <PaginationControls/>
-            </div>
-          </Panel>
-        </div>
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title="Product Share" subtitle="Click to isolate" flex={1} tableHeaders={['Product','Revenue','Share']} tableRows={allProductsTableRows} defaultView="chart">
-            <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
-              <div style={{flex:1,minHeight:0}}><EC option={donutOpt} onEvents={{'click':handleDonutClick,'legendselectchanged':handleDonutLegend}}/></div>
-              <DonutPaginationControls/>
-            </div>
-          </Panel>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Categories({ fm, label, highlightQuery, effGrain, filter }) {
-  const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
-  const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
-  const months=fm.map(m=>m.m);
-  const periodLabel = useWeekly ? 'Week' : effGrain === 'yearly' ? 'Year' : 'Month';
-  const [drillGroup, setDrillGroup] = useState(null);
-
-  // Aggregate all raw category rows into {name, rev, orders}
-  const cats=useMemo(()=>{
-    let rows;
-    if (useWeekly) {
-      const set = new Set(tickedWeeks);
-      rows = categoriesWeeklyRaw.filter(c => set.has(c.w));
-    } else {
-      rows = categoriesRaw.filter(c=>months.includes(c.m));
-    }
-    const g={};
-    rows.forEach(c=>{const k=c.n.trim();if(!g[k])g[k]={n:k,rev:0,orders:0};g[k].rev+=c.rev;g[k].orders+=c.orders;});
-    return Object.values(g).sort((a,b)=>b.rev-a.rev);
-  },[months, useWeekly, tickedWeeks]);
-
-  // Group-level aggregation
-  const groups=useMemo(()=>{
-    const g={};
-    GROUP_NAMES.forEach((grp,gi)=>{g[grp]={n:grp,rev:0,orders:0,color:GROUP_PALETTE[gi]};});
-    cats.forEach(c=>{const grp=CAT_TO_GROUP[c.n]||'Kalverbenodigdheden';if(g[grp]){g[grp].rev+=c.rev;g[grp].orders+=c.orders;}});
-    return GROUP_NAMES.map(n=>g[n]).sort((a,b)=>b.rev-a.rev);
-  },[cats]);
-
-  // Sub-categories within drilled group
-  const subCats=useMemo(()=>{
-    if(!drillGroup) return [];
-    const members=CATEGORY_GROUPS[drillGroup]||[];
-    return cats.filter(c=>members.includes(c.n)).sort((a,b)=>b.rev-a.rev);
-  },[drillGroup, cats]);
-
-  const displayItems = drillGroup ? subCats : groups;
-  const totalRev = displayItems.reduce((s,c)=>s+c.rev, 0);
-
-  const barOpt=withDataZoom({
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${p[0].marker} ${fmtFull(p[0].value)}`},
-    grid:{left:'2%',right:'6%',bottom:'18%',top:'5%',containLabel:true},
-    xAxis:{type:'value',axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},
-    yAxis:{type:'category',data:displayItems.map(d=>d.n),axisLabel:{color:'#5F7078',fontSize:9,width:100,overflow:'truncate'},inverse:true},
-    series:[{type:'bar',data:displayItems.map((d,i)=>({value:d.rev,itemStyle:{color:drillGroup?PALETTE[i%PALETTE.length]:d.color}})),barMaxWidth:28,itemStyle:{borderRadius:[0,3,3,0]}}]
-  });
-
-  const donutData=displayItems.map((d,i)=>({name:d.n,value:d.rev,itemStyle:{color:drillGroup?PALETTE[i%PALETTE.length]:d.color}}));
-  const donutOpt={tooltip:{...TOOLTIP_STYLE,trigger:'item',formatter:p=>`${p.name}: ${fmtFull(p.value)} (${p.percent}%)`},legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:9},type:'scroll',selectedMode:false},series:[{type:'pie',radius:['48%','70%'],center:['50%','44%'],data:donutData,itemStyle:{borderRadius:3,borderColor:'#fff',borderWidth:2},label:{show:false},emphasis:{scaleSize:6}}]};
-
-  const tbl={headers:['#',drillGroup?'Sub-category':'Group','Revenue','Orders','Share'],rows:displayItems.map((d,i)=>[i+1,d.n,fmtFull(d.rev),fmtN(d.orders),totalRev>0?((d.rev/totalRev)*100).toFixed(1).replace('.',','  )+'%':'—'])};
-  const catsInsight=groups[0]?`${groups[0].n} leads with ${fmtFull(groups[0].rev)}${groups.reduce((s,g)=>s+g.rev,0)>0?` (${(groups[0].rev/groups.reduce((s,g)=>s+g.rev,0)*100).toFixed(0)}% share)`:''}`  :null;
-
-  const handleBarClick=(p)=>{
-    if(!drillGroup){const g=groups[p.dataIndex];if(g)setDrillGroup(g.n);}
-  };
-  const handleDonutClick=(p)=>{
-    if(!drillGroup){const g=groups.find(x=>x.n===p.name);if(g)setDrillGroup(g.n);}
-  };
-
-  const breadcrumb = drillGroup ? (
-    <div style={{display:'flex',alignItems:'center',gap:6,padding:'4px 0 2px'}}>
-      <button onClick={()=>setDrillGroup(null)} style={{display:'flex',alignItems:'center',gap:4,background:'var(--surface2,#EEF3F6)',border:'1px solid var(--border,#DDE6E9)',borderRadius:6,padding:'3px 10px 3px 7px',fontSize:11,color:'var(--text,#1F3741)',cursor:'pointer',fontWeight:500,lineHeight:1.4}}>
-        <span style={{fontSize:13,lineHeight:1}}>←</span> All groups
-      </button>
-      <span style={{color:'var(--muted,#5F7078)',fontSize:11}}>›</span>
-      <span style={{fontSize:11,fontWeight:600,color:'var(--accent,#0891B2)',background:'rgba(8,145,178,.08)',borderRadius:5,padding:'3px 9px'}}>{drillGroup}</span>
-    </div>
-  ) : null;
-
-  return (
-    <div className="page-area" key="cats">
-      <KpiNote/>
-      <div className="kpi-strip">
-        <div className="kpi-card blue"><div className="kpi-lbl">Top {drillGroup?'Sub-cat':'Group'}</div><div className="kpi-val sm">{displayItems[0]?.n||'—'}</div><div className="kpi-chg">{fmtFull(displayItems[0]?.rev||0)} · {totalRev>0?((displayItems[0]?.rev||0)/totalRev*100).toFixed(0):0}%</div></div>
-        <div className="kpi-card teal"><div className="kpi-lbl">{displayItems[1]?.n||'—'}</div><div className="kpi-val sm">{fmtFull(displayItems[1]?.rev||0)}</div><div className="kpi-chg">{totalRev>0?((displayItems[1]?.rev||0)/totalRev*100).toFixed(1):0}% share</div></div>
-        <div className="kpi-card navy"><div className="kpi-lbl">{displayItems[2]?.n||'—'}</div><div className="kpi-val sm">{fmtFull(displayItems[2]?.rev||0)}</div><div className="kpi-chg">{totalRev>0?((displayItems[2]?.rev||0)/totalRev*100).toFixed(1):0}% share</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">{drillGroup?'Sub-cats':'Groups'}</div><div className="kpi-val sm">{displayItems.length}</div><div className="kpi-chg">{drillGroup?'In this group':'Category groups'}</div></div>
-      </div>
-      <div className="charts-row">
-        <div className="charts-col" style={{flex:2}}>
-          <Panel title={drillGroup?`${drillGroup} — Sub-categories`:'Category Groups'} subtitle={drillGroup?'Sub-category breakdown':`${label} · click a bar to drill in`} flex={1} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={!drillGroup?catsInsight:null} headerExtra={breadcrumb}>
-            <EC option={barOpt} onEvents={{'click':handleBarClick}}/>
-          </Panel>
-        </div>
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title={drillGroup?'Sub-category Split':'Group Split'} subtitle={drillGroup?'Within group':'Click a slice to drill in'} flex={1} tableHeaders={['Name','Revenue','Share']} tableRows={displayItems.map(d=>[d.n,fmtFull(d.rev),totalRev>0?((d.rev/totalRev)*100).toFixed(1).replace('.',','  )+'%':'—'])} insight={!drillGroup?catsInsight:null} headerExtra={breadcrumb}>
-            <EC option={donutOpt} onEvents={{'click':handleDonutClick}}/>
-          </Panel>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Channels({ fm, label, effGrain, filter }) {
-  const tickedWeeks = useMemo(() => Object.values(filter.weeks || {}).flat(), [filter.weeks]);
-  const useWeekly = effGrain === 'weekly' && tickedWeeks.length > 0;
-  const months=fm.map(m=>m.m);
-  const periodLabel = useWeekly ? 'Week' : effGrain === 'yearly' ? 'Year' : 'Month';
-
-  const ch=useMemo(()=>{
-    let f;
-    if (useWeekly) {
-      const set = new Set(tickedWeeks);
-      f = salesrepsWeeklyRaw.filter(s => set.has(s.w));
-    } else {
-      f = salesrepsRaw.filter(s=>months.includes(s.m));
-    }
-    const ws=f.filter(s=>s.n==='Webshop');
-    const dr=f.filter(s=>s.n!=='Webshop');
-    return {dRev:dr.reduce((s,r)=>s+r.rev,0),wRev:ws.reduce((s,r)=>s+r.rev,0),dOrd:dr.reduce((s,r)=>s+r.orders,0),wOrd:ws.reduce((s,r)=>s+r.orders,0)};
-  },[months, useWeekly, tickedWeeks]);
-
-  const total=ch.dRev+ch.wRev;
-  const dAOV=ch.dOrd>0?Math.round(ch.dRev/ch.dOrd):0;
-  const wAOV=ch.wOrd>0?Math.round(ch.wRev/ch.wOrd):0;
-  const [selChannel,setSelChannel]=useState(null);
-
-  const donutOpt={tooltip:{...TOOLTIP_STYLE,trigger:'item',formatter:p=>`${p.name}: ${fmtFull(p.value)} (${p.percent}%)`},legend:{bottom:0,textStyle:{color:'#5F7078',fontSize:10},selectedMode:'multiple'},series:[{type:'pie',radius:['48%','70%'],center:['50%','44%'],data:[{name:'Direct Sales',value:ch.dRev,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(8,145,178,0.2)':'#0891B2'}},{name:'Webshop',value:ch.wRev,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2'}}],itemStyle:{borderRadius:3,borderColor:'#fff',borderWidth:2},label:{show:false},emphasis:{scaleSize:6}}]};
-  const ordOpt=withDataZoom({tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtN(p[0].value)}`},grid:{left:'3%',right:'4%',bottom:isMobileViewport()?'22%':'12%',top:'8%',containLabel:true},xAxis:{type:'category',data:['Direct Sales','Webshop'],axisLabel:catAxisLabel(2,10,true)},yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmtN(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},legend:{show:false},series:[{type:'bar',data:[{value:ch.dOrd,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(8,145,178,0.2)':'#0891B2',borderRadius:[4,4,0,0]}},{value:ch.wOrd,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2',borderRadius:[4,4,0,0]}}],barMaxWidth:60}]});
-  const aovOpt=withDataZoom({tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`${p[0].name}: ${fmtFull(p[0].value)}`},grid:{left:'3%',right:'4%',bottom:isMobileViewport()?'22%':'12%',top:'8%',containLabel:true},xAxis:{type:'category',data:['Direct Sales','Webshop'],axisLabel:catAxisLabel(2,10,true)},yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:9,formatter:v=>fmt(v)},splitLine:{lineStyle:{color:'#F0F3F4'}}},legend:{show:false},series:[{type:'bar',data:[{value:dAOV,itemStyle:{color:selChannel&&selChannel!=='Direct Sales'?'rgba(3,105,161,0.2)':'#0891B2',borderRadius:[4,4,0,0]}},{value:wAOV,itemStyle:{color:selChannel&&selChannel!=='Webshop'?'rgba(115,212,242,0.2)':'#73D4F2',borderRadius:[4,4,0,0]}}],barMaxWidth:60}]});
-
-  const leadChannel=ch.dRev>=ch.wRev?'Direct Sales':'Webshop';
-  const leadShare=total>0?(Math.max(ch.dRev,ch.wRev)/total*100).toFixed(0):0;
-  const aovLeader=dAOV>=wAOV?'Direct Sales':'Webshop';
-  const aovGapPct=Math.min(dAOV,wAOV)>0?(Math.abs(dAOV-wAOV)/Math.min(dAOV,wAOV)*100).toFixed(0):null;
-  const channelsInsight=total>0?`${leadChannel} leads with ${leadShare}% of revenue${aovGapPct?` · ${aovLeader} orders run ${aovGapPct}% larger on average`:''}`:null;
-  const handleChannelClick=(p)=>{const channelName=p.name||(p.dataIndex===0?'Direct Sales':'Webshop');setSelChannel(selChannel===channelName?null:channelName);};
-  const handleDonutLegend=(params,echartsInstance)=>{if(echartsInstance){echartsInstance.dispatchAction({type:'legendSelect',name:params.name});}setSelChannel(prev=>prev===params.name?null:params.name);};
-  const handleDonutClick=(p)=>{setSelChannel(selChannel===p.name?null:p.name);};
-
-  return (
-    <div className="page-area" key="channels">
-      <KpiNote/>
-      <div className="kpi-strip">
-        <div className="kpi-card blue"><div className="kpi-lbl">Direct Sales</div><div className="kpi-val sm">{fmtFull(ch.dRev)}</div><div className="kpi-chg">{total>0?((ch.dRev/total)*100).toFixed(1):0}% · {fmtN(ch.dOrd)} orders</div></div>
-        <div className="kpi-card green"><div className="kpi-lbl">Webshop</div><div className="kpi-val sm">{fmtFull(ch.wRev)}</div><div className="kpi-chg">{total>0?((ch.wRev/total)*100).toFixed(1):0}% · {fmtN(ch.wOrd)} orders</div></div>
-        <div className="kpi-card teal"><div className="kpi-lbl">Direct Avg Order</div><div className="kpi-val sm">{fmtFull(dAOV)}</div><div className="kpi-chg">Per transaction</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">Webshop Avg Order</div><div className="kpi-val sm">{fmtFull(wAOV)}</div><div className="kpi-chg">Per transaction</div></div>
-      </div>
-      <div className="charts-row">
-        <div className="charts-col" style={{flex:1.2}}>
-          <Panel title="Channel Revenue Share" subtitle={`${label} · ${periodLabel.toLowerCase()}-based`} flex={1} tableHeaders={['Channel','Revenue','Share','Orders','AOV']} tableRows={[['Direct Sales',fmtFull(ch.dRev),total>0?((ch.dRev/total)*100).toFixed(1).replace('.',','  )+'%':'—',fmtN(ch.dOrd),fmtFull(dAOV)],['Webshop',fmtFull(ch.wRev),total>0?((ch.wRev/total)*100).toFixed(1).replace('.',','  )+'%':'—',fmtN(ch.wOrd),fmtFull(wAOV)]]} insight={channelsInsight}><EC option={donutOpt} onEvents={{'click':handleDonutClick,'legendselectchanged':handleDonutLegend}}/></Panel>
-        </div>
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title="Order Volume" subtitle="By channel" flex={1}><EC option={ordOpt} onEvents={{'click':handleChannelClick}}/></Panel>
-        </div>
-        <div className="charts-col" style={{flex:1}}>
-          <Panel title="Avg Order Value" subtitle="Direct vs Webshop" flex={1}><EC option={aovOpt} onEvents={{'click':handleChannelClick}}/></Panel>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── FINANCE HELPERS ───────────────────────────────────────────── */
-const FIN_CAT_ORDER=['Revenue','COGS','Personnel','Rent & Property','Premises','Vehicle & Transport','Marketing','Office & IT','General Admin','Finance','Other OpEx','Other'];
-function buildWaterfallSeries(steps){let running=0;const base=[],val=[],colors=[];steps.forEach(s=>{if(s.total){base.push(Math.min(0,running));val.push(Math.abs(running));colors.push('#1F3741');}else{base.push(Math.min(running,running+s.delta));val.push(Math.abs(s.delta));colors.push(s.delta>=0?'#2E9B62':'#D95C5C');running+=s.delta;}});return{base,val,colors};}
-function YoyBadge({cy,py,goodIfUp=true}){if(py===undefined||py===null)return null;const diff=cy-py;const pct=py!==0?Math.abs(diff/py)*100:null;const good=goodIfUp?diff>=0:diff<=0;return<span className={`fin-badge ${good?'good':'bad'}`}>{diff>=0?'▲':'▼'} {pct!==null?pct.toFixed(1).replace('.',','  )+'%':'—'}</span>;}
-const fmtAxis=v=>{const av=Math.abs(v),sign=v<0?'-':'';if(av>=1e6)return sign+'€'+(av/1e6).toLocaleString('de-DE',{minimumFractionDigits:0,maximumFractionDigits:1})+'M';if(av>=1e3)return sign+'€'+(av/1e3).toLocaleString('de-DE',{maximumFractionDigits:0})+'K';return sign+'€'+Math.round(av).toLocaleString('de-DE');};
-
-const mkBarOpt=(labels,vals,colorFn,lw)=>{
-  const L=lw||(isMobileViewport()?105:150);
-  return{
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},
-    grid:{left:L,right:18,bottom:22,top:6,containLabel:false},
-    xAxis:{type:'value',splitNumber:4,minInterval:1,axisLabel:{color:'#5F7078',fontSize:8,formatter:v=>fmtAxis(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},
-    yAxis:{type:'category',data:labels,axisLabel:{color:'#5F7078',fontSize:8,width:L-10,overflow:'truncate',ellipsis:'…'},inverse:true,axisTick:{show:false}},
-    series:[{type:'bar',barMaxWidth:12,data:vals.map((v,i)=>({value:v,itemStyle:{color:colorFn(i),borderRadius:[0,3,3,0]}}))}]
-  };
-};
-
-function PLSummary() {
-  const revCY=finSummary.revenue.cy,revPY=finSummary.revenue.py;
-  const cogsCY=finSummary.cogs.cy,cogsPY=finSummary.cogs.py;
-  const opexCY=finSummary.opex.cy,opexPY=finSummary.opex.py;
-  const gpCY=revCY-cogsCY,gpPY=revPY-cogsPY;
-  const ebitdaCY=gpCY-opexCY,ebitdaPY=gpPY-opexPY;
-  const gmCY=revCY?(gpCY/revCY)*100:0;
-  const gmPY=revPY?(gpPY/revPY)*100:0;
-  const emCY=revCY?(ebitdaCY/revCY)*100:0;
-  const emPY=revPY?(ebitdaPY/revPY)*100:0;
-  const opexPctCY=revCY?(opexCY/revCY)*100:0;
-  const hasTaxData=finSummary.tax?.cy!==undefined&&finSummary.tax?.cy!==null;
-  const taxCY=hasTaxData?finSummary.tax.cy:null;
-  const taxPY=hasTaxData?finSummary.tax.py:null;
-  const netCY=hasTaxData?ebitdaCY-taxCY:null;
-  const netPY=hasTaxData?ebitdaPY-taxPY:null;
-  const nmCY=hasTaxData&&revCY?(netCY/revCY)*100:null;
-  const nmPY=hasTaxData&&revPY?(netPY/revPY)*100:null;
-
-  const wfCats=['Revenue','COGS','Gross Profit','OpEx','EBITDA'];
-  const wfDisplay=[revCY,-cogsCY,gpCY,-opexCY,ebitdaCY];
-  const{base:wfBase,val:wfVal,colors:wfColors}=buildWaterfallSeries([{delta:revCY},{delta:-cogsCY},{total:true},{delta:-opexCY},{total:true}]);
-  const wfOpt={
-    tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${wfCats[p[0].dataIndex]}</strong><br/>${fmtFull(wfDisplay[p[0].dataIndex])}`},
-    grid:{left:14,right:14,bottom:isMobileViewport()?54:26,top:30,containLabel:true},
-    xAxis:{type:'category',data:wfCats,axisLabel:catAxisLabel(wfCats.length,9),axisTick:{show:false}},
-    yAxis:{type:'value',minInterval:1,axisLabel:{color:'#5F7078',fontSize:8,formatter:v=>fmtAxis(v)},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},
-    series:[
-      {type:'bar',stack:'wf',data:wfBase,itemStyle:{color:'transparent'},silent:true,tooltip:{show:false}},
-      {type:'bar',stack:'wf',barWidth:'55%',data:wfVal.map((v,i)=>({value:v,itemStyle:{color:wfColors[i],borderRadius:3}})),label:{show:true,position:'top',distance:4,color:'#1F3741',fontSize:8,fontWeight:700,backgroundColor:'#fff',borderColor:'#DDE6E9',borderWidth:1,borderRadius:3,padding:[3,5],formatter:p=>fmtAxis(wfDisplay[p.dataIndex])}}
-    ]
-  };
-  const wfTable={headers:['Step','2026 (Jan–Mar)','2025 (Jan–Jun)'],rows:[['Revenue',fmtFull(revCY),fmtFull(revPY)],['COGS',fmtFull(-cogsCY),fmtFull(-cogsPY)],['Gross Profit',fmtFull(gpCY),fmtFull(gpPY)],['OpEx',fmtFull(-opexCY),fmtFull(-opexPY)],['EBITDA',fmtFull(ebitdaCY),fmtFull(ebitdaPY)]]};
-
-  const tornCats=finCategories.map(c=>c.cat);
-  const tornVals=finCategories.map(c=>c.cy-c.py);
-  const tornColors=finCategories.map(c=>{const bad=c.cat==='Revenue'?(c.cy-c.py)<0:(c.cy-c.py)>0;return bad?'#D95C5C':'#2E9B62';});
-  const tornOpt={tooltip:{...TOOLTIP_STYLE,trigger:'axis',axisPointer:{type:'shadow'},formatter:p=>`<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}`},grid:{left:isMobileViewport()?95:120,right:16,bottom:18,top:6,containLabel:false},xAxis:{type:'value',minInterval:1,splitNumber:isMobileViewport()?4:5,axisLabel:{color:'#5F7078',fontSize:isMobileViewport()?7:8,formatter:v=>fmtAxis(v),hideOverlap:true},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},yAxis:{type:'category',data:tornCats,axisLabel:{color:'#5F7078',fontSize:8,width:isMobileViewport()?88:112,overflow:'truncate'},inverse:true,axisTick:{show:false}},series:[{type:'bar',barMaxWidth:12,data:tornVals.map((v,i)=>({value:v,itemStyle:{color:tornColors[i],borderRadius:v>=0?[0,3,3,0]:[3,0,0,3]}}))}]};
-  const tornTable={headers:['Category','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','YoY %'],rows:finCategories.map(c=>[c.cat,fmtFull(c.cy),fmtFull(c.py),fmtFull(c.cy-c.py),c.py?fmtPct((c.cy-c.py)/Math.abs(c.py)*100):'—'])};
-
-  const GaugeSVG=({value,label,py})=>{
-    const clamp=v=>Math.max(-30,Math.min(30,v));
-    const angle=(clamp(value)+30)/60*180-90;
-    const r=38,cx=50,cy2=44;
-    const toXY=(deg)=>{const rad=(deg-90)*Math.PI/180;return{x:cx+r*Math.cos(rad),y:cy2+r*Math.sin(rad)};};
-    const arcPath=(from,to,color,rr)=>{const a=toXY(from*3),b=toXY(to*3);const large=(to-from)*3>180?1:0;return`<path d="M ${a.x} ${a.y} A ${rr} ${rr} 0 ${large} 1 ${b.x} ${b.y}" stroke="${color}" stroke-width="7" fill="none" stroke-linecap="butt"/>`;};
-    const color=value>=10?'#2E9B62':value>=0?'#E5A93D':'#D95C5C';
-    const px2=toXY(angle);
-    return(
-      <div style={{display:'flex',flexDirection:'column',alignItems:'center',flex:1}}>
-        <svg viewBox="0 0 100 58" style={{width:'100%',maxWidth:110,overflow:'visible'}}>
-          <g dangerouslySetInnerHTML={{__html:arcPath(-30,0,'#D95C5C',r)+arcPath(0,10,'#E5A93D',r)+arcPath(10,30,'#2E9B62',r)+`<line x1="${cx}" y1="${cy2}" x2="${px2.x}" y2="${px2.y}" stroke="#1F3741" stroke-width="2.5" stroke-linecap="round"/>`+`<circle cx="${cx}" cy="${cy2}" r="3.5" fill="#1F3741"/>`}}/>
-        </svg>
-        <div style={{fontSize:15,fontWeight:800,fontFamily:'JetBrains Mono,monospace',color,marginTop:-2}}>{value.toFixed(1).replace('.',','  )}%</div>
-        <div style={{fontSize:9,color:'var(--muted)',fontWeight:700,textTransform:'uppercase',letterSpacing:'.05em',marginTop:1}}>{label}</div>
-        <div style={{fontSize:9,color:'var(--muted)',marginTop:1}}>2025: {py.toFixed(1).replace('.',','  )}%</div>
-      </div>
-    );
-  };
-  const gaugeTable={headers:['Metric','2026 (Jan–Mar)','2025 (Jan–Jun)'],rows:[['Gross Margin %',gmCY.toFixed(1).replace('.',','  )+'%',gmPY.toFixed(1).replace('.',','  )+'%'],['EBITDA Margin %',emCY.toFixed(1).replace('.',','  )+'%',emPY.toFixed(1).replace('.',','  )+'%']]};
-  const bridgeSteps=[{name:'Revenue',delta:revCY-revPY},{name:'COGS',delta:-(cogsCY-cogsPY)},{name:'OpEx',delta:-(opexCY-opexPY)}];
-  const biggestBridgeMove=bridgeSteps.reduce((a,b)=>Math.abs(b.delta)>Math.abs(a.delta)?b:a);
-  const bridgeInsight=`EBITDA margin ${emCY>=emPY?'improved':'declined'} to ${emCY.toFixed(1).replace('.',','  )}% (vs ${emPY.toFixed(1).replace('.',','  )}% PY) · Largest driver: ${biggestBridgeMove.name} (${biggestBridgeMove.delta>=0?'+':''}${fmtFull(biggestBridgeMove.delta)})`;
-  const tornSorted=[...finCategories].map(c=>({cat:c.cat,delta:c.cy-c.py,bad:c.cat==='Revenue'?(c.cy-c.py)<0:(c.cy-c.py)>0}));
-  const worstMover=tornSorted.filter(c=>c.bad).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta))[0];
-  const bestMover=tornSorted.filter(c=>!c.bad).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta))[0];
-  const tornadoInsight=[bestMover?`Best mover: ${bestMover.cat} (${bestMover.delta>=0?'+':''}${fmtFull(bestMover.delta)})`:null,worstMover?`Watch: ${worstMover.cat} (${worstMover.delta>=0?'+':''}${fmtFull(worstMover.delta)})`:null].filter(Boolean).join(' · ')||null;
-
-  return (
-    <div className="page-area fin-scroll" key="plsummary">
-      <div className="fin-note">⚠ Partial periods: 2026 = Jan–Mar · 2025 = Jan–Jun</div>
-      <div className="kpi-strip">
-        <div className="kpi-card blue"><div className="kpi-lbl">Revenue</div><div className="kpi-val sm">{fmtFull(revCY)}</div><div className="kpi-chg"><YoyBadge cy={revCY} py={revPY} goodIfUp/></div></div>
-        <div className="kpi-card sky"><div className="kpi-lbl">Gross Margin<span className="indicative-tag">Indicative</span></div><div className="kpi-val sm">{fmtFull(gpCY)}</div><div className="kpi-chg">{gmCY.toFixed(1).replace('.',','  )}% margin · vs {gmPY.toFixed(1).replace('.',','  )}% PY</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">OpEx</div><div className="kpi-val sm">{opexPctCY.toFixed(1).replace('.',','  )}%</div><div className="kpi-chg">{fmtFull(opexCY)} · of turnover</div></div>
-        <div className="kpi-card green"><div className="kpi-lbl">EBITDA<span className="indicative-tag">Indicative</span></div><div className="kpi-val sm">{fmtFull(ebitdaCY)}</div><div className="kpi-chg">{emCY.toFixed(1).replace('.',','  )}% margin · vs {emPY.toFixed(1).replace('.',','  )}% PY</div></div>
-        <div className="kpi-card navy"><div className="kpi-lbl">Net Margin (after Tax)<span className="indicative-tag">Indicative</span></div>{hasTaxData?(<><div className="kpi-val sm">{fmtFull(netCY)}</div><div className="kpi-chg">{nmCY.toFixed(1).replace('.',','  )}% margin · vs {nmPY.toFixed(1).replace('.',','  )}% PY</div></>):(<><div className="kpi-val sm">—</div><div className="kpi-chg">Pending — awaiting tax data</div></>)}</div>
-      </div>
-      <div className="charts-row">
-        <Panel title="P&L Bridge" subtitle="2026 Jan–Mar" height={420} className="fin-fixed" style={{flex:1}} tableHeaders={wfTable.headers} tableRows={wfTable.rows} insight={bridgeInsight}><EC option={wfOpt}/></Panel>
-        <Panel title="Margin Health" subtitle="Gross & EBITDA margins" tag="Indicative" height={420} className="fin-fixed" style={{flex:0.8}} tableHeaders={gaugeTable.headers} tableRows={gaugeTable.rows}>
-          <div style={{display:'flex',flexDirection:'column',gap:10,height:'100%',alignItems:'center',justifyContent:'center',padding:'8px 12px'}}>
-            <GaugeSVG value={gmCY} label="Gross Margin" py={gmPY}/>
-            <div style={{height:1,background:'var(--border)',alignSelf:'stretch',flexShrink:0}}/>
-            <GaugeSVG value={emCY} label="EBITDA Margin" py={emPY}/>
-          </div>
-        </Panel>
-        <Panel title="Category YoY Change" subtitle="Green = favorable" height={420} className="fin-fixed" style={{flex:1}} defaultView="table" tableHeaders={tornTable.headers} tableRows={tornTable.rows} insight={tornadoInsight}><EC option={tornOpt}/></Panel>
-      </div>
-    </div>
-  );
-}
-
-function FinRevCosts() {
-  const revenueLines=useMemo(()=>finLines.filter(l=>l.cat==='Revenue').sort((a,b)=>b.cy-a.cy),[]);
-  const costLines=useMemo(()=>finLines.filter(l=>l.cat!=='Revenue').sort((a,b)=>b.cy-a.cy),[]);
-  const anomalies=useMemo(()=>finLines.filter(l=>l.cat!=='Revenue'&&l.cy>l.py&&Math.abs(l.cy)>500).sort((a,b)=>b.yoy-a.yoy),[]);
-  const topRev=revenueLines.slice(0,10);
-  const topCost=costLines.slice(0,10);
-  const topAnom=anomalies.slice(0,10);
-  const revOpt=mkBarOpt(topRev.map(l=>l.desc),topRev.map(l=>l.cy),()=>'#40BCF3');
-  const costOpt=mkBarOpt(topCost.map(l=>l.desc),topCost.map(l=>l.cy),()=>'#35A9DE');
-  const anomOpt=mkBarOpt(topAnom.map(l=>l.desc),topAnom.map(l=>l.yoy),()=>'#1F3741');
-  const revCY=finSummary.revenue.cy,revPY=finSummary.revenue.py;
-  const cogsCY=finSummary.cogs.cy,cogsPY=finSummary.cogs.py;
-  const revTbl={headers:['Acct','Description','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','YoY %'],rows:revenueLines.slice(0,15).map(l=>[l.acct,l.desc,fmtFull(l.cy),fmtFull(l.py),fmtFull(l.yoy),l.yoyPct!==null?fmtPct(l.yoyPct):'—'])};
-  const costTbl={headers:['Acct','Cat','Description','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','% of Turnover','Relative Difference'],rows:costLines.slice(0,20).map(l=>[l.acct,l.cat,l.desc,fmtFull(l.cy),fmtFull(l.py),fmtFull(l.yoy),revCY?fmtPct(l.cy/revCY*100):'—',l.yoyPct!==null?fmtPct(l.yoyPct):'—'])};
-  const anomTbl={headers:['Acct','Cat','Description','2026 (Jan–Mar)','YoY €','% of Turnover','Relative Difference'],rows:anomalies.map(l=>[l.acct,l.cat,l.desc,fmtFull(l.cy),fmtFull(l.yoy),revCY?fmtPct(l.cy/revCY*100):'—',l.yoyPct!==null?fmtPct(l.yoyPct):'—'])};
-  const costCats=finCategories.filter(c=>c.cat!=='Revenue');
-  const costPctPeriods=['2025 (Jan–Jun)','2026 (Jan–Mar)'];
-  const costPctSeries=costCats.map((c,i)=>({name:c.cat,type:'line',symbol:'circle',symbolSize:6,lineStyle:{width:2,color:PALETTE[i%PALETTE.length]},itemStyle:{color:PALETTE[i%PALETTE.length]},data:[revPY?+(c.py/revPY*100).toFixed(2):0,revCY?+(c.cy/revCY*100).toFixed(2):0]}));
-  const costPctOpt={tooltip:{...TOOLTIP_STYLE,trigger:'axis',formatter:p=>`<strong>${p[0].axisValue}</strong><br/>`+p.map(i=>`${i.marker} ${i.seriesName}: ${i.value.toFixed(1).replace('.',','  )}%`).join('<br/>')},legend:{top:0,textStyle:{color:'#5F7078',fontSize:9},itemWidth:10,itemHeight:10},grid:{left:44,right:20,bottom:isMobileViewport()?46:24,top:34,containLabel:true},xAxis:{type:'category',data:costPctPeriods,axisLabel:catAxisLabel(2,9,true),axisTick:{show:false}},yAxis:{type:'value',axisLabel:{color:'#5F7078',fontSize:8,formatter:v=>v+'%'},splitLine:{lineStyle:{color:'#F0F3F4'}},axisTick:{show:false}},series:costPctSeries};
-  const costPctTbl={headers:['Category','2025 (Jan–Jun) %','2026 (Jan–Mar) %','Change (pts)'],rows:costCats.map(c=>{const pctPY=revPY?(c.py/revPY*100):0;const pctCY=revCY?(c.cy/revCY*100):0;return[c.cat,fmtPct(pctPY),fmtPct(pctCY),fmtPct(pctCY-pctPY)];})};
-
-  return (
-    <div className="page-area fin-scroll" key="finrevcosts">
-      <div className="fin-note">⚠ Partial periods: 2026 = Jan–Mar · 2025 = Jan–Jun</div>
-      <div className="kpi-strip">
-        <div className="kpi-card teal"><div className="kpi-lbl">Revenue Lines</div><div className="kpi-val sm">{revenueLines.length}</div><div className="kpi-chg">Active accounts</div></div>
-        <div className="kpi-card navy"><div className="kpi-lbl">Cost Lines</div><div className="kpi-val sm">{costLines.length}</div><div className="kpi-chg">{new Set(costLines.map(l=>l.cat)).size} categories</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">Cost Increases</div><div className="kpi-val sm">{anomalies.length}</div><div className="kpi-chg">YoY watch list</div></div>
-        <div className="kpi-card blue"><div className="kpi-lbl">Top Revenue</div><div className="kpi-val sm">{revenueLines[0]?.desc?.split(' ')[0]||'—'}</div><div className="kpi-chg">{fmtFull(revenueLines[0]?.cy||0)}</div></div>
-        <div className="kpi-card red"><div className="kpi-lbl">Top Cost</div><div className="kpi-val sm">{costLines[0]?.desc?.split(' ')[0]||'—'}</div><div className="kpi-chg">{fmtFull(costLines[0]?.cy||0)}</div></div>
-        <div className="kpi-card sky"><div className="kpi-lbl">COGS/Rev</div><div className="kpi-val sm">{revCY?((cogsCY/revCY)*100).toFixed(0):0}%</div><div className="kpi-chg">vs {revPY?((cogsPY/revPY)*100).toFixed(0):0}% PY</div></div>
-      </div>
-      <div className="charts-row">
-        <div className="charts-col" style={{flex:1}}><Panel title="Top Revenue Lines" subtitle="2026 Jan–Mar, largest first" height={420} className="fin-fixed" tableHeaders={revTbl.headers} tableRows={revTbl.rows}><EC option={revOpt}/></Panel></div>
-        <div className="charts-col" style={{flex:1}}><Panel title="Top Cost Lines" subtitle="2026 Jan–Mar, largest first" height={420} className="fin-fixed" tableHeaders={costTbl.headers} tableRows={costTbl.rows}><EC option={costOpt}/></Panel></div>
-        <div className="charts-col" style={{flex:1}}><Panel title="Cost Increases" subtitle="YoY watch list" height={420} className="fin-fixed" tableHeaders={anomTbl.headers} tableRows={anomTbl.rows}><EC option={anomOpt}/></Panel></div>
-      </div>
-      <div className="charts-row">
-        <div className="charts-col" style={{flex:1}}><Panel title="Cost Categories as % of Turnover" subtitle="2025 (Jan–Jun) vs 2026 (Jan–Mar)" height={340} className="fin-fixed" tableHeaders={costPctTbl.headers} tableRows={costPctTbl.rows}><EC option={costPctOpt}/></Panel></div>
-      </div>
-    </div>
-  );
-}
-
-function FinLedger() {
-  const [q,setQ]=useState('');
-  const [cat,setCat]=useState('All');
-  const newCosts=useMemo(()=>finLines.filter(l=>l.cat!=='Revenue'&&l.cy>0&&l.py===0&&Math.abs(l.cy)>500).sort((a,b)=>b.cy-a.cy),[]);
-  const goneRevenue=useMemo(()=>finLines.filter(l=>l.cat==='Revenue'&&l.cy===0&&l.py>0).sort((a,b)=>b.py-a.py),[]);
-  const cats=['All',...FIN_CAT_ORDER.filter(c=>finLines.some(l=>l.cat===c))];
-  const filtered=finLines.filter(l=>(cat==='All'||l.cat===cat)&&(q.trim()===''||l.desc.toLowerCase().includes(q.toLowerCase())||String(l.acct).includes(q))).sort((a,b)=>Math.abs(b.cy)-Math.abs(a.cy));
-  const revCY=finSummary.revenue.cy;
-  const rows=filtered.map(l=>[l.acct,l.cat,l.desc,fmtFull(l.cy),fmtFull(l.py),fmtFull(l.yoy),revCY?fmtPct(l.cy/revCY*100):'—',l.yoyPct!==null?fmtPct(l.yoyPct):'—']);
-  const sideColRef=useRef(null);
-  const [sideH,setSideH]=useState(null);
-  useLayoutEffect(()=>{const el=sideColRef.current;if(!el)return;const measure=()=>setSideH(el.getBoundingClientRect().height);measure();const ro=new ResizeObserver(measure);ro.observe(el);return()=>ro.disconnect();},[newCosts.length,goneRevenue.length]);
-
-  return (
-    <div className="page-area fin-scroll" key="finledger">
-      <div className="fin-note">⚠ Partial periods: 2026 = Jan–Mar · 2025 = Jan–Jun</div>
-      <div className="kpi-strip">
-        <div className="kpi-card blue"><div className="kpi-lbl">Total Accounts</div><div className="kpi-val sm">{fmtN(finLines.length)}</div><div className="kpi-chg">All lines</div></div>
-        <div className="kpi-card teal"><div className="kpi-lbl">Showing</div><div className="kpi-val sm">{fmtN(filtered.length)}</div><div className="kpi-chg">After filter</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">New Costs</div><div className="kpi-val sm">{fmtN(newCosts.length)}</div><div className="kpi-chg">Not in 2025</div></div>
-        <div className="kpi-card sky"><div className="kpi-lbl">Revenue Lost</div><div className="kpi-val sm">{fmtN(goneRevenue.length)}</div><div className="kpi-chg">Dropped to zero</div></div>
-      </div>
-      <div className="charts-row">
-        <div className="charts-col" style={{flex:1.8}}>
-          <Panel title="Full Account Ledger" subtitle={`${fmtN(finLines.length)} lines · search & filter`} className="ledger-fixed" height={sideH||300}>
-            <div style={{display:'flex',flexDirection:'column',height:'100%',minHeight:0}}>
-              <div className="ledger-toolbar">
-                <input className="ledger-search" placeholder="Search account # or description…" value={q} onChange={e=>setQ(e.target.value)}/>
-                <span className="ledger-count">{fmtN(filtered.length)} / {fmtN(finLines.length)}</span>
-              </div>
-              <div className="ledger-cats">{cats.map(c=>(<button key={c} className={`filter-chip${cat===c?' active':''}`} style={{fontSize:9,padding:'2px 7px'}} onClick={()=>setCat(prev => prev===c ? 'All' : c)} title={cat===c && c!=='All' ? `Clear filter (${c})` : `Filter: ${c}`}>{c}</button>))}</div>
-              <div style={{flex:1,minHeight:0}}><InlineTable headers={['Acct','Category','Description','2026 (Jan–Mar)','2025 (Jan–Jun)','YoY €','% of Turnover','Relative Difference']} rows={rows} height="100%"/></div>
-            </div>
-          </Panel>
-        </div>
-        <div className="charts-col" style={{flex:1}} ref={sideColRef}>
-          <Panel title="🆕 New Costs in 2026" subtitle="Not present in 2025" className="hug">
-            <div style={{display:'flex',flexDirection:'column',gap:4}}>{newCosts.length===0?<div className="watch-empty">None detected</div>:newCosts.map(l=>(<div className="watch-row" key={l.acct}><div className="watch-row-desc" title={l.desc}>{l.desc}</div><div className="watch-row-amt">{fmtFull(l.cy)} · {l.cat}</div></div>))}</div>
-          </Panel>
-          <Panel title="🔻 Revenue Lost" subtitle="Had 2025 revenue, now zero" className="hug">
-            <div style={{display:'flex',flexDirection:'column',gap:4}}>{goneRevenue.length===0?<div className="watch-empty">None detected</div>:goneRevenue.map(l=>(<div className="watch-row" key={l.acct}><div className="watch-row-desc" title={l.desc}>{l.desc}</div><div className="watch-row-amt">was {fmtFull(l.py)}</div></div>))}</div>
-          </Panel>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-/* ── MOBILE SCROLL HINT ──────────────────────────────────────── */
 function ScrollHint({ watchKey, disabled }) {
   const [show, setShow] = useState(false);
   useEffect(() => {
@@ -3035,348 +2152,2045 @@ function ScrollHint({ watchKey, disabled }) {
   );
 }
 
-/* ── APP ────────────────────────────────────────────────────── */
-const NAV = [
-  {section:'Overview',items:[{id:'overview',icon:'▦',label:'Dashboard',desc:'Live KPIs & monthly trend'},{id:'revenue',icon:'↗',label:'Revenue Trends',desc:'Monthly revenue & period comparison'}]},
-  {section:'Performance',items:[{id:'salesreps',icon:'◈',label:'Verkoper',desc:'Verkoper leaderboard & rankings'},{id:'customers',icon:'⬡',label:'Customers',desc:'Top customers by revenue'}]},
-  {section:'Catalogue',items:[{id:'products',icon:'◻',label:'Products',desc:'Product-level revenue breakdown'},{id:'categories',icon:'⊞',label:'Categories',desc:'Category split & revenue share'}]},
-  {section:'Channels',items:[{id:'channels',icon:'⇌',label:'Channel Mix',desc:'Direct sales vs webshop split'}]},
-  {section:'Finance',items:[{id:'plsummary',icon:'⟡',label:'P&L Summary',desc:'Margins & profit & loss summary'},{id:'finrevcosts',icon:'↕',label:'Revenue & Costs',desc:'Revenue vs cost lines over time'},{id:'finledger',icon:'≣',label:'Ledger',desc:'Full financial ledger detail'}]},
-];
-const PAGE_NAMES={overview:'Overview Dashboard',revenue:'Revenue Trends',salesreps:'Verkoper',customers:'Top Customers',products:'Product Analysis',categories:'Category Breakdown',channels:'Channel Mix',plsummary:'P&L Summary',finrevcosts:'Revenue & Costs',finledger:'Ledger'};
+/* ══════════════════════════════════════════════════════════════════════
+   extra.css.js
+   ══════════════════════════════════════════════════════════════════════ */
+/* Styles for the v2 additions (filter bar, zoom, proof drawer, tie-out strip). */
+const EXTRA_CSS = `
+.zoom-root{transform-origin:0 0;width:100%;height:100%;}
+/* sidebar: closed by default, opens while hovered (overlays the page, no reflow) */
+@media(min-width:901px){
+.sidebar.collapsed.peek{width:var(--sidebar-w);margin-right:calc(14px + var(--sidebar-w-collapsed) - var(--sidebar-w));z-index:60;}
+.sidebar.collapsed.peek .sb-logo{padding:20px 18px 16px;display:block;}
+.sidebar.collapsed.peek .sb-mark{display:inline;}
+.sidebar.collapsed.peek .sb-tag,.sidebar.collapsed.peek .sb-brand-text,.sidebar.collapsed.peek .nav-section,.sidebar.collapsed.peek .sb-footer-stats{display:block;}
+.sidebar.collapsed.peek .nav-label,.sidebar.collapsed.peek .logout-btn-label{display:inline;}
+.sidebar.collapsed.peek .nav-divider{display:none;}
+.sidebar.collapsed.peek .nav-item{justify-content:flex-start;padding:8px 18px;gap:9px;}
+.sidebar.collapsed.peek .nav-pip{position:static;transform:none;margin-left:auto;}
+.sidebar.collapsed.peek .sb-footer{display:block;padding:10px 16px;}
+}
+.sb-collapse-btn{display:none !important;}
+/* visible dropdown arrows */
+.panel-select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23107fb0' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;background-repeat:no-repeat !important;background-position:right 7px center !important;background-size:10px 6px !important;padding-right:24px !important;}
+.fb-multi{background-image:none !important;padding-right:8px !important;}
+.fb-caret{opacity:1;color:var(--accent2);font-size:0;width:10px;height:6px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23107fb0' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center/10px 6px;}
+/* page zoom: floating control, bottom-left corner */
+.tb-zoom{background:var(--surface);}
+.fb-corner{position:absolute;top:7px;right:20px;z-index:2;}
+.fb .fb-row{padding-right:150px;}
+/* top bar: title left; search, export and last-update pushed to the right */
+.topbar .tb-titlewrap{flex:1 1 auto;min-width:0;order:0;}
+.topbar .tb-search{order:1;}
+.topbar .tb-right{order:2;}
+.sidebar.collapsed.peek{z-index:400 !important;}
+.wk-chk{font-size:12px;}
+.wk-chk.up b{color:var(--green);}
+.wk-tbl th{white-space:nowrap;vertical-align:bottom;}
+.wk-tbl .wk-h1{display:block;}
+.wk-tbl .wk-h2{display:block;font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted2);font-size:10.5px;}
+.wk-tbl td:not(:first-child),.wk-tbl th:not(:first-child){text-align:right;}
+/* sizes never follow content: the body of each card has a fixed box */
+.chart-panel{min-width:0;}
+.chart-panel:not(.hug) .cp-body{contain:size;}
+.chart-panel .cp-body .tbl-wrap{height:100%;max-height:100%;overflow:hidden;}
+.rc-strip{width:100%;min-width:0;box-sizing:border-box;}
+.rc-strip .rc-box{min-width:170px;flex:1 1 170px;}
+.chart-panel.hug .cp-body{display:block;min-width:0;}
+.page-area.fin-scroll .charts-row > .chart-panel.hug{flex:1 1 0% !important;min-width:0;}
+.rc-strip{row-gap:8px;}
+.cp-title-desc{font-size:11px;font-weight:500;color:var(--muted);text-transform:none;letter-spacing:0;}
+.compact-tbl .itbl th,.compact-tbl .itbl td{padding-left:6px;padding-right:6px;}
+.compact-tbl .itbl{table-layout:auto;width:100%;}
+.compact-tbl .itbl td{white-space:normal;}
+.compact-tbl .itbl td:nth-child(1),.compact-tbl .itbl td:nth-child(2){min-width:150px;max-width:230px;}
+.compact-tbl .itbl td:nth-child(n+4),.compact-tbl .itbl th:nth-child(n+4){white-space:nowrap;}
+.compact-tbl .itbl th:nth-child(7){white-space:normal;min-width:95px;}
+.zoom-root .app{height:100%;}
+.page-area{overflow-y:auto;overflow-x:hidden;}
+/* never squash charts: rows keep their content height and the page scrolls instead */
+.page-area .charts-row,.page-area .charts-col{min-height:auto;flex-shrink:0;}
+.page-area .kpi-strip{flex-shrink:0;flex-wrap:wrap;}
+.page-area .kpi-strip>.kpi-card{min-width:150px;}
+.chart-panel:not(.hug):not(.fin-fixed){min-height:300px;}
+.chart-panel:not(.hug) .cp-body{min-height:190px;}
+.chart-panel .cp-head{flex-wrap:wrap;}
+.ar-cmp-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:2px 0 -4px;}
+.charts-row:has(.cp-grown),.charts-col:has(.cp-grown){min-height:auto;flex-shrink:0;}
+.page-area:has(.cp-grown) .charts-row{flex-shrink:0;}
+.zoomed .page-area:not(.fin-scroll) .charts-row{min-height:300px;flex-shrink:0;}
 
-const SUGGESTED_QUESTIONS={
-  overview:['How is revenue trending this month?','Which category is driving sales right now?','Who is this month\'s top verkoper?'],
-  revenue:['What was our best month on record?','How does this period compare to the previous one?','What\'s the average monthly revenue?'],
-  salesreps:['Who is the top-performing verkoper?','How concentrated is revenue among the top 3 reps?','Break down sales by verkoper and category'],
-  customers:['Who are our top 5 customers?','What share of revenue comes from our top customers?','What\'s the average revenue per client?'],
-  products:['What is our best-selling product?','How concentrated is revenue across products?','Show me products with the smallest share'],
-  categories:['Which category has the biggest share of revenue?','How many active category groups are there?','Compare the top two categories'],
-  channels:['Which channel drives the most revenue?','How is revenue split across channels?'],
-  plsummary:['How is gross margin trending?','What is driving EBITDA this period?'],
-  finrevcosts:['What are our biggest cost drivers?','How do revenue and costs compare year over year?'],
-  finledger:['What are the largest YoY swings in the ledger?','Which accounts saw the biggest cost increases?'],
-  default:['What can you tell me about this page?','Summarize the key numbers here'],
+/* top bar */
+.tb-zoom{display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:20px;background:var(--surface3);overflow:hidden;flex-shrink:0;}
+.tb-zoom button{border:none;background:transparent;color:var(--accent2);padding:5px 8px;cursor:pointer;display:inline-flex;align-items:center;font-family:inherit;}
+.tb-zoom button:hover:not(:disabled){background:rgba(64,188,243,0.10);}
+.tb-zoom button:disabled{opacity:.35;cursor:not-allowed;}
+.tb-zoom .tb-zoom-val{font-size:10px;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--text);min-width:42px;justify-content:center;border-left:1px solid var(--border);border-right:1px solid var(--border);}
+.live-badge{gap:6px;}
+.live-badge .tb-time-in{font-family:'JetBrains Mono',monospace;font-weight:700;}
+.live-badge .tb-snap{font-weight:600;color:#8E3A3A;}
+@media(max-width:1100px){.live-badge .tb-snap{display:none;}}
+
+/* filter bar */
+.filter-bar.fb{flex-direction:column;align-items:stretch;gap:4px;padding:7px 20px 6px;min-height:0;}
+.fb-local{box-shadow:inset 3px 0 0 var(--accent);}
+.fb-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px 10px;}
+.fb-field{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.fb-field .panel-select{max-width:260px;}
+.fb-multi{display:inline-flex;align-items:center;justify-content:space-between;gap:6px;text-align:left;cursor:pointer;}
+.fb-multi.on{border-color:var(--accent);background:rgba(64,188,243,0.08);color:var(--accent2);font-weight:700;}
+.fb-multi-txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.fb-caret{opacity:.6;font-size:9px;}
+.fb-seg{display:flex;gap:4px;}
+.fb-seg .filter-chip{padding:3px 9px;}
+.fb-reset{align-self:flex-end;margin-bottom:2px;}
+.fb-meta{display:flex;flex-wrap:wrap;gap:3px 14px;font-size:10.5px;color:var(--muted);line-height:1.4;}
+.fb-meta b{color:var(--text);}
+.fb-warn{color:#8E610D;}
+.fb-dims{color:var(--accent2);font-weight:600;}
+.fb-badge{color:var(--accent2);font-weight:700;}
+.fb-asof{margin-left:auto;}
+.fb-pop{position:fixed;z-index:10050;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 32px rgba(20,40,50,.18);width:260px;max-height:340px;display:flex;flex-direction:column;overflow:hidden;font-family:Inter,system-ui,sans-serif;}
+.fb-pop-search{margin:8px 8px 4px;padding:6px 9px;border:1px solid var(--border);border-radius:5px;font-size:12px;font-family:inherit;outline:none;}
+.fb-pop-search:focus{border-color:var(--accent);}
+.fb-pop-actions{display:flex;gap:6px;padding:4px 8px 6px;border-bottom:1px solid var(--border);}
+.fb-pop-actions button{font-size:11px;font-weight:700;color:var(--accent2);background:rgba(64,188,243,0.08);border:1px solid rgba(64,188,243,0.25);border-radius:4px;padding:2px 8px;cursor:pointer;font-family:inherit;}
+.fb-pop-list{overflow:auto;padding:4px 0;}
+.fb-pop-item{display:flex;align-items:center;gap:7px;padding:5px 10px;font-size:12.5px;color:var(--text);cursor:pointer;}
+.fb-pop-item:hover{background:var(--surface2);}
+.fb-pop-item.on{font-weight:700;color:var(--accent2);}
+.fb-pop-empty{padding:10px;font-size:12px;color:var(--muted);text-align:center;}
+.nav-local{color:var(--accent);font-size:8px;margin-left:5px;vertical-align:middle;}
+
+/* panel controls */
+.cp-zoom{display:inline-flex;align-items:center;gap:3px;}
+.cp-zoom .cp-expand-btn:disabled{opacity:.35;cursor:not-allowed;}
+.cp-zoom-val{font-size:9.5px;font-weight:700;font-family:'JetBrains Mono',monospace;border:1px solid var(--accent);color:var(--accent2);background:rgba(64,188,243,0.08);border-radius:4px;padding:1px 5px;cursor:pointer;}
+.kpi-card .kpi-chg{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;}
+.itbl td.up,.up{color:var(--green);}
+.itbl td.down,.down{color:var(--red);}
+.itbl tr.tot td{font-weight:700;background:var(--surface3);border-top:1px solid var(--border2);}
+.itbl.tree td:first-child{white-space:nowrap;}
+
+/* receivables tie-out */
+.rc-strip{display:flex;flex-wrap:wrap;align-items:stretch;gap:6px;}
+.rc-box{display:flex;flex-direction:column;justify-content:space-between;gap:4px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface3);min-width:120px;flex:1;font-size:11px;color:var(--muted);}
+.rc-box b{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text);}
+.rc-box.eq{background:rgba(64,188,243,0.08);border-color:rgba(64,188,243,0.35);}
+.rc-op{align-self:center;font-weight:800;color:var(--muted2);font-size:15px;}
+.rc-ok{align-self:center;font-weight:800;color:var(--green);font-size:13px;padding:0 6px;}
+.rc-ok.bad{color:var(--red);}
+
+/* "how this number is built" drawer */
+.pf-shade{position:fixed;inset:0;background:rgba(15,35,45,.35);z-index:9990;}
+.pf-drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,96vw);background:var(--surface);z-index:9991;box-shadow:-12px 0 40px rgba(0,0,0,.2);display:flex;flex-direction:column;padding:16px 18px;gap:10px;font-family:Inter,system-ui,sans-serif;animation:pfIn .22s cubic-bezier(.4,0,.2,1);}
+@keyframes pfIn{from{transform:translateX(30px);opacity:0;}to{transform:none;opacity:1;}}
+.pf-top{display:flex;gap:10px;align-items:flex-start;}
+.pf-dims{display:flex;flex-wrap:wrap;gap:5px;align-items:center;}
+.pf-kpis{display:flex;gap:8px;}
+.pf-kpis>div{flex:1;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:6px;padding:7px 10px;display:flex;flex-direction:column;gap:2px;}
+.pf-kpis span{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+.pf-kpis b{font-family:'JetBrains Mono',monospace;font-size:15px;}
+.pf-note{font-size:11.5px;color:#8E610D;background:rgba(229,169,61,.1);border-radius:6px;padding:6px 9px;}
+.itbl tfoot td{position:sticky;bottom:0;}
+.pf-check{font-size:12px;color:var(--green);font-weight:600;}
+.pf-table{flex:1;min-height:0;}
+.pf-foot{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted2);}
+
+/* chatbot text follows the page zoom a little (window size unchanged) */
+.cb-msgs,.cb-suggestions,.cb-empty,.cb-textarea-row,.cb-followups{zoom:var(--chat-text-zoom,1);}
+@media print{.filter-bar.fb .fb-row{display:none;}.tb-zoom{display:none;}}
+`;
+
+/* ══════════════════════════════════════════════════════════════════════
+   FilterContext.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Filters are per page: each page keeps its own selection; nothing is shared. */
+const Ctx = createContext(null);
+const KEY = 'dairytop_v2_page_filters';
+
+function load() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem(KEY) || 'null');
+    if (s && typeof s === 'object' && Object.values(s).every(f => f && f.to < X.nM)) return s;
+  } catch { /* ignore */ }
+  return {};
+}
+
+function FilterProvider({ children }) {
+  const [pages, setPages] = useState(load);
+  useEffect(() => { try { sessionStorage.setItem(KEY, JSON.stringify(pages)); } catch { /* ignore */ } }, [pages]);
+  return <Ctx.Provider value={{ pages, setPages }}>{children}</Ctx.Provider>;
+}
+
+function usePageFilter(page) {
+  const { pages, setPages } = useContext(Ctx);
+  const f = pages[page] || defaultFilter();
+  const setF = useCallback(upd => setPages(p => {
+    const cur = p[page] || defaultFilter();
+    return { ...p, [page]: typeof upd === 'function' ? upd(cur) : upd };
+  }), [page, setPages]);
+  const resetAll = useCallback(() => setPages(p => { const n = { ...p }; delete n[page]; return n; }), [page, setPages]);
+  return { f, setF, resetAll, local: true, setLocal: () => {}, localPages: [] };
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   FilterBar.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Uniform filter bar for every page (except Overview, which is the live view).
+   Same filters as the DairyTop Business Cockpit, plus multi-select, drill-down
+   and an "All pages / This page" scope switch. */
+function MultiSelect({ label, allLabel, options, value, onChange, width = 170 }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [pos, setPos] = useState(null);
+  const btn = useRef(null), pop = useRef(null);
+  useLayoutEffect(() => {
+    if (!open || !btn.current) return;
+    const r = btn.current.getBoundingClientRect();
+    setPos({ top: r.bottom + 4, left: Math.min(r.left, window.innerWidth - 270) });
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const close = e => { if (btn.current?.contains(e.target) || pop.current?.contains(e.target)) return; setOpen(false); };
+    const esc = e => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', close); document.addEventListener('keydown', esc);
+    window.addEventListener('resize', () => setOpen(false), { once: true });
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  const sel = new Set(value);
+  const shown = options.filter(o => !q.trim() || o.toLowerCase().includes(q.trim().toLowerCase()));
+  const txt = !value.length ? allLabel : value.length === 1 ? value[0] : `${value.length} selected`;
+  const toggle = o => onChange(sel.has(o) ? value.filter(v => v !== o) : [...value, o]);
+  return (
+    <label className="fb-field">
+      <span className="filter-label">{label}</span>
+      <button ref={btn} type="button" className={`panel-select fb-multi${value.length ? ' on' : ''}`} style={{ width }} onClick={() => setOpen(v => !v)} aria-haspopup="listbox" aria-expanded={open} title={value.join(', ') || allLabel}>
+        <span className="fb-multi-txt">{txt}</span><span className="fb-caret">▾</span>
+      </button>
+      {open && pos && createPortal(
+        <div ref={pop} className="fb-pop" style={{ top: pos.top, left: pos.left }} role="listbox" aria-multiselectable="true">
+          {options.length > 8 && <input className="fb-pop-search" autoFocus placeholder={`Search ${label.toLowerCase()}…`} value={q} onChange={e => setQ(e.target.value)} />}
+          <div className="fb-pop-actions">
+            <button type="button" onClick={() => onChange([])}>{allLabel}</button>
+            {q.trim() && <button type="button" onClick={() => onChange([...new Set([...value, ...shown])])}>Select shown</button>}
+          </div>
+          <div className="fb-pop-list">
+            {shown.map(o => (
+              <label key={o} className={`fb-pop-item${sel.has(o) ? ' on' : ''}`}>
+                <input type="checkbox" checked={sel.has(o)} onChange={() => toggle(o)} /> <span>{o}</span>
+              </label>
+            ))}
+            {!shown.length && <div className="fb-pop-empty">No match</div>}
+          </div>
+        </div>, document.body)}
+    </label>
+  );
+}
+
+const GRAINS = [['year', 'Year'], ['month', 'Month'], ['week', 'Week'], ['day', 'Day']];
+
+function FilterBar({ f, setF, resetAll, ignores, grainUsed = true, corner }) {
+  const P = period(f);
+  const months = X.months.map((m, i) => [i, mLong(m) + (i === X.partial.m ? ` (to ${X.partial.day})` : '')]);
+  const daily0 = X.months[X.firstDaily], drillTxt = `Week & day drill-down: ${mLong(daily0)} – ${X.ledgerLabel}`;
+  const portalInRange = f.from < X.firstDaily;
+  const set = patch => setF(p => ({ ...p, ...patch }));
+  const dimsActive = f.reps.length + f.grps.length + f.mkts.length;
+  return (
+    <div className="filter-bar fb">
+      {corner && <div className="fb-corner">{corner}</div>}
+      <div className="fb-row">
+        <label className="fb-field"><span className="filter-label">Period</span>
+          <select className="panel-select" value={f.preset} onChange={e => setF(p => applyPreset(p, e.target.value))}>
+            {presetList().map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+        </label>
+        <label className="fb-field"><span className="filter-label">From</span>
+          <select className="panel-select" value={f.from} onChange={e => { const v = +e.target.value; set({ from: v, to: Math.max(v, f.to), preset: 'custom' }); }}>
+            {months.map(([i, l]) => <option key={i} value={i}>{l}</option>)}
+          </select>
+        </label>
+        <label className="fb-field"><span className="filter-label">To</span>
+          <select className="panel-select" value={f.to} onChange={e => { const v = +e.target.value; set({ to: v, from: Math.min(v, f.from), preset: 'custom' }); }}>
+            {months.map(([i, l]) => <option key={i} value={i}>{l}</option>)}
+          </select>
+        </label>
+        <label className="fb-field"><span className="filter-label">Compare with</span>
+          <select className="panel-select" value={f.cmp} onChange={e => set({ cmp: e.target.value })}>
+            <option value="py">Same period last year</option><option value="pp">Previous period</option><option value="none">No comparison</option>
+          </select>
+        </label>
+        <div className="filter-divider" />
+        <MultiSelect label="Verkoper" allLabel="All verkopers" options={X.reps} value={f.reps} onChange={v => set({ reps: v })} />
+        <MultiSelect label="Product group" allLabel="All product groups" options={GROUPS.slice(0, 5)} value={f.grps} onChange={v => set({ grps: v })} width={150} />
+        <MultiSelect label="Market" allLabel="All markets" options={X.mkts} value={f.mkts} onChange={v => set({ mkts: v })} width={140} />
+        <div className="filter-divider" />
+        <div className="fb-field"><span className="filter-label" title={drillTxt}>Drill-down</span>
+          <div className="fb-seg" role="group" aria-label="Time drill-down">
+            {GRAINS.map(([k, l]) => (
+              <button key={k} type="button" className={`filter-chip${f.grain === k ? ' active' : ''}`} onClick={() => set({ grain: k })}
+                title={k === 'week' || k === 'day' ? drillTxt : `Show time charts per ${l.toLowerCase()}`}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <button type="button" className="filter-clear fb-reset" onClick={resetAll}>Reset filters</button>
+      </div>
+      <div className="fb-meta">
+        <span><b>Showing</b> {P.label}{P.cmp ? <> vs {P.cmpLabel}</> : null}</span>
+        {P.note && <span className="fb-warn">{P.note}</span>}
+        {dimsActive > 0 && <span className="fb-dims">{dimText(f)}</span>}
+        {ignores && <span className="fb-warn">{ignores}</span>}
+        {(f.grain === 'week' || f.grain === 'day') && grainUsed && <span className={portalInRange ? 'fb-warn' : ''}>{drillTxt}{portalInRange ? ' · earlier months have monthly totals only' : ''}</span>}
+        <span className="fb-asof">All amounts excl. VAT · Last Invoice <b>{X.ledgerLabel}</b></span>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   common.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Helpers shared by the pages: period views, time series by drill-down level,
+   chart option builders and the "how this number is built" drawer. */
+const AX = { color: '#5F7078', fontSize: 9 };
+const SPLIT = { lineStyle: { color: '#F0F3F4' } };
+const CY = '#73D4F2', PY = '#0891B2';
+
+/* Memoised by a string key so filter objects with equal content reuse the result */
+function useSales(f, extra, deps = []) {
+  const key = filterKey(f) + '|' + deps.join('|');
+  return useMemo(() => sales(f, extra), [key]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+function useLegacy(f) {
+  const key = dimsKey(f);
+  return useMemo(() => legacy(f), [key]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/* Time series for the current period at the chosen drill-down level */
+function timeSeries(f, L, grain) {
+  const P = period(f), ms = new Set(P.months);
+  const fm = L.monthly.filter(r => ms.has(r.mi));
+  if (grain === 'year') {
+    const g = new Map();
+    for (const r of fm) { const y = r.iso.slice(0, 4); const x = g.get(y) || { key: y, label: y, rev: 0, orders: null, kg: 0, months: [] }; x.rev += r.rev; x.kg += r.kg; if (r.orders != null) x.orders = (x.orders || 0) + r.orders; x.months.push(r.mi); g.set(y, x); }
+    return { grain, unit: 'Year', rows: [...g.values()] };
+  }
+  if (grain === 'week' || grain === 'day') {
+    const lo = Date.UTC(+X.months[f.from].slice(0, 4), +X.months[f.from].slice(5) - 1, 1) / 864e5;
+    const e = X.months[f.to], hi = Date.UTC(+e.slice(0, 4), +e.slice(5), 0) / 864e5;
+    if (grain === 'week') return { grain, unit: 'Week', rows: L.weekly.filter(w => w.mon + 6 >= lo && w.mon <= hi).map(w => ({ key: w.w, label: w.w, sub: `${w.start} – ${w.end}`, rev: w.rev, orders: w.orders, kg: w.kg })) };
+    return { grain, unit: 'Day', rows: L.daily.filter(d => d.t >= lo && d.t <= hi).map(d => ({ key: d.iso, label: d.d, rev: d.rev, orders: d.orders, kg: d.kg })) };
+  }
+  return { grain: 'month', unit: 'Month', rows: fm.map(r => ({ key: r.iso, label: r.m, mi: r.mi, rev: r.rev, orders: r.orders, kg: r.kg })) };
+}
+
+/* Horizontal bar ranking (used by many pages) */
+function hbarOpt(rows, { color, colors, fmtV = fmtFull, cmp, labelW, sel } = {}) {
+  const mob = isMobileViewport();
+  return withDataZoom({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => {
+      const r = rows[p[0].dataIndex], gg = r.g !== undefined ? r.g : growth(r.v, r.c); return `<strong>${r.full || r.n}</strong><br/>${fmtV(r.v)}${r.c != null ? `<br/><span style="opacity:.75">Comparison: ${fmtV(r.c)} (${gg == null ? '—' : (gg >= 0 ? '+' : '') + gg.toFixed(1).replace('.', ',') + '%'} on comparable months)</span>` : ''}${r.extra ? '<br/>' + r.extra : ''}`;
+    } },
+    grid: { left: '2%', right: '6%', bottom: '8%', top: '3%', containLabel: true },
+    xAxis: { type: 'value', min: 0, splitNumber: mob ? 4 : 5, axisLabel: { ...AX, formatter: v => fmtV === fmtFull ? fmt(v) : fmtV(v), hideOverlap: true }, splitLine: SPLIT },
+    yAxis: { type: 'category', data: rows.map(r => (r.n || '').length > (labelW || 22) ? r.n.slice(0, labelW || 22) + '…' : r.n), axisLabel: { ...AX, interval: rows.length <= 12 ? 0 : 'auto' }, inverse: true },
+    series: [
+      { type: 'bar', data: rows.map((r, i) => ({ value: r.v, itemStyle: { color: (colors ? colors[i] : color || PALETTE[i % PALETTE.length]) + (sel && sel !== r.n ? '44' : ''), borderRadius: [0, 3, 3, 0] } })), barMaxWidth: 18, z: 2 },
+      ...(cmp ? [{ type: 'scatter', symbol: 'rect', symbolSize: [3, 14], data: rows.map((r, i) => [r.c, i]), itemStyle: { color: '#1F3741' }, z: 3, tooltip: { show: false } }] : []),
+    ],
+  }, 'y');
+}
+
+/* Vertical columns, current vs comparison */
+function colOpt(labels, cur, cmp, { fmtV = fmtFull, axisFmt, curName = 'This period', cmpName = 'Comparison', curColor = CY, cmpColor = PY, line } = {}) {
+  return withDataZoom(withCrosshair({
+    tooltip: { trigger: 'axis', formatter: p => `<strong>${p[0].name}</strong><br/>` + p.map(s => `${s.marker} ${s.seriesName}: ${s.value != null ? fmtV(s.value) : '—'}`).join('<br/>') },
+    legend: cmp ? { bottom: 2, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false } : undefined,
+    grid: { left: '3%', right: '4%', bottom: cmp ? '16%' : '10%', top: '8%', containLabel: true },
+    xAxis: { type: 'category', data: labels, axisLabel: catAxisLabel(labels.length, 9) },
+    yAxis: { type: 'value', scale: !!line, axisLabel: { ...AX, formatter: axisFmt || (v => fmtV === fmtFull ? fmt(v) : fmtV(v)) }, splitLine: SPLIT },
+    series: [
+      ...(cmp ? [{ name: cmpName, type: line ? 'line' : 'bar', data: cmp, itemStyle: { color: cmpColor, borderRadius: [3, 3, 0, 0] }, lineStyle: line ? { type: 'dashed', width: 2, color: cmpColor } : undefined, symbol: 'circle', symbolSize: 4, barGap: '0%', barCategoryGap: '30%' }] : []),
+      { name: curName, type: line ? 'line' : 'bar', data: cur, itemStyle: { color: curColor, borderRadius: [3, 3, 0, 0] }, lineStyle: line ? { width: 2.5, color: curColor } : undefined, symbol: 'circle', symbolSize: 5, barGap: '0%', barCategoryGap: '30%' },
+    ],
+  }, axisFmt || (v => fmtV(v))));
+}
+
+function donutOpt(items, { sel, legend = true } = {}) {
+  return {
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'item', formatter: p => `${p.data.full || p.name}: ${fmtFull(p.value)} (${p.percent}%)` },
+    legend: legend ? { bottom: 0, textStyle: { color: '#5F7078', fontSize: 9 }, type: 'scroll', selectedMode: false } : undefined,
+    series: [{ type: 'pie', radius: ['48%', '70%'], center: ['50%', legend ? '44%' : '50%'], avoidLabelOverlap: true, label: { show: false }, labelLine: { show: false },
+      itemStyle: { borderColor: '#fff', borderWidth: 2 },
+      data: items.map((d, i) => ({ name: d.n, full: d.full, value: Math.max(0, d.v), itemStyle: { color: (d.color || PALETTE[i % PALETTE.length]) + (sel && sel !== d.n ? '44' : '') } })) }],
+  };
+}
+
+/* ── "How this number is built" drawer ─────────────────────────────────── */
+const ProofCtx = createContext(() => {});
+const useProof = () => useContext(ProofCtx);
+
+const DIMS = {
+  month: { n: 'Month', f: i => X.facts.m[i], l: k => mLong(X.months[k]) },
+  week: { n: 'Week', f: i => X.facts.W[i] || '~portal', l: k => k === '~portal' ? 'Jan 2025 – Mar 2026 (monthly totals only, no weeks)' : `${k} (${isoWk(k)})` },
+  group: { n: 'Product group', f: i => X.facts.G[i], l: k => GROUPS[k] },
+  category: { n: 'Category', f: i => X.facts.g[i], l: k => X.categories[k][0] },
+  verkoper: { n: 'Verkoper', f: i => X.facts.v[i], l: k => X.verkopers[k] },
+  customer: { n: 'Customer', f: i => X.facts.c[i], l: k => X.customers[k][0] },
+  product: { n: 'Product', f: i => X.facts.p[i], l: k => X.products[k][0] },
+  market: { n: 'Market', f: i => X.facts.M[i], l: k => X.mkts[k] },
 };
+const isoWk = k => { const t = X.weekMon.get(k); if (t == null) return ''; const d = a => { const x = new Date(a * 864e5); return x.getUTCDate() + ' ' + MN[x.getUTCMonth()]; }; return d(t) + ' – ' + d(t + 6); };
+const COLS = { r: ['Revenue', v => fmtFull(v / 100)], k: ['Tonnes', v => (v / 1e6).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' t'], q: ['Pieces', v => fmtN(v / X.qScale)] };
 
-const SESSION_TIMEOUT_MS=30*60*1000;
-const AUTH_KEY='dairytop_auth';
-const AUTH_ACTIVITY_KEY='dairytop_auth_activity';
-const ACTIVITY_WRITE_THROTTLE_MS=5000;
+function ProofProvider({ children }) {
+  const [cfg, setCfg] = useState(null);
+  useEffect(() => {
+    if (!cfg) return;
+    const k = e => { if (e.key === 'Escape') setCfg(null); };
+    document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k);
+  }, [cfg]);
+  return (
+    <ProofCtx.Provider value={setCfg}>
+      {children}
+      {cfg && createPortal(<ProofDrawer cfg={cfg} close={() => setCfg(null)} />, document.body)}
+    </ProofCtx.Provider>
+  );
+}
 
-function Sidebar({ page, setPage, sideOpen, setSideOpen, collapsed, toggleCollapsed, setHighlightQuery, dateRange, totalTx, totalClients, handleLogout }) {
-  const [navFlyout,setNavFlyout]=useState(null);
-  const handleNavHover=(e,item)=>{if(!collapsed)return;const rect=e.currentTarget.getBoundingClientRect();setNavFlyout({id:item.id,icon:item.icon,label:item.label,desc:item.desc,top:rect.top+rect.height/2,left:rect.right+6});};
-  const handleNavLeave=()=>setNavFlyout(null);
-  const goTo=(id)=>{setPage(id);setSideOpen(false);setHighlightQuery(null);};
-
+function ProofDrawer({ cfg, close }) {
+  const dims0 = cfg.dims || ['month', 'group', 'verkoper', 'customer', 'product', 'market', 'category'];
+  const dims = dims0.includes('week') ? dims0 : (dims0.includes('month') ? [...dims0.slice(0, dims0.indexOf('month') + 1), 'week', ...dims0.slice(dims0.indexOf('month') + 1)] : [...dims0, 'week']);
+  const [dim, setDim] = useState(dims[0]);
+  const isList = !!cfg.list;
+  const col = cfg.col || 'r';
+  const K = useMemo(() => isList ? null : sales(cfg.f, cfg.extra), [cfg, isList]);
+  const rows = useMemo(() => {
+    if (isList) return null;
+    const d = DIMS[dim], a = by(K.cur, d.f, col), b = by(K.cmp, d.f, col), s = by(K.curC, d.f, col);
+    const tot = [...a.values()].reduce((x, v) => x + v, 0);
+    const list = [...new Set([...a.keys(), ...b.keys()])].map(k => ({ k, l: d.l(k), v: a.get(k) || 0, c: K.cmp ? (b.get(k) || 0) : null, g: K.cmp ? growth(s.get(k) || 0, b.get(k) || 0) : null })).filter(r => r.v || r.c);
+    const wkey = k => k === '~portal' ? -1 : (X.weekMon.get(k) ?? 0);
+    if (dim === 'month') list.sort((x, y) => x.k - y.k); else if (dim === 'week') list.sort((x, y) => wkey(x.k) - wkey(y.k)); else list.sort((x, y) => y.v - x.v);
+    return { tot, totC: K.cmp ? [...b.values()].reduce((x, v) => x + v, 0) : null, totB: K.cmp ? [...s.values()].reduce((x, v) => x + v, 0) : null, list };
+  }, [K, dim, col, isList]);
+  const [fmtC] = [COLS[col][1]];
+  const head = isList ? cfg.list.head : [DIMS[dim].n, COLS[col][0], ...(K?.cmp ? ['Comparison', 'Change'] : []), 'Share'];
+  const body = isList ? cfg.list.rows : rows.list.map(r => [r.l, fmtC(r.v), ...(K.cmp ? [fmtC(r.c), pctTxt(r.g)] : []), rows.tot ? fmtShare(r.v / rows.tot * 100) : '—']);
+  const check = isList ? cfg.list.check : `✓ ${rows.list.length} rows add up to ${fmtC(rows.tot)}`;
+  const parseNum = v => { const t = String(v).trim(); if (!/^-?(€\s?)?-?[\d.]+(,\d+)?( t| d| pcs)?$/.test(t)) return null; return parseFloat(t.replace(/[€\s]|t$|d$|pcs$/g, '').replace(/\./g, '').replace(',', '.')); };
+  const listFooter = () => {
+    const skip = /date|invoice|due|status|month|last|gap|days|since|late|orders|bank|%|€\/kg|share/i;
+    return head.map((h, ci) => {
+      if (ci === 0) return 'Total';
+      if (skip.test(h)) return '';
+      const vals = body.map(r => parseNum(r[ci])); if (!vals.length || vals.some(v => v == null)) return '';
+      const sum = vals.reduce((x, v) => x + v, 0), ex = String(body[0][ci]);
+      return ex.includes('€') ? fmtEur2(sum) : ex.endsWith(' t') ? sum.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' t' : fmtN(sum);
+    });
+  };
+  const footer = isList ? listFooter() : ['Total', fmtC(rows.tot), ...(K.cmp ? [fmtC(rows.totC), pctTxt(growth(rows.totB, rows.totC))] : []), rows.tot ? '100,0%' : '—'];
+  const weekNote = !isList && dim === 'week' && K.P.cur.some(c => X.isPortalM[c.m]) ? 'Weeks exist from Apr 2026. Jan 2025 – Mar 2026 come from the former portal with monthly totals only, so they are shown as one line.' : null;
+  const copy = () => { const t = [head, ...body].map(r => r.join('\t')).join('\n'); try { navigator.clipboard.writeText(t); } catch { /* ignore */ } };
   return (
     <>
-      <div className={`sidebar${sideOpen?' open':''}${collapsed?' collapsed':''}`}>
+      <div className="pf-shade" onClick={close} />
+      <aside className="pf-drawer" aria-label="How this number is built">
+        <div className="pf-top">
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="cp-title" style={{ fontSize: 15 }}>{cfg.title}</div>
+            <div className="cp-sub">{cfg.def}</div>
+            {!isList && <div className="cp-sub" style={{ marginTop: 4 }}><b>{K.P.label}</b>{K.cmp ? ` vs ${K.P.cmpLabel}` : ''} · {dimText(cfg.f)}</div>}
+          </div>
+          <button className="cfs-close" onClick={close} title="Close (Esc)">✕</button>
+        </div>
+        {!isList && (
+          <div className="pf-dims">
+            <span className="filter-label">Break down by</span>
+            {dims.map(d => <button key={d} className={`filter-chip${dim === d ? ' active' : ''}`} onClick={() => setDim(d)}>{DIMS[d].n}</button>)}
+          </div>
+        )}
+        {!isList && (
+          <div className="pf-kpis">
+            <div><span>Total</span><b>{fmtC(rows.tot)}</b></div>
+            {K.cmp && <div><span>Comparison</span><b>{fmtC(rows.totC)}</b></div>}
+            {K.cmp && <div><span>Change</span><b className={rows.totB >= rows.totC ? 'up' : 'down'}>{pctTxt(growth(rows.totB, rows.totC))}</b></div>}
+          </div>
+        )}
+        <div className="pf-check" dangerouslySetInnerHTML={{ __html: check }} />
+        {weekNote && <div className="pf-note">{weekNote}</div>}
+        <div className="pf-table"><InlineTable headers={head} rows={body} height="100%" searchable footer={footer} /></div>
+        <div className="pf-foot"><button className="panel-btn" onClick={copy}>Copy table</button><span>Source: dash.json · excl. VAT</span></div>
+      </aside>
+    </>
+  );
+}
+
+/* Small helpers */
+const pctTxt = g => g == null ? '—' : (g >= 0 ? '+' : '') + g.toFixed(1).replace('.', ',') + '%';
+
+/* ══════════════════════════════════════════════════════════════════════
+   Overview.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Overview — the live view. Layout kept exactly as before; figures from dash.json.
+   Not affected by the filter bar. */
+const ALL = { reps: [], grps: [], mkts: [] };
+const fmtTonT = v => (v === null || v === undefined || isNaN(v)) ? '—' : v.toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' t';
+const fmtRev = v => (v === null || v === undefined || isNaN(v)) ? '—' : '€' + v.toLocaleString('de-DE', { maximumFractionDigits: 0 });
+const MP = 0; // Milk powder group
+
+function Overview() {
+  const L = useMemo(() => legacy(ALL), []);
+  const monthly = L.monthly;
+  const live = liveMonth();
+  const currentMonth = live.label + (live.day ? ` (to ${live.day})` : '');
+
+  /* Last 3 complete months, this year vs last year */
+  const last3 = monthly.slice(X.lastFull - 2, X.lastFull + 1);
+  const last3WithPY = last3.map(cur => { const py = monthly[cur.mi - 12]; return { name: cur.m.split(' ')[0], cyLabel: cur.m, cy: cur.rev, py: py ? py.rev : null, pyLabel: py ? py.m : null }; });
+  const last3Idx = new Set(last3.map(m => m.mi));
+  const cats = useMemo(() => {
+    const ix = pick([...last3Idx].map(m => ({ m, cap: 99 })));
+    const g = by(ix, i => X.facts.G[i]);
+    return [...g].map(([k, v]) => ({ n: GROUPS[k], rev: v / 100 })).sort((a, b) => b.rev - a.rev);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const catsTotalRev = cats.reduce((s, c) => s + c.rev, 0);
+
+  /* Open orders: value of open order lines (delivered-not-billed + still to deliver), excl. VAT */
+  const tiles = useMemo(() => {
+    const O = X.orders.filter(o => o[5]);
+    const OV = orderValue(O), curM = X.months[X.nM - 1], snap = X.meta.snapshot;
+    const sum = pred => OV.rows.filter(r => pred(r.l)).reduce((s, r) => s + r.vd + r.vr, 0);
+    const fut = sum(l => (l[8] || '') > snap && groupOfProduct(l[3]) === 2);
+    const mtd = sum(l => (l[8] || '').startsWith(curM));
+    const full = sum(l => (l[8] || '') <= snap);
+    const cnt = pred => new Set(OV.rows.filter(r => pred(r.l)).map(r => r.l[0])).size;
+    return { fut, mtd, full, nFut: cnt(l => (l[8] || '') > snap && groupOfProduct(l[3]) === 2), nMtd: cnt(l => (l[8] || '').startsWith(curM)), nFull: cnt(l => (l[8] || '') <= snap), unp: OV.unp };
+  }, []);
+
+  /* Melkpoeder tonnage — this year vs last year, per verkoper */
+  const melkSalesmen = useMemo(() => {
+    const s = new Set(); const F = X.facts;
+    for (let i = 0; i < X.n; i++) if (F.G[i] === MP && F.k[i] > 0) s.add(X.verkopers[F.v[i]]);
+    return [...s].filter(n => n !== 'Webshop' && n !== 'Unassigned').sort();
+  }, []);
+  const [melkSalesman, setMelkSalesman] = useState('All');
+  const cyYear = X.months[X.nM - 1].slice(0, 4);
+  const melkCYMonths = useMemo(() => monthly.filter(m => m.iso.startsWith(cyYear)).map(m => m.m), [monthly, cyYear]);
+  const melkPeriods = ['Full period', ...melkCYMonths];
+  const [melkPeriod, setMelkPeriod] = useState('Full period');
+  const melkTonChartData = useMemo(() => {
+    const repI = melkSalesman === 'All' ? null : X.repIdx.get(melkSalesman);
+    const F = X.facts, kg = new Map(), rv = new Map();
+    for (let i = 0; i < X.n; i++) {
+      if (F.G[i] !== MP || (repI != null && F.v[i] !== repI)) continue;
+      kg.set(F.m[i], (kg.get(F.m[i]) || 0) + F.k[i]); rv.set(F.m[i], (rv.get(F.m[i]) || 0) + F.r[i]);
+    }
+    const months = melkPeriod === 'Full period' ? melkCYMonths : [melkPeriod];
+    return months.map(cyM => {
+      const mi = X.mLabel.indexOf(cyM), pi = mi - 12, [name] = cyM.split(' ');
+      return { label: name, cyM, pyM: pi >= 0 ? X.mLabel[pi] : '—', cy: (kg.get(mi) || 0) / 1000, py: pi >= 0 ? (kg.get(pi) || 0) / 1000 : null, cyRev: (rv.get(mi) || 0) / 100, pyRev: pi >= 0 ? (rv.get(pi) || 0) / 100 : null };
+    });
+  }, [melkSalesman, melkPeriod, melkCYMonths]);
+
+  const melkTonOpt = useMemo(() => withDataZoom({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: params => {
+      const d = melkTonChartData[params[0].dataIndex];
+      return `<strong>${params[0].axisValue}</strong><br/><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#73D4F2;margin-right:4px"></span>This Year &nbsp; ${fmtTonT(d.cy)} &nbsp;|&nbsp; ${fmtRev(d.cyRev)}<br/><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0891B2;margin-right:4px"></span>Last Year &nbsp; ${d.py != null ? fmtTonT(d.py) : '—'} &nbsp;|&nbsp; ${fmtRev(d.pyRev)}<br/>`;
+    } },
+    legend: { bottom: 2, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false, padding: [0, 8] },
+    grid: { left: '3%', right: '4%', bottom: isMobileViewport() && melkTonChartData.length > 3 ? '28%' : '22%', top: '5%', containLabel: true },
+    xAxis: { type: 'category', data: melkTonChartData.map(d => d.label), axisLabel: catAxisLabel(melkTonChartData.length, 9) },
+    yAxis: { type: 'value', minInterval: 0.1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => v.toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' t' }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: [
+      { name: 'Last Year', type: 'bar', data: melkTonChartData.map(d => d.py), itemStyle: { color: '#0891B2', borderRadius: [3, 3, 0, 0] }, barGap: '0%', barCategoryGap: '30%' },
+      { name: 'This Year', type: 'bar', data: melkTonChartData.map(d => d.cy), itemStyle: { color: '#73D4F2', borderRadius: [3, 3, 0, 0] }, barGap: '0%', barCategoryGap: '30%' },
+    ],
+  }), [melkTonChartData]);
+  const melkTonTable = { headers: ['Month', 'Ton TY', 'Rev TY', 'Ton LY', 'Rev LY'], rows: melkTonChartData.map(d => [d.cyM, fmtTonT(d.cy), fmtRev(d.cyRev), d.py != null ? fmtTonT(d.py) : '—', fmtRev(d.pyRev)]) };
+  const melkTonControls = (
+    <>
+      <select className="panel-select" value={melkSalesman} onChange={e => setMelkSalesman(e.target.value)}><option value="All">All salesmen</option>{melkSalesmen.map(n => <option key={n} value={n}>{n}</option>)}</select>
+      <select className="panel-select" value={melkPeriod} onChange={e => setMelkPeriod(e.target.value)}>{melkPeriods.map(p => <option key={p} value={p}>{p}</option>)}</select>
+    </>
+  );
+  const melkTotCY = melkTonChartData.reduce((s, d) => s + (d.cy || 0), 0);
+  const melkTotPY = melkTonChartData.some(d => d.py != null) ? melkTonChartData.reduce((s, d) => s + (d.py || 0), 0) : null;
+  const melkDeltaPct = melkTotPY ? ((melkTotCY - melkTotPY) / melkTotPY * 100) : null;
+  const melkTonInsight = `Melkpoeder${melkSalesman !== 'All' ? ` · ${melkSalesman.split(' ')[0]}` : ''}  — ${melkPeriod}: ${fmtTonT(melkTotCY)}${melkDeltaPct != null ? ` · ${melkDeltaPct >= 0 ? '▲' : '▼'} ${Math.abs(melkDeltaPct).toFixed(1)}% vs last year` : ''}`;
+
+  const cmpOpt = withDataZoom({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: params => { let h = `<strong>${params[0].name}</strong><br/>`; params.forEach(p => { h += `${p.marker} ${p.seriesName}: ${p.value != null ? fmtFull(p.value) : '—'}<br/>`; }); return h; } },
+    legend: { bottom: 2, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false, padding: [0, 8] },
+    grid: { left: '3%', right: '4%', bottom: '22%', top: '5%', containLabel: true },
+    xAxis: { type: 'category', data: last3WithPY.map(d => d.name), axisLabel: catAxisLabel(last3WithPY.length, 9) },
+    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: [
+      { name: 'Last Year', type: 'bar', data: last3WithPY.map(d => d.py), itemStyle: { color: '#0891B2', borderRadius: [3, 3, 0, 0] }, barGap: '0%', barCategoryGap: '30%' },
+      { name: 'This Year', type: 'bar', data: last3WithPY.map(d => d.cy), itemStyle: { color: '#73D4F2', borderRadius: [3, 3, 0, 0] }, barGap: '0%', barCategoryGap: '30%' },
+    ],
+  });
+  const cmpTable = { headers: ['Month', 'This Year', 'Last Year'], rows: last3WithPY.map(d => [d.cyLabel, fmtFull(d.cy), d.py != null ? fmtFull(d.py) : '—']) };
+  const momDelta = last3.length >= 2 && last3[1].rev ? ((last3[2].rev - last3[1].rev) / last3[1].rev) * 100 : null;
+  const turnoverInsight = momDelta != null ? `Revenue ${momDelta >= 0 ? 'up' : 'down'} ${Math.abs(momDelta).toFixed(1)}% vs last month${cats[0] ? ` · Top category: ${cats[0].n} (${catsTotalRev > 0 ? (cats[0].rev / catsTotalRev * 100).toFixed(0) : 0}% of last 3 complete months)` : ''}` : null;
+
+  /* Category trends: weekly (last 12 weeks) or monthly CY vs PY */
+  const [catGrain, setCatGrain] = useState('weekly');
+  const groupsWithData = useMemo(() => { const s = new Set(L.groupsMonthly.filter(r => r.rev).map(r => r.g)); return [0, 1, 2, 3, 4, 5].filter(g => s.has(g)); }, [L]);
+  const LOG_MIN = 100;
+  const logPt = v => { const r = Math.round(v || 0); return { value: r > 0 ? Math.max(r, LOG_MIN) : null, raw: r }; };
+  const logAxis = floor => ({ type: 'log', logBase: 10, min: floor, max: v => v.max * 1.6, axisLabel: { color: '#5F7078', fontSize: 9, showMaxLabel: false, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } }, minorSplitLine: { show: false } });
+  const LOG_AXIS = logAxis(LOG_MIN);
+  const tipFmt = p => { const rows = p.filter(s => s.data && s.data.raw != null && s.data.raw !== 0).map(s => ({ ...s, value: s.data.raw })); const half = Math.ceil(rows.length / 2); const col = arr => arr.map(s => `<div style="display:flex;align-items:center;gap:4px;line-height:1.6;white-space:nowrap">${s.marker}<span style="font-size:10px;white-space:nowrap">${s.seriesName}: ${fmtFull(s.value)}</span></div>`).join(''); return `<div style="font-size:11px;font-weight:700;margin-bottom:4px">${p[0].axisValue}</div><div style="display:flex;gap:16px;white-space:nowrap"><div>${col(rows.slice(0, half))}</div><div>${col(rows.slice(half))}</div></div>`; };
+  const tipBase = { ...TOOLTIP_STYLE, trigger: 'axis', confine: false, appendToBody: true, extraCssText: 'border-radius:10px;padding:10px 14px;box-shadow:0 8px 24px rgba(0,0,0,0.3);max-width:none !important;width:auto !important;white-space:nowrap;overflow:visible;', formatter: tipFmt };
+  const catWeeklyOpt = useMemo(() => {
+    const weeks = X.weeks.slice(-12), F = X.facts, wi = new Map(weeks.map((w, i) => [w, i]));
+    const data = groupsWithData.map(() => new Array(weeks.length).fill(0));
+    for (let i = 0; i < X.n; i++) { const k = wi.get(F.W[i]); if (k == null) continue; const gi = groupsWithData.indexOf(F.G[i]); if (gi >= 0) data[gi][k] += F.r[i] / 100; }
+    return withCrosshair({
+      tooltip: tipBase,
+      legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 8 }, type: 'scroll', itemWidth: 10, itemHeight: 10 },
+      grid: { left: '2%', right: '2%', bottom: '22%', top: '8%', containLabel: true },
+      xAxis: { type: 'category', data: weeks, axisLabel: { color: '#5F7078', fontSize: 8, rotate: 30, hideOverlap: true } },
+      yAxis: LOG_AXIS,
+      series: groupsWithData.map((g, gi) => ({ name: GROUPS[g], type: 'line', connectNulls: false, data: data[gi].map(logPt), itemStyle: { color: GROUP_COLORS[g] }, lineStyle: { width: 2 }, symbol: 'circle', symbolSize: 4 })),
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupsWithData]);
+  const catMonthlyOpt = useMemo(() => {
+    const y1 = +cyYear, y0 = y1 - 1;
+    const common = MN.filter((mn, k) => X.months.includes(`${y0}-${String(k + 1).padStart(2, '0')}`) && X.months.includes(`${y1}-${String(k + 1).padStart(2, '0')}`));
+    const val = (g, y, mn) => { const mi = X.months.indexOf(`${y}-${String(MN.indexOf(mn) + 1).padStart(2, '0')}`); const r = L.groupsMonthly.find(x => x.g === g && x.mi === mi); return r ? r.rev : 0; };
+    const series = [];
+    groupsWithData.forEach(g => {
+      series.push({ name: `${GROUPS[g]} '${String(y1).slice(2)}`, type: 'line', data: common.map(mn => logPt(val(g, y1, mn))), itemStyle: { color: GROUP_COLORS[g] }, lineStyle: { width: 2 }, symbol: 'circle', symbolSize: 4, smooth: true });
+      series.push({ name: `${GROUPS[g]} '${String(y0).slice(2)}`, type: 'line', data: common.map(mn => logPt(val(g, y0, mn))), itemStyle: { color: GROUP_COLORS[g] }, lineStyle: { width: 1.5, type: 'dashed', opacity: 0.6 }, symbol: 'none', smooth: true });
+    });
+    return withCrosshair({
+      tooltip: tipBase,
+      legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 8 }, type: 'scroll', itemWidth: 10, itemHeight: 10 },
+      grid: { left: '2%', right: '2%', bottom: '22%', top: '8%', containLabel: true },
+      xAxis: { type: 'category', data: common, axisLabel: { color: '#5F7078', fontSize: 9 } },
+      yAxis: logAxis(Math.pow(10, Math.floor(Math.log10(Math.max(LOG_MIN, Math.min(...series.flatMap(x => x.data.map(d => d.raw).filter(v => v > 0)))))))),
+      series,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupsWithData, L]);
+  const nG = groupsWithData.length;
+  const catSubtitle = catGrain === 'weekly'
+    ? `${nG} groups · last 12 weeks · weeks start ${X.months[X.firstDaily] ? MN[+X.months[X.firstDaily].slice(5) - 1] + ' ' + X.months[X.firstDaily].slice(0, 4) : ''} — click Monthly for CY vs PY`
+    : `${nG} groups · solid = ${cyYear}, dashed = ${+cyYear - 1} · same month comparison`;
+
+  const T = tiles, nv = !hasOrderValues;
+  return (
+    <div className="page-area" key="overview">
+      <div className="kpi-strip">
+        <div className="kpi-card green"><div className="kpi-lbl">Turnover MTD</div><div className="kpi-val sm">{fmtFull(live.rev)}</div><div className="kpi-chg">Revenue this month, to date{live.day ? ` (1–${live.day} ${live.label.split(' ')[0]})` : ''}</div></div>
+        <div className="kpi-card amber"><div className="kpi-lbl">Projected MTD</div><div className="kpi-val sm">{nv ? '—' : fmtFull(live.rev + T.mtd)}</div><div className="kpi-chg">{nv ? 'Needs order-line € values (dash.json ≥ 5.0.0)' : 'Open MTD + Revenue MTD'}</div></div>
+        <div className="kpi-card blue"><div className="kpi-lbl">Open Orders (Future) – Kalverhuisvesting</div><div className="kpi-val sm">{nv ? '—' : fmtFull(T.fut)}</div><div className="kpi-chg">Due after today · {fmtN(T.nFut)} orders</div></div>
+        <div className="kpi-card sky"><div className="kpi-lbl">Open Value MTD</div><div className="kpi-val sm">{nv ? '—' : fmtFull(T.mtd)}</div><div className="kpi-chg">Open orders due this month · {fmtN(T.nMtd)} orders</div></div>
+        <div className="kpi-card teal"><div className="kpi-lbl">Open Value (Full)</div><div className="kpi-val sm">{nv ? '—' : fmtFull(T.full)}</div><div className="kpi-chg">All open orders due today or earlier · {fmtN(T.nFull)} orders</div></div>
+      </div>
+      <div className="charts-row">
+        <div className="charts-col" style={{ flex: 1.4 }}>
+          <Panel title="Turnover — Last 3 Complete Months" subtitle={`This year vs last year · ${last3[0]?.m} – ${last3[2]?.m} · current month ${currentMonth} not included`} flex={1} tableHeaders={cmpTable.headers} tableRows={cmpTable.rows} insight={turnoverInsight}><EC option={cmpOpt} /></Panel>
+        </div>
+        <div className="charts-col" style={{ flex: 1 }}>
+          <Panel title="Melkpoeder Tonnage" subtitle={melkSalesman === 'All' ? 'Per month · this year vs last year' : `${melkSalesman.split(' ')[0]} · this year vs last year`} flex={1} controls={melkTonControls} tableHeaders={melkTonTable.headers} tableRows={melkTonTable.rows} insight={melkTonInsight}><EC option={melkTonOpt} /></Panel>
+        </div>
+      </div>
+      <div className="charts-row" style={{ flex: 0.8 }}>
+        <Panel title="Category Trends" subtitle={catSubtitle} flex={1} controls={
+          <div className="view-tog">
+            <button className={`vt-btn${catGrain === 'weekly' ? ' active' : ''}`} onClick={() => setCatGrain('weekly')}>Weekly</button>
+            <button className={`vt-btn${catGrain === 'monthly' ? ' active' : ''}`} onClick={() => setCatGrain('monthly')}>Monthly</button>
+          </div>
+        }><EC option={catGrain === 'weekly' ? catWeeklyOpt : catMonthlyOpt} /></Panel>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Revenue.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Revenue Trends */
+const LEGEND_ICON_DASH = 'path://M0,3 L10,3 L10,9 L0,9 Z M12,3 L22,3 L22,9 L12,9 Z M24,3 L34,3 L34,9 L24,9 Z';
+const LEGEND_ICON_LINE = 'path://M0,3 L34,3 L34,9 L0,9 Z';
+
+function Revenue({ f, setF }) {
+  const L = useLegacy(f), K = useSales(f), P = K.P, proof = useProof();
+  const TS = useMemo(() => timeSeries(f, L, f.grain), [f, L]);
+  const [selected, setSelected] = useState(null);
+  const [weekFocus0, setWeekFocus] = useState(null);
+  const weekFocus = f.grain === 'day' ? weekFocus0 : null;
+  const periods = TS.grain === 'day' && weekFocus ? TS.rows.filter(r => { const t = Date.UTC(+r.key.slice(0, 4), +r.key.slice(5, 7) - 1, +r.key.slice(8, 10)) / 864e5, wm = X.weekMon.get(weekFocus); return wm == null || (t >= wm && t <= wm + 6); }) : TS.rows;
+
+
+  /* YTD and LTM (calendar facts, same dimension filters) */
+  /* YTD is always this calendar year up to the latest data, whatever period is selected */
+  const y = X.months[X.nM - 1].slice(0, 4), ytdF = { ...f, from: X.months.indexOf(y + '-01'), to: X.nM - 1, cmp: 'py' };
+  const ytdKey = JSON.stringify(ytdF);
+  const YTD = useMemo(() => sales(JSON.parse(ytdKey)), [ytdKey]);
+  const ltmTo = Math.min(f.to, X.lastFull), ltmF = { ...f, from: Math.max(0, ltmTo - 11), to: ltmTo, cmp: 'none' };
+  const ltmKey = JSON.stringify(ltmF);
+  const LTM = useMemo(() => sales(JSON.parse(ltmKey)), [ltmKey]);
+  const ltmMonths = ltmTo - Math.max(0, ltmTo - 11) + 1;
+
+  const best = periods.length ? periods.reduce((b, c) => c.rev > b.rev ? c : b, periods[0]) : null;
+  const g = growth(K.revCur4Cmp, K.revC);
+  const cov = ordersCoverage(P.cur);
+
+  /* drill: year → month → week → day */
+  /* drill-down: click a column (year → months → weeks → days); "Back" climbs up again */
+  const [stack, setStack] = useState([]);
+  const [msg, setMsg] = useState(null);
+  const push = next => { setStack(st => [...st, { from: f.from, to: f.to, grain: f.grain, preset: f.preset }]); setSelected(null); setMsg(null); setF(x => ({ ...x, ...next, preset: 'custom' })); };
+  const back = () => { setWeekFocus(null);
+     const prev = stack[stack.length - 1]; if (!prev) return; setStack(st => st.slice(0, -1)); setSelected(null); setMsg(null); setF(x => ({ ...x, ...prev })); };
+  const drill = p => {
+    const r = periods[typeof p === 'number' ? p : p.dataIndex]; if (!r) return;
+    if (TS.grain === 'year') { const ms = X.months.map((m, i) => [m, i]).filter(([m]) => m.startsWith(r.key)).map(([, i]) => i); push({ from: ms[0], to: ms[ms.length - 1], grain: 'month' }); return; }
+    if (TS.grain === 'month') {
+      if (X.isPortalM[r.mi]) { setSelected(r.key); setMsg(`${mLong(r.key)} comes from the former portal (monthly total only), so it has no weeks. Weeks start in ${mLong(X.months[X.firstDaily])}.`); return; }
+      push({ from: r.mi, to: r.mi, grain: 'week' }); return;
+    }
+    if (TS.grain === 'week') { const wm = X.weekMon.get(r.key); const m0 = X.months.indexOf(new Date(wm * 864e5).toISOString().slice(0, 7)), m1 = X.months.indexOf(new Date((wm + 6) * 864e5).toISOString().slice(0, 7)); setSelected(null); push({ from: m0 < 0 ? f.from : m0, to: m1 < 0 ? m0 : m1, grain: 'day' }); setWeekFocus(r.key); return; }
+    setSelected(selected === r.key ? null : r.key);
+  };
+
+  const barOpt = withDataZoom(withCrosshair({
+    tooltip: { trigger: 'axis', formatter: p => { let h = `<strong>${p[0].name}</strong>${periods[p[0].dataIndex]?.sub ? ' · ' + periods[p[0].dataIndex].sub : ''}<br/>`; p.forEach(s => { h += `${s.marker} ${s.seriesName}: ${s.value != null ? fmtFull(s.value) : '—'}<br/>`; }); return h + `<span style="opacity:.7;font-size:10px">Click to drill down</span>`; } },
+    legend: { bottom: 0, data: ['Revenue'], textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect' },
+    grid: { left: '3%', right: '4%', bottom: '12%', top: '8%', containLabel: true },
+    xAxis: { type: 'category', data: periods.map(d => d.label), axisLabel: catAxisLabel(periods.length, 9) },
+    yAxis: { type: 'value', min: 0, splitNumber: 5, axisLabel: { ...AX, formatter: v => fmt(v), hideOverlap: true }, splitLine: SPLIT },
+    series: [
+      { name: 'Revenue', type: 'bar', itemStyle: { color: 'rgba(8,145,178,0.75)' }, data: periods.map(d => ({ value: d.rev, itemStyle: { color: selected && selected !== d.key ? 'rgba(8,145,178,0.2)' : 'rgba(8,145,178,0.75)', borderRadius: [3, 3, 0, 0] } })), barMaxWidth: 28 },
+    ],
+  }));
+
+  /* Same-month and cumulative year comparison */
+  const years = [...new Set(X.months.map(m => m.slice(0, 4)))];
+  const [y0, y1] = years.slice(-2);
+  const byYM = new Map(L.monthly.map(r => [r.iso, r.rev]));
+  const val = (yy, k) => byYM.get(`${yy}-${String(k + 1).padStart(2, '0')}`);
+  const cMonths = MN.filter((_, k) => val(y0, k) != null && val(y1, k) != null);
+  const cmpLine = (yy, dashed, color) => ({ name: yy, type: 'line', symbol: 'none', data: cMonths.map(mn => val(yy, MN.indexOf(mn)) ?? null), lineStyle: { color, width: 2, type: dashed ? 'dashed' : 'solid' }, itemStyle: { color }, areaStyle: { color: dashed ? 'rgba(8,145,178,.07)' : 'rgba(115,212,242,.07)' }, smooth: true });
+  const legendY = { bottom: 4, data: [{ name: y0, icon: LEGEND_ICON_DASH }, { name: y1, icon: LEGEND_ICON_LINE }], textStyle: { color: '#5F7078', fontSize: 10 }, selectedMode: false };
+  const yoyOpt = withDataZoom(withCrosshair({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s => s.value != null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
+    legend: legendY, grid: { left: '3%', right: '4%', bottom: '26%', top: '8%', containLabel: true },
+    xAxis: { type: 'category', data: cMonths, axisLabel: catAxisLabel(cMonths.length, 9) },
+    yAxis: { type: 'value', splitNumber: 5, axisLabel: { ...AX, formatter: v => fmt(v), hideOverlap: true }, splitLine: SPLIT },
+    series: [cmpLine(y0, true, '#0891B2'), cmpLine(y1, false, '#73D4F2')],
+  }));
+  const cum = yy => { let s = 0; return MN.map((_, k) => { const v = val(yy, k); if (v == null) return null; s += v; return s; }); };
+  const cumOpt = withCrosshair({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => p.filter(s => s.value != null).map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
+    legend: legendY, grid: { left: '3%', right: '4%', bottom: '22%', top: '8%', containLabel: true },
+    xAxis: { type: 'category', data: MN, axisLabel: catAxisLabel(12, 9) },
+    yAxis: { type: 'value', axisLabel: { ...AX, formatter: v => fmt(v) }, splitLine: SPLIT },
+    series: [
+      { name: y0, type: 'line', data: cum(y0), smooth: true, symbol: 'none', lineStyle: { color: '#0891B2', width: 2, type: 'dashed' }, itemStyle: { color: '#0891B2' }, areaStyle: { color: 'rgba(8,145,178,.07)' } },
+      { name: y1, type: 'line', data: cum(y1), smooth: true, symbol: 'none', lineStyle: { color: '#40BCF3', width: 2 }, itemStyle: { color: '#40BCF3' }, areaStyle: { color: 'rgba(64,188,243,.08)' } },
+    ],
+  });
+
+  const ordRows = periods.filter(r => r.orders != null);
+  const ordersOpt = withDataZoom(withCrosshair({
+    tooltip: { trigger: 'axis', formatter: p => `<strong>${p[0].name}</strong><br/>Orders (invoices): ${fmtN(p[0].value)}` },
+    grid: { left: '3%', right: '4%', bottom: '12%', top: '8%', containLabel: true },
+    xAxis: { type: 'category', data: ordRows.map(d => d.label), axisLabel: catAxisLabel(ordRows.length, 9), axisLine: { lineStyle: { color: '#DDE6E9' } } },
+    yAxis: { type: 'value', minInterval: 1, axisLabel: { ...AX, formatter: v => fmtN(v) }, splitLine: SPLIT },
+    series: [{ type: 'line', data: ordRows.map(d => d.orders), step: 'middle', symbol: 'circle', symbolSize: 5, lineStyle: { color: '#0369A1', width: 2 }, itemStyle: { color: '#0369A1' }, areaStyle: { color: 'rgba(3,105,161,0.08)' } }],
+  }, fmtN));
+
+  const unit = TS.unit;
+  const barTbl = { headers: [unit, 'Revenue', 'Orders', 'Avg Order Value'], rows: periods.map(m => [m.label, fmtFull(m.rev), m.orders == null ? '—' : fmtN(m.orders), m.orders ? fmtFull(Math.round(m.rev / m.orders)) : '—']) };
+  const ordTbl = { headers: [unit, 'Orders (invoices)'], rows: ordRows.map(m => [m.label, fmtN(m.orders)]) };
+  const insight = [g != null ? `Revenue ${g >= 0 ? 'up' : 'down'} ${Math.abs(g).toFixed(1)}% vs ${P.cmpLabel}` : null, best ? `Best ${unit.toLowerCase()}: ${best.label} (${fmtFull(best.rev)})` : null].filter(Boolean).join(' · ') || null;
+  const drillHint = { year: 'click a year to see its months', month: 'click a month to see its weeks (from Apr 2026)', week: 'click a week to see its days', day: weekFocus ? `days of ${weekFocus}` : 'daily detail' }[TS.grain];
+  const ytdG = growth(YTD.revCur4Cmp, YTD.revC);
+
+  return (
+    <div className="page-area" key="revenue">
+      <KpiNote extra={cov} />
+      <div className="kpi-strip">
+        <Kpi color="blue" label="Turnover (selected period)" value={fmtFull(K.rev)} sub={<><Trend g={g} /><span>{P.cmp ? `vs ${P.cmpLabel}` : P.note || 'No comparison'}</span></>} onClick={() => proof({ title: 'Turnover', def: 'Revenue excl. VAT for the selected period and filters.', f })} />
+        <Kpi color="teal" label={`Turnover YTD (${y})`} value={fmtFull(YTD.rev)} sub={<><Trend g={ytdG} suffix={`vs ${+y - 1}`} /><span>{YTD.P.cur.length}m{YTD.P.note ? ' · Nov compared on complete months' : ''}</span></>} onClick={() => proof({ title: `Turnover YTD ${y}`, def: 'Revenue from 1 January to the end of the selected period.', f: ytdF })} />
+        <Kpi color="green" label={`Best ${unit} in period`} value={best ? best.label : '—'} sub={best ? fmtFull(best.rev) : ''} />
+        <Kpi color="amber" label="Avg / Month (LTM)" value={fmtFull(LTM.rev / ltmMonths)} sub={`${fmtFull(LTM.rev)} over ${LTM.P.label}`} onClick={() => proof({ title: 'Last 12 complete months', def: 'Revenue of the 12 complete months up to the selected end month.', f: ltmF, dims: ['month', 'group', 'verkoper', 'market'] })} />
+      </div>
+      <div className="charts-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gridTemplateRows: 'minmax(320px,1fr) minmax(320px,1fr)', alignItems: 'stretch' }}>
+        <Panel title="Revenue Over Time" subtitle={`${P.label} · per ${unit.toLowerCase()} · ${drillHint}`} tag={`${periods.length}${unit[0]}`} flex={1} style={{ gridColumn: '1/span 2', gridRow: '1', minWidth: 0 }} tableHeaders={barTbl.headers} tableRows={barTbl.rows} insight={msg || insight}
+          controls={stack.length ? <button className="panel-btn" onClick={back} title="Go back up one level">◂ Back</button> : null}>
+          <EC option={barOpt} onAxisClick={drill} />
+        </Panel>
+        <Panel title={`${y0} vs ${y1} Monthly`} subtitle="Same-month comparison · follows verkoper, group & market filters" flex={1} style={{ gridColumn: '1/span 2', gridRow: '2', minWidth: 0 }}><EC option={yoyOpt} /></Panel>
+        <Panel title="Cumulative Revenue YoY" subtitle="Running total by calendar month" flex={1} style={{ gridColumn: '3', gridRow: '1/span 2', minWidth: 0 }}><EC option={cumOpt} /></Panel>
+        <Panel title="Order Volume" subtitle={`Invoices per ${unit.toLowerCase()}${cov ? ' · from Apr 2026' : ''}`} flex={1} style={{ gridColumn: '4', gridRow: '1/span 2', minWidth: 0 }} tableHeaders={ordTbl.headers} tableRows={ordTbl.rows}><EC option={ordersOpt} /></Panel>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   SalesReps.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Verkoper (sales team) */
+function SalesReps({ f, highlightQuery }) {
+  const K = useSales(f), P = K.P, proof = useProof();
+  const [excludeJohan, setExcludeJohan] = useState(false);
+  const [selRep, setSelRep] = useState(null);
+  const isJohan = n => /^jo(h)?an/i.test(n.trim());
+
+  const reps = useMemo(() => {
+    const a = aggregate(K.cur, repName), b = aggregate(K.cmp, repName), s = aggregate(K.curC, repName);
+    const o = invoiceCounts(f, P.cur, v => X.customers[v.c][2]);
+    return [...a.values()].filter(x => !excludeJohan || !isJohan(x.k)).map(x => ({
+      n: x.k, rev: x.rev, kg: x.kg, revO: x.revO, c: K.cmp ? (b.get(x.k)?.rev || 0) : null, g: K.cmp ? growth(s.get(x.k)?.rev || 0, b.get(x.k)?.rev || 0) : null,
+      orders: o.known ? (o.map.get(x.k) || 0) : null, buyers: x.cust.size,
+    })).sort((x, y) => y.rev - x.rev);
+  }, [K, f, P, excludeJohan]);
+  const totalRev = reps.reduce((s, r) => s + r.rev, 0);
+  const top3 = reps.slice(0, 3);
+  const aov = r => r.orders ? fmtFull(Math.round(r.revO / r.orders)) : '—';
+
+  const barRows = reps.map(r => ({ n: r.n.split(' ')[0], full: r.n, v: r.rev, c: r.c, g: r.g, extra: totalRev ? `${(r.rev / totalRev * 100).toFixed(1).replace('.', ',')}% of shown revenue` : '' }));
+  const barOpt = hbarOpt(barRows, { cmp: !!K.cmp, sel: selRep ? selRep.split(' ')[0] : null });
+  const tbl = { headers: ['#', 'Verkoper', 'Revenue', ...(K.cmp ? ['Comparison', 'Change'] : []), 'Tonnes', 'Buyers', 'Orders', 'Avg Order Value'],
+    rows: reps.map((d, i) => [i + 1, d.n, fmtFull(d.rev), ...(K.cmp ? [fmtFull(d.c), pctTxt(d.g)] : []), fmtNum(d.kg / 1000) + ' t', fmtN(d.buyers), fmtN(d.orders), aov(d)]) };
+  const leaderRows = selRep ? tbl.rows.filter(r => r[1] === selRep) : tbl.rows;
+  const insight = reps[0] ? `${reps[0].n} leads with ${fmtFull(reps[0].rev)}${totalRev > 0 ? ` (${(reps[0].rev / totalRev * 100).toFixed(0)}% of shown revenue)` : ''}` : null;
+
+  /* stacked by product group */
+  const smOrder = reps.map(r => r.n);
+  const byRG = useMemo(() => aggregate(K.cur, i => repName(i) + '|' + X.facts.G[i]), [K]);
+  const gs = [0, 1, 2, 3, 4, 5].filter(g => smOrder.some(n => byRG.get(n + '|' + g)?.rev));
+  const smOpt = withDataZoom({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => { let h = `<strong>${smOrder[p[0].dataIndex]}</strong><br/>`, s = 0; p.forEach(x => { if (x.value) { h += `${x.marker} ${x.seriesName}: ${fmtFull(x.value)}<br/>`; s += x.value; } }); return h + `<strong>Total: ${fmtFull(s)}</strong>`; } },
+    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 8 }, type: 'scroll', itemWidth: 10, itemHeight: 10 },
+    grid: { left: '2%', right: '6%', bottom: '14%', top: '3%', containLabel: true },
+    xAxis: { type: 'value', min: 0, splitNumber: isMobileViewport() ? 4 : 5, axisLabel: { ...AX, formatter: v => fmt(v), hideOverlap: true }, splitLine: SPLIT },
+    yAxis: { type: 'category', data: smOrder.map(n => n.split(' ')[0]), axisLabel: AX, inverse: true },
+    series: gs.map(g => ({ name: GROUPS[g], type: 'bar', stack: 'total', data: smOrder.map(n => Math.round(byRG.get(n + '|' + g)?.rev || 0)), itemStyle: { color: GROUP_COLORS[g] } })),
+  }, 'y');
+  const smTbl = { headers: ['Verkoper', 'Product group', 'Revenue', 'Tonnes'], rows: smOrder.flatMap(n => gs.filter(g => byRG.get(n + '|' + g)?.rev).map(g => [n, GROUPS[g], fmtFull(byRG.get(n + '|' + g).rev), fmtNum(byRG.get(n + '|' + g).kg / 1000) + ' t'])) };
+
+  /* Feed & milk powder: revenue vs tonnage per month */
+  const [vmSalesman, setVmSalesman] = useState('All');
+  const vm = useMemo(() => {
+    const ri = vmSalesman === 'All' ? null : X.repIdx.get(vmSalesman), dp = dimPred(f);
+    const ix = pick(P.cur, i => dp(i) && (ri == null || X.facts.v[i] === ri) && (X.facts.G[i] === 0 || X.facts.G[i] === 1));
+    const a = aggregate(ix, i => X.facts.m[i] + '|' + X.facts.G[i]);
+    return P.cur.map(c => ({ month: X.mLabel[c.m], mp: a.get(c.m + '|0') || { rev: 0, kg: 0 }, fd: a.get(c.m + '|1') || { rev: 0, kg: 0 } }));
+  }, [f, P, vmSalesman]);
+  const vmOpt = withDataZoom({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `<strong>${p[0].name}</strong><br/>` + p.map(s => `${s.marker} ${s.seriesName}: ${s.seriesName.includes('Tonnage') ? fmtNum(s.value) + ' t' : fmtFull(s.value)}`).join('<br/>') },
+    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 9 }, type: 'scroll', itemWidth: 10, itemHeight: 10 },
+    grid: { left: '2%', right: '6%', bottom: '22%', top: '10%', containLabel: true },
+    xAxis: { type: 'category', data: vm.map(r => r.month), axisLabel: { color: '#5F7078', fontSize: 8, rotate: 30, hideOverlap: true } },
+    yAxis: [
+      { type: 'value', name: 'Revenue', nameTextStyle: { color: '#5F7078', fontSize: 9 }, axisLabel: { ...AX, formatter: v => fmt(v) }, splitLine: SPLIT },
+      { type: 'value', name: 'Tonnage (t)', nameTextStyle: { color: '#5F7078', fontSize: 9 }, axisLabel: { ...AX, formatter: v => fmtNum(v) }, splitLine: { show: false } },
+    ],
+    series: [
+      { name: 'Milk powder Revenue', type: 'bar', barGap: '10%', data: vm.map(r => Math.round(r.mp.rev)), itemStyle: { color: '#40BCF3', borderRadius: [2, 2, 0, 0] }, barMaxWidth: 18 },
+      { name: 'Feed Revenue', type: 'bar', data: vm.map(r => Math.round(r.fd.rev)), itemStyle: { color: '#2E9B62', borderRadius: [2, 2, 0, 0] }, barMaxWidth: 18 },
+      { name: 'Milk powder Tonnage', type: 'line', yAxisIndex: 1, data: vm.map(r => +(r.mp.kg / 1000).toFixed(2)), itemStyle: { color: '#1F3741' }, lineStyle: { width: 2 }, symbol: 'circle', symbolSize: 5 },
+      { name: 'Feed Tonnage', type: 'line', yAxisIndex: 1, data: vm.map(r => +(r.fd.kg / 1000).toFixed(2)), itemStyle: { color: '#666' }, lineStyle: { width: 2, type: 'dashed' }, symbol: 'diamond', symbolSize: 5 },
+    ],
+  });
+  const vmTbl = { headers: ['Month', 'Milk powder Rev', 'Milk powder Ton', 'Feed Rev', 'Feed Ton'], rows: vm.map(r => [r.month, fmtFull(r.mp.rev), fmtNum(r.mp.kg / 1000) + ' t', fmtFull(r.fd.rev), fmtNum(r.fd.kg / 1000) + ' t']) };
+  const vmSalesmen = reps.map(r => r.n);
+
+  const repProof = n => proof({ title: `${n} · revenue`, def: 'Revenue of one verkoper (current customer assignment).', f: { ...f, reps: [n] }, dims: ['customer', 'group', 'product', 'month', 'market'] });
+  const onBar = p => { const r = reps[p.dataIndex]; if (r) setSelRep(selRep === r.n ? null : r.n); };
+  const top3Share = totalRev > 0 ? (top3.reduce((s, r) => s + r.rev, 0) / totalRev * 100) : 0;
+
+  return (
+    <div className="page-area" key="reps">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 0, flexWrap: 'wrap' }}>
+        <KpiNote extra={ordersCoverage(P.cur)} />
+        <button className={`cmp-toggle${excludeJohan ? ' active' : ''}`} onClick={() => setExcludeJohan(v => !v)}>{excludeJohan ? '✓ Johan excluded' : 'Exclude Johan'}</button>
+        {excludeJohan && <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>Johan's rows hidden from all charts and table</span>}
+      </div>
+      <div className="kpi-strip">
+        {['blue', 'teal', 'navy'].map((c, i) => (
+          <Kpi key={i} color={c} label={`#${i + 1} — ${top3[i]?.n?.split(' ')[0] || '—'}`} value={fmtFull(top3[i]?.rev || 0)}
+            sub={<>{K.cmp && top3[i] ? <Trend g={top3[i].g} /> : null}<span>{top3[i]?.orders != null ? fmtN(top3[i].orders) + ' orders' : `${fmtN(top3[i]?.buyers || 0)} buyers`}</span></>}
+            onClick={top3[i] ? () => repProof(top3[i].n) : undefined} />
+        ))}
+        <Kpi color="amber" label="Top 3 Share" value={`${top3Share.toFixed(0)}%`} sub="of shown revenue" />
+      </div>
+      <div className="charts-row">
+        <div className="charts-col" style={{ flex: 1 }}>
+          <Panel title="Omzet per Verkoper" subtitle={`${P.label}${K.cmp ? ' · tick = ' + P.cmpLabel : ''} · click a bar to focus`} flex={1}
+            controls={<ExportExcelButton filename="omzet_per_verkoper.xlsx" headers={tbl.headers} rows={tbl.rows} />} tableHeaders={tbl.headers} tableRows={tbl.rows} insight={insight}>
+            <EC option={barOpt} onEvents={{ click: onBar }} />
+          </Panel>
+          <Panel title="Verkoper Leaderboard" subtitle={selRep ? 'Filtered · click the chart to change' : 'Ranked by revenue · click a row for its breakdown'} flex={1}>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              {selRep && (<div className="drill-chip">Showing: {selRep}<button onClick={() => setSelRep(null)} title="Clear selection">✕</button></div>)}
+              <div style={{ flex: 1, minHeight: 0 }}><InlineTable headers={tbl.headers} rows={leaderRows} height="100%" searchable initialQuery={highlightQuery} onRowClick={i => repProof(leaderRows[i][1])} /></div>
+            </div>
+          </Panel>
+        </div>
+        <div className="charts-col" style={{ flex: 1 }}>
+          <Panel title="Sales per Verkoper by Product Group" subtitle={`Stacked by group · ${P.label}`} flex={1} controls={<ExportExcelButton filename="sales_per_verkoper_by_group.xlsx" headers={smTbl.headers} rows={smTbl.rows} />} tableHeaders={smTbl.headers} tableRows={smTbl.rows}><EC option={smOpt} /></Panel>
+          <Panel title="Feed & Milk Powder" subtitle={vmSalesman === 'All' ? 'Revenue vs tonnage per month' : `Revenue vs tonnage — ${vmSalesman}`} flex={1}
+            controls={<select className="panel-select" value={vmSalesman} onChange={e => setVmSalesman(e.target.value)}><option value="All">All verkopers</option>{vmSalesmen.map(n => <option key={n} value={n}>{n}</option>)}</select>}
+            tableHeaders={vmTbl.headers} tableRows={vmTbl.rows}><EC option={vmOpt} /></Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Customers.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Customers */
+function Customers({ f, highlightQuery }) {
+  const K = useSales(f), P = K.P, proof = useProof();
+  const custs = useMemo(() => {
+    const a = aggregate(K.cur, i => X.facts.c[i]), b = aggregate(K.cmp, i => X.facts.c[i]), s = aggregate(K.curC, i => X.facts.c[i]);
+    const o = invoiceCounts(f, P.cur, v => v.c);
+    return [...a.values()].map(x => ({ c: x.k, n: X.customers[x.k][0], mkt: X.customers[x.k][1], rep: X.customers[x.k][2], rev: x.rev, revO: x.revO, c2: K.cmp ? (b.get(x.k)?.rev || 0) : null, g: K.cmp ? growth(s.get(x.k)?.rev || 0, b.get(x.k)?.rev || 0) : null, orders: o.known ? (o.map.get(x.k) || 0) : null }))
+      .filter(x => x.rev !== 0).sort((p, q) => q.rev - p.rev);
+  }, [K, f, P]);
+  /* new / lost customers vs comparison */
+  const nl = useMemo(() => {
+    if (!K.cmp) return null;
+    const a = new Set(custs.filter(c => c.rev > 0).map(c => c.c)), b = aggregate(K.cmp, i => X.facts.c[i]);
+    const prev = new Set([...b.values()].filter(x => x.rev > 0).map(x => x.k));
+    return { neu: [...a].filter(c => !prev.has(c)).length, lost: [...prev].filter(c => !a.has(c)).length };
+  }, [K, custs]);
+  const totalRev = custs.reduce((s, c) => s + c.rev, 0);
+  const active = custs.filter(c => c.rev > 0).length;
+  const top15Rev = custs.slice(0, 15).reduce((s, c) => s + c.rev, 0);
+  const [count, setCount] = useState(15);
+  const items = custs.slice(0, highlightQuery ? custs.length : count);
+  const barOpt = hbarOpt(items.map(d => ({ n: d.n, v: d.rev, c: d.c2, g: d.g, extra: `${d.rep} · ${d.mkt}` })), { cmp: !!K.cmp, labelW: 20 });
+  const aov = d => d.orders ? fmtFull(Math.round(d.revO / d.orders)) : '—';
+  const head = ['#', 'Customer', 'Market', 'Verkoper', 'Revenue', ...(K.cmp ? ['Comparison', 'Change'] : []), 'Orders', 'Avg Order Value'];
+  const row = (d, i) => [i + 1, d.n, d.mkt, d.rep, fmtFull(d.rev), ...(K.cmp ? [fmtFull(d.c2), pctTxt(d.g)] : []), fmtN(d.orders), aov(d)];
+  const tblRows = items.map(row), fullRows = custs.map(row);
+  const insight = custs[0] ? `Top customer: ${custs[0].n} — ${fmtFull(custs[0].rev)}${totalRev > 0 ? ` (${(custs[0].rev / totalRev * 100).toFixed(1)}% of revenue)` : ''}${nl ? ` · ${nl.neu} new, ${nl.lost} stopped vs comparison` : ''}` : null;
+  const card = c => {
+    const d = custs.find(x => x.c === c);
+    proof({ title: X.customers[c][0], def: `Customer card · ${X.customers[c][1]} · verkoper ${X.customers[c][2]}${X.customers[c][3] != null ? ` · terms ${X.customers[c][3]} days` : ''}${d ? ` · ${fmtFull(d.rev)} in the period` : ''}`, f, extra: i => X.facts.c[i] === c, dims: ['product', 'month', 'group'] });
+  };
+  const allTime = useMemo(() => { const dp = dimPred({ ...f }); const ix = pick(X.months.map((_, m) => ({ m, cap: 99 })), dp); return new Set(ix.map(i => X.facts.c[i])).size; }, [f]);
+
+  return (
+    <div className="page-area" key="customers">
+      <KpiNote extra={ordersCoverage(P.cur)} />
+      <div className="kpi-strip">
+        <Kpi color="blue" label="Active Customers" value={fmtN(active)} sub={`with revenue in ${P.label} · ${fmtN(allTime)} ever bought`} onClick={() => proof({ title: 'Revenue by customer', def: 'Every customer with revenue in the period.', f, dims: ['customer', 'market', 'verkoper'] })} />
+        <Kpi color="sky" label="Top Customer" value={custs[0]?.n?.slice(0, 18) || '—'} sub={<>{custs[0] && K.cmp ? <Trend g={custs[0].g} /> : null}<span>{fmtFull(custs[0]?.rev || 0)}</span></>} onClick={custs[0] ? () => card(custs[0].c) : undefined} />
+        <Kpi color="green" label="Top 15 Revenue" value={fmtFull(top15Rev)} sub={`${totalRev > 0 ? ((top15Rev / totalRev) * 100).toFixed(0) : 0}% of total`} />
+        <Kpi color="amber" label="Avg Rev / Active Customer" value={fmtFull(active ? totalRev / active : 0)} sub={nl ? `${fmtN(nl.neu)} new · ${fmtN(nl.lost)} stopped vs comparison` : 'No comparison'} />
+      </div>
+      <div className="charts-row">
+        <div className="charts-col" style={{ flex: 2 }}>
+          <Panel title="Customers by Revenue" subtitle={`${P.label}${K.cmp ? ' · tick = comparison' : ''} · click a bar for the customer card`} flex={1}
+            controls={<ExportExcelButton filename="customers_by_revenue.xlsx" headers={head} rows={fullRows} />} tableHeaders={head} tableRows={tblRows} insight={insight} onRowClick={i => card(items[i].c)}>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <div style={{ flex: 1, minHeight: 0 }}><EC option={barOpt} onEvents={{ click: p => items[p.dataIndex] && card(items[p.dataIndex].c) }} /></div>
+              <Pager count={count} total={custs.length} step={15} setCount={setCount} />
+            </div>
+          </Panel>
+        </div>
+        <div className="charts-col" style={{ flex: 1.2 }}>
+          <Panel title="Leaderboard" subtitle="Top 15 customers · click a row for the customer card" flex={1}>
+            <InlineTable headers={head} rows={highlightQuery ? fullRows : fullRows.slice(0, 15)} height="100%" searchable initialQuery={highlightQuery} onRowClick={i => card(custs[i].c)} />
+          </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Products.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Product Analysis */
+function Products({ f, highlightQuery }) {
+  const K = useSales(f), P = K.P, proof = useProof();
+  const prods = useMemo(() => {
+    const a = aggregate(K.cur, i => X.facts.p[i]), b = aggregate(K.cmp, i => X.facts.p[i]), s = aggregate(K.curC, i => X.facts.p[i]);
+    return [...a.values()].map(x => {
+      const cat = X.products[x.k][1];
+      return { p: x.k, n: X.products[x.k][0], cat: cat >= 0 ? X.categories[cat][0] : '—', grp: cat >= 0 ? GROUPS[X.gOfCat[cat]] : 'Other', rev: x.rev, c: K.cmp ? (b.get(x.k)?.rev || 0) : null, g: K.cmp ? growth(s.get(x.k)?.rev || 0, b.get(x.k)?.rev || 0) : null, kg: x.kg, pcs: x.pcs, byKg: X.kgProd.has(x.k), days: x.days.size, buyers: x.cust.size };
+    }).filter(x => x.rev !== 0).sort((p, q) => q.rev - p.rev);
+  }, [K]);
+  const totalRev = prods.reduce((s, p) => s + p.rev, 0);
+  const top5Rev = prods.slice(0, 5).reduce((s, p) => s + p.rev, 0);
+  const [sel, setSel] = useState(null);
+  const [count, setCount] = useState(15);
+  const [dCount, setDCount] = useState(10);
+  const items = prods.slice(0, highlightQuery ? prods.length : count), dItems = prods.slice(0, dCount);
+  const qtyTxt = d => d.byKg ? fmtNum(d.kg / 1000) + ' t' : fmtN(d.pcs) + ' pcs';
+  const barOpt = hbarOpt(items.map(d => ({ n: d.n, v: d.rev, c: d.c, g: d.g, extra: `${d.cat} · ${qtyTxt(d)}` })), { cmp: !!K.cmp, sel });
+  const share = d => totalRev ? (d.rev / totalRev * 100).toFixed(1).replace('.', ',') + '%' : '—';
+  const head = ['#', 'Product', 'Category', 'Revenue', ...(K.cmp ? ['Comparison', 'Change'] : []), 'Quantity', 'Buyers', 'Order days', 'Share'];
+  const row = (d, i) => [i + 1, d.n, d.cat, fmtFull(d.rev), ...(K.cmp ? [fmtFull(d.c), pctTxt(d.g)] : []), qtyTxt(d), fmtN(d.buyers), d.days ? fmtN(d.days) : '—', share(d)];
+  const insight = prods.length ? `Top product: ${prods[0].n}${totalRev > 0 ? ` (${(prods[0].rev / totalRev * 100).toFixed(0)}% of revenue)` : ''} · Top 5 lines make up ${totalRev > 0 ? (top5Rev / totalRev * 100).toFixed(0) : 0}% of total` : null;
+  const card = d => proof({ title: d.n, def: `${d.cat} · ${d.grp} · ${qtyTxt(d)} sold in the period`, f, extra: i => X.facts.p[i] === d.p, dims: ['customer', 'verkoper', 'month', 'market'], col: d.byKg ? 'r' : 'r' });
+  const donut = donutOpt(dItems.map(d => ({ n: d.n.length > 16 ? d.n.slice(0, 16) + '…' : d.n, full: d.n, v: d.rev })), { sel: sel ? (sel.length > 16 ? sel.slice(0, 16) + '…' : sel) : null });
+
+  return (
+    <div className="page-area" key="products">
+      <KpiNote extra="Order days = distinct customer-days with the product (from Apr 2026)" />
+      <div className="kpi-strip">
+        {['blue', 'teal', 'navy'].map((c, i) => (
+          <Kpi key={i} color={c} label={`#${i + 1} Product`} value={prods[i]?.n?.split(' - ')[0] || '—'}
+            sub={<>{prods[i] && K.cmp ? <Trend g={prods[i].g} /> : null}<span>{fmtFull(prods[i]?.rev || 0)} · {prods[i] ? share(prods[i]) : ''}</span></>}
+            onClick={prods[i] ? () => card(prods[i]) : undefined} />
+        ))}
+        <Kpi color="green" label="Products Sold" value={fmtN(prods.length)} sub={`Active lines in ${P.label}`} onClick={() => proof({ title: 'Revenue by product', def: 'Every product with revenue in the period.', f, dims: ['product', 'category', 'group'] })} />
+      </div>
+      <div className="charts-row">
+        <div className="charts-col" style={{ flex: 2 }}>
+          <Panel title="Top Products by Revenue" subtitle={`${P.label}${K.cmp ? ' · tick = comparison' : ''} · click a bar to isolate, table row for detail`} flex={1} tableHeaders={head} tableRows={items.map(row)} defaultView={highlightQuery ? 'table' : 'chart'} searchableTable tableInitialQuery={highlightQuery} insight={insight} onRowClick={i => card(items[i])}>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <div style={{ flex: 1, minHeight: 0 }}><EC option={barOpt} onEvents={{ click: p => { const d = items[p.dataIndex]; if (d) setSel(sel === d.n ? null : d.n); } }} /></div>
+              <Pager count={count} total={prods.length} step={15} setCount={setCount} />
+            </div>
+          </Panel>
+        </div>
+        <div className="charts-col" style={{ flex: 1 }}>
+          <Panel title="Product Share" subtitle="Click to isolate" flex={1} tableHeaders={['Product', 'Revenue', 'Share']} tableRows={prods.map(d => [d.n, fmtFull(d.rev), share(d)])}>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <div style={{ flex: 1, minHeight: 0 }}><EC option={donut} onEvents={{ click: p => { const d = dItems[p.dataIndex]; if (d) setSel(sel === d.n ? null : d.n); } }} /></div>
+              <Pager count={dCount} total={prods.length} step={10} setCount={setDCount} />
+            </div>
+          </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Categories.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Category Breakdown — 9 Microfas categories, coloured by their product group */
+function Categories({ f }) {
+  const K = useSales(f), P = K.P, proof = useProof();
+  const [grp, setGrp] = useState(null);  // optional group focus
+  const cats = useMemo(() => {
+    const a = aggregate(K.cur, i => X.facts.g[i]), b = aggregate(K.cmp, i => X.facts.g[i]), s = aggregate(K.curC, i => X.facts.g[i]);
+    return [...a.values()].map(x => ({ g: x.k, n: X.categories[x.k][0], grp: GROUPS[X.gOfCat[x.k]], gi: X.gOfCat[x.k], rev: x.rev, c: K.cmp ? (b.get(x.k)?.rev || 0) : null, b: s.get(x.k)?.rev || 0, kg: x.kg, days: x.days.size, buyers: x.cust.size }))
+      .filter(x => x.rev !== 0).sort((p, q) => q.rev - p.rev);
+  }, [K]);
+  const groups = useMemo(() => {
+    const m = new Map();
+    for (const c of cats) { const x = m.get(c.gi) || { n: c.grp, gi: c.gi, rev: 0, b: 0, c: K.cmp ? 0 : null, color: GROUP_COLORS[c.gi], cats: 0 }; x.rev += c.rev; x.b += c.b; if (K.cmp) x.c += c.c; x.cats++; m.set(c.gi, x); }
+    return [...m.values()].sort((p, q) => q.rev - p.rev);
+  }, [cats, K]);
+  const shown = grp ? cats.filter(c => c.grp === grp) : cats;
+  const totalRev = shown.reduce((s, c) => s + c.rev, 0), allRev = cats.reduce((s, c) => s + c.rev, 0);
+  const barOpt = hbarOpt(shown.map(d => ({ n: d.n, v: d.rev, c: d.c, g: growth(d.b, d.c), extra: `Group: ${d.grp}` })), { cmp: !!K.cmp, colors: shown.map(d => GROUP_COLORS[d.gi]), labelW: 26 });
+  const donut = donutOpt((grp ? shown.map(d => ({ n: d.n, v: d.rev, color: GROUP_COLORS[d.gi] })) : groups.map(g => ({ n: g.n, v: g.rev, color: g.color }))));
+  const head = ['#', 'Category', 'Group', 'Revenue', ...(K.cmp ? ['Comparison', 'Change'] : []), 'Tonnes', 'Buyers', 'Share'];
+  const rows = shown.map((d, i) => [i + 1, d.n, d.grp, fmtFull(d.rev), ...(K.cmp ? [fmtFull(d.c), pctTxt(growth(d.b, d.c))] : []), d.kg ? fmtNum(d.kg / 1000) + ' t' : '—', fmtN(d.buyers), totalRev ? (d.rev / totalRev * 100).toFixed(1).replace('.', ',') + '%' : '—']);
+  const insight = groups[0] ? `${groups[0].n} leads with ${fmtFull(groups[0].rev)} (${allRev ? (groups[0].rev / allRev * 100).toFixed(0) : 0}% share) · top category ${cats[0]?.n}` : null;
+  const card = d => proof({ title: `${d.n} (${d.grp})`, def: 'Revenue of one Microfas category.', f, extra: i => X.facts.g[i] === d.g, dims: ['product', 'customer', 'verkoper', 'month', 'market'] });
+  const chips = (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+      <span className="filter-label">Group</span>
+      <button className={`filter-chip${!grp ? ' active' : ''}`} onClick={() => setGrp(null)}>All groups</button>
+      {groups.map(g => <button key={g.n} className={`filter-chip${grp === g.n ? ' active' : ''}`} onClick={() => setGrp(grp === g.n ? null : g.n)} style={{ borderLeft: `3px solid ${g.color}` }}>{g.n}</button>)}
+    </div>
+  );
+  return (
+    <div className="page-area" key="cats">
+      <KpiNote />
+      <div className="kpi-strip">
+        <Kpi color="blue" label="Top Category" value={shown[0]?.n || '—'} sub={<>{shown[0] && K.cmp ? <Trend g={growth(shown[0].b, shown[0].c)} /> : null}<span>{fmtFull(shown[0]?.rev || 0)} · {shown[0]?.grp}</span></>} onClick={shown[0] ? () => card(shown[0]) : undefined} />
+        <Kpi color="teal" label={shown[1]?.n || '—'} value={fmtFull(shown[1]?.rev || 0)} sub={`${totalRev > 0 ? ((shown[1]?.rev || 0) / totalRev * 100).toFixed(1) : 0}% share · ${shown[1]?.grp || ''}`} onClick={shown[1] ? () => card(shown[1]) : undefined} />
+        <Kpi color="navy" label="Top Group" value={groups[0]?.n || '—'} sub={<>{groups[0] && K.cmp ? <Trend g={growth(groups[0].b, groups[0].c)} /> : null}<span>{fmtFull(groups[0]?.rev || 0)}</span></>} onClick={() => proof({ title: 'Revenue by product group', def: 'Categories roll up into product groups.', f, dims: ['group', 'category'] })} />
+        <Kpi color="amber" label="Categories" value={fmtN(shown.length)} sub={`${groups.length} product groups`} />
+      </div>
+      <div className="charts-row">
+        <div className="charts-col" style={{ flex: 2 }}>
+          <Panel title={grp ? `${grp} — Categories` : 'Categories by Revenue'} subtitle={`${P.label} · bar colour = product group${K.cmp ? ' · tick = comparison' : ''}`} flex={1} tableHeaders={head} tableRows={rows} insight={grp ? null : insight} headerExtra={chips} onRowClick={i => card(shown[i])}>
+            <EC option={barOpt} onEvents={{ click: p => shown[p.dataIndex] && card(shown[p.dataIndex]) }} />
+          </Panel>
+        </div>
+        <div className="charts-col" style={{ flex: 1 }}>
+          <Panel title={grp ? 'Category Split' : 'Group Split'} subtitle={grp ? `Within ${grp}` : 'Click a slice to focus a group'} flex={1}
+            tableHeaders={['Name', 'Revenue', 'Share']} tableRows={(grp ? shown : groups).map(d => [d.n, fmtFull(d.rev), (grp ? totalRev : allRev) ? (d.rev / (grp ? totalRev : allRev) * 100).toFixed(1).replace('.', ',') + '%' : '—'])}>
+            <EC option={donut} onEvents={{ click: p => { if (!grp) setGrp(p.name); } }} />
+          </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Channels.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Channel Mix — Webshop (verkoper "Webshop") vs Direct (everyone else) */
+const ch = n => n === 'Webshop' ? 'Webshop' : 'Direct Sales';
+const COL = { 'Direct Sales': '#40BCF3', Webshop: '#2E9B62' };
+
+function Channels({ f }) {
+  const K = useSales(f), P = K.P, proof = useProof();
+  const [sel, setSel] = useState(null);
+  const d = useMemo(() => {
+    const a = aggregate(K.cur, i => ch(repName(i))), b = aggregate(K.cmp, i => ch(repName(i))), s = aggregate(K.curC, i => ch(repName(i)));
+    const o = invoiceCounts(f, P.cur, v => ch(X.customers[v.c][2]));
+    const row = n => ({ n, rev: a.get(n)?.rev || 0, revO: a.get(n)?.revO || 0, c: K.cmp ? (b.get(n)?.rev || 0) : null, g: K.cmp ? growth(s.get(n)?.rev || 0, b.get(n)?.rev || 0) : null, orders: o.known ? (o.map.get(n) || 0) : null, buyers: a.get(n)?.cust.size || 0 });
+    return [row('Direct Sales'), row('Webshop')];
+  }, [K, f, P]);
+  const [D, W] = d, total = D.rev + W.rev;
+  const aov = r => r.orders ? Math.round(r.revO / r.orders) : null;
+  const opt = (vals, fmtV, name) => withDataZoom({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `<strong>${p[0].name}</strong><br/>${name}: ${fmtV(p[0].value)}` },
+    grid: { left: '3%', right: '4%', bottom: '12%', top: '8%', containLabel: true },
+    xAxis: { type: 'category', data: ['Direct Sales', 'Webshop'], axisLabel: catAxisLabel(2, 9) },
+    yAxis: { type: 'value', axisLabel: { ...AX, formatter: v => fmtV === fmtFull ? fmt(v) : fmtV(v) }, splitLine: SPLIT },
+    series: [{ type: 'bar', barMaxWidth: 60, data: vals.map((v, i) => ({ value: v, itemStyle: { color: COL[d[i].n] + (sel && sel !== d[i].n ? '44' : ''), borderRadius: [4, 4, 0, 0] } })) }],
+  });
+  const donut = donutOpt(d.map(r => ({ n: r.n, v: r.rev, color: COL[r.n] })), { sel });
+  const lead = D.rev >= W.rev ? D : W;
+  const aD = aov(D), aW = aov(W);
+  const insight = total > 0 ? `${lead.n} leads with ${(lead.rev / total * 100).toFixed(0)}% of revenue${aD && aW ? ` · ${aD >= aW ? 'Direct' : 'Webshop'} orders run ${(Math.abs(aD - aW) / Math.min(aD, aW) * 100).toFixed(0)}% larger on average` : ''}` : null;
+  const click = p => { const n = p.name || d[p.dataIndex]?.n; setSel(sel === n ? null : n); };
+  const cov = ordersCoverage(P.cur);
+  const chProof = n => proof({ title: n, def: n === 'Webshop' ? 'Revenue booked on verkoper “Webshop”.' : 'Revenue of every verkoper except “Webshop”.', f, extra: i => ch(repName(i)) === n, dims: ['month', 'group', 'customer', 'market', 'verkoper'] });
+  return (
+    <div className="page-area" key="channels">
+      <KpiNote extra={cov} />
+      <div className="kpi-strip">
+        {[D, W].map((r, i) => (
+          <Kpi key={r.n} color={i ? 'green' : 'blue'} label={r.n} value={fmtFull(r.rev)} onClick={() => chProof(r.n)}
+            sub={<>{K.cmp ? <Trend g={r.g} /> : null}<span>{total > 0 ? ((r.rev / total) * 100).toFixed(1) : 0}% · {r.orders != null ? fmtN(r.orders) + ' orders' : fmtN(r.buyers) + ' buyers'}</span></>} />
+        ))}
+        <Kpi color="teal" label="Direct Avg Order" value={aD != null ? fmtFull(aD) : '—'} sub={cov ? 'Per invoice · from Apr 2026' : 'Per invoice'} />
+        <Kpi color="amber" label="Webshop Avg Order" value={aW != null ? fmtFull(aW) : '—'} sub={cov ? 'Per invoice · from Apr 2026' : 'Per invoice'} />
+      </div>
+      <div className="charts-row">
+        <div className="charts-col" style={{ flex: 1.2 }}>
+          <Panel title="Channel Revenue Share" subtitle={`${P.label} · click a slice to highlight`} flex={1} insight={insight}
+            tableHeaders={['Channel', 'Revenue', ...(K.cmp ? ['Comparison', 'Change'] : []), 'Share', 'Orders', 'AOV']}
+            tableRows={d.map(r => [r.n, fmtFull(r.rev), ...(K.cmp ? [fmtFull(r.c), pctTxt(r.g)] : []), total ? (r.rev / total * 100).toFixed(1).replace('.', ',') + '%' : '—', fmtN(r.orders), aov(r) != null ? fmtFull(aov(r)) : '—'])}>
+            <EC option={donut} onEvents={{ click }} />
+          </Panel>
+        </div>
+        <div className="charts-col" style={{ flex: 1 }}>
+          <Panel title="Order Volume" subtitle={`Invoices by channel${cov ? ' · from Apr 2026' : ''}`} flex={1}><EC option={opt(d.map(r => r.orders), fmtN, 'Orders')} onEvents={{ click }} /></Panel>
+        </div>
+        <div className="charts-col" style={{ flex: 1 }}>
+          <Panel title="Avg Order Value" subtitle="Direct vs Webshop" flex={1}><EC option={opt(d.map(aov), fmtFull, 'AOV')} onEvents={{ click }} /></Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Cockpit.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Pages migrated from the DairyTop Business Cockpit, rebuilt in the dashboard's
+   own style (Panel cards, KPI tiles, ECharts) — same calculations as the cockpit. */
+const ton = kg => fmtNum(kg / 1000) + ' t';
+const tonD = kg => (kg / 1000).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' t';
+const pcs = q => fmtN(q) + ' pcs';
+
+const sd = t => { const d = new Date(t * 864e5); return d.getUTCDate() + ' ' + MN[d.getUTCMonth()]; };
+function WeekTable({ T, qf, onCell }) {
+  const L = T.weeks.length - 1, fq = v => v ? qf(v) : '—';
+  const chg = (a, b) => b > 0 ? <span className={a >= b ? 'up' : 'down'}>{pctTxt(growth(a, b))}</span> : '—';
+  if (!T.reps.length) return <div className="watch-empty">No sales of the selected products in these weeks.</div>;
+  const hl = j => j === L ? { background: 'rgba(64,188,243,0.09)' } : undefined;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 6 }}>
+      <div className={`wk-chk ${T.ok ? 'up' : 'down'}`}>{T.ok ? <><b>✓ Weeks and verkopers add up</b> to {qf(T.gt)} over {T.weeks.length} weeks ({sd(T.meta[0].a)} – {dLab(isoOfT(T.meta[L].e))}).</> : <b>✗ Weekly totals do not add up.</b>}</div>
+      <div className="tbl-wrap" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+        <table className="itbl wk-tbl">
+          <thead><tr><th>Verkoper</th>{T.meta.map((m, j) => <th key={m.w} style={hl(j)}><span className="wk-h1">{m.w.split(' ')[0]}{j === L ? ' · this week' : j === L - 1 ? ' · last week' : ''}</span><span className="wk-h2">{sd(m.a)}–{sd(m.e)}{m.full ? '' : ` (${m.n} day${m.n > 1 ? 's' : ''} so far)`}</span></th>)}<th>Total</th>{L >= 2 && <th title="Last full week vs the week before">Last week vs week before</th>}</tr></thead>
+          <tbody>
+            {T.reps.map(v => <tr key={v}><td style={{ whiteSpace: 'nowrap' }}>{X.verkopers[v]}</td>{T.weeks.map((w, j) => <td key={w} style={{ cursor: 'pointer', ...(hl(j) || {}) }} onClick={() => onCell(j, v)}>{fq(T.cell.get(v + '|' + j) || 0)}</td>)}<td><b>{qf(T.rt.get(v))}</b></td>{L >= 2 && <td>{chg(T.cell.get(v + '|' + (L - 1)) || 0, T.cell.get(v + '|' + (L - 2)) || 0)}</td>}</tr>)}
+          </tbody>
+          <tfoot><tr className="tot"><td>Total</td>{T.weeks.map((w, j) => <td key={w} style={{ cursor: 'pointer' }} onClick={() => onCell(j, null)}>{fq(T.ct[j])}</td>)}<td>{qf(T.gt)}</td>{L >= 2 && <td>{chg(T.ct[L - 1], T.ct[L - 2])}</td>}</tr></tfoot>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══ Volumes per verkoper ═════════════════════════════════════════════ */
+function Volumes({ f, setF }) {
+  const proof = useProof();
+  const gset = f.grps.length ? new Set(f.grps.map(g => GROUPS.indexOf(g))) : null;
+  const grpKey = f.grps.join('|');
+  const lines = useMemo(() => {
+    const inG = p => !gset || gset.has(groupOfProduct(p));
+    const all = new Set(X.products.map((_, i) => i).filter(inG));
+    return [['all', gset ? `All ${f.grps.join(' + ')}` : 'All products', gset ? all : null], ...X.lines.map(l => [l.key, l.label, new Set(l.products.filter(inG))]).filter(l => l[2].size && (!gset || l[2].size !== all.size))];
+  }, [grpKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [presetPick, setPreset] = useState('milkPowder');
+  const preset = lines.some(l => l[0] === presetPick) ? presetPick : lines[1]?.[0] || 'all';
+  const [unitPick, setUnitPick] = useState(null);
+  const [wk, setWk] = useState(8);
+  const [cq, setCq] = useState('');
+  const line = lines.find(l => l[0] === preset) || lines[0];
+  const sel = line[2];
+  const extra = sel ? i => sel.has(X.facts.p[i]) : null;
+  const K = useSales(f, extra, [preset, f.grps.join('|')]);
+  const P = K.P;
+  const kgP = K.kg !== 0 || K.kgC, qP = K.q !== 0 || K.qC;
+  const revKg = useMemo(() => { let a = 0, b = 0; for (const i of K.cur) X.kgProd.has(X.facts.p[i]) ? a += X.facts.r[i] : b += X.facts.r[i]; return [a, b]; }, [K]);
+  const auto = !kgP ? 'q' : !qP ? 'k' : revKg[0] >= revKg[1] ? 'k' : 'q';
+  const unit = kgP && qP && unitPick ? unitPick : auto;
+  const uv = i => unit === 'k' ? X.facts.k[i] : X.facts.q[i] / X.qScale;
+  const qf = v => unit === 'k' ? ton(v) : pcs(v);
+  const tot = unit === 'k' ? K.kg : K.q, totC = unit === 'k' ? K.kgC : K.qC, totB = unit === 'k' ? K.kgCur4Cmp : K.qCur4Cmp;
+
+  const reps = useMemo(() => {
+    const a = new Map(), b = new Map(), s = new Map(), buyA = new Map(), buyB = new Map();
+    const add = (m, k, v) => m.set(k, (m.get(k) || 0) + v);
+    const buyers = (ix, M) => { const cm = new Map(); for (const i of ix || []) add(cm, X.facts.v[i] + '|' + X.facts.c[i], uv(i)); for (const [k, v] of cm) if (v > 0) { const [r, c] = k.split('|').map(Number); if (!M.has(r)) M.set(r, new Set()); M.get(r).add(c); } };
+    const rv = new Map();
+    for (const i of K.cur) { add(a, X.facts.v[i], uv(i)); add(rv, X.facts.v[i], X.facts.r[i] / 100); }
+    for (const i of K.cmp || []) add(b, X.facts.v[i], uv(i));
+    for (const i of K.curC || []) add(s, X.facts.v[i], uv(i));
+    buyers(K.cur, buyA); buyers(K.cmp, buyB);
+    return [...new Set([...a.keys(), ...b.keys()])].map(v => {
+      const A = buyA.get(v) || new Set(), B = buyB.get(v) || new Set();
+      return { v, n: X.verkopers[v], q: a.get(v) || 0, c: K.cmp ? (b.get(v) || 0) : null, g: K.cmp ? growth(s.get(v) || 0, b.get(v) || 0) : null, rev: rv.get(v) || 0, buyers: A.size, neu: [...A].filter(c => !B.has(c)).length, lost: [...B].filter(c => !A.has(c)).length };
+    }).filter(r => r.q || r.c).sort((x, y) => y.q - x.q);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [K, unit]);
+  const allBuyers = useMemo(() => { const s = new Set(); for (const i of K.cur) if (uv(i) > 0) s.add(X.facts.c[i]); return s; }, [K, unit]); // eslint-disable-line react-hooks/exhaustive-deps
+  const top = reps[0];
+
+  /* over time: top 5 verkopers + others */
+  const weekly = f.grain === 'week' || f.grain === 'day';
+  const ts = useMemo(() => {
+    const top5 = reps.slice(0, 5).map(r => r.v);
+    const key = i => weekly ? X.facts.W[i] : X.facts.m[i];
+    const keys = weekly ? [...new Set(K.cur.map(i => X.facts.W[i]).filter(Boolean))].sort((a, b) => X.weekMon.get(a) - X.weekMon.get(b)) : P.months;
+    const m = new Map();
+    for (const i of K.cur) { const k = key(i); if (k == null) continue; const r = top5.includes(X.facts.v[i]) ? X.facts.v[i] : -1; const kk = r + '|' + k; m.set(kk, (m.get(kk) || 0) + uv(i)); }
+    const ser = [...top5, -1].map((r, j) => ({ name: r < 0 ? 'Others' : X.verkopers[r], type: 'bar', stack: 'v', itemStyle: { color: r < 0 ? '#C8D8DE' : ['#40BCF3', '#1F3741', '#2E9B62', '#E5A93D', '#5B8FA3'][j] }, data: keys.map(k => +((m.get(r + '|' + k) || 0) / (unit === 'k' ? 1000 : 1)).toFixed(2)) }));
+    return { labels: keys.map(k => weekly ? k : X.mLabel[k]), ser };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [K, reps, unit, weekly, P]);
+  const tsOpt = withDataZoom(withCrosshair({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => `<strong>${p[0].name}</strong><br/>` + p.filter(s => s.value).map(s => `${s.marker} ${s.seriesName}: ${fmtNum(s.value)}${unit === 'k' ? ' t' : ' pcs'}`).join('<br/>') },
+    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 9 }, type: 'scroll', itemWidth: 10, itemHeight: 10 },
+    grid: { left: '3%', right: '3%', bottom: '16%', top: '6%', containLabel: true },
+    xAxis: { type: 'category', data: ts.labels, axisLabel: catAxisLabel(ts.labels.length, 9) },
+    yAxis: { type: 'value', axisLabel: { ...AX, formatter: v => fmtNum(v) + (unit === 'k' ? ' t' : '') }, splitLine: SPLIT },
+    series: ts.ser,
+  }, v => fmtNum(v)));
+
+  const mk = useMemo(() => { const a = new Map(), b = new Map(), s = new Map(); for (const i of K.cur) a.set(X.facts.M[i], (a.get(X.facts.M[i]) || 0) + uv(i)); for (const i of K.cmp || []) b.set(X.facts.M[i], (b.get(X.facts.M[i]) || 0) + uv(i)); for (const i of K.curC || []) s.set(X.facts.M[i], (s.get(X.facts.M[i]) || 0) + uv(i)); return [...a].filter(([, v]) => v > 0).map(([k, v]) => ({ k, n: X.mkts[k], v, c: K.cmp ? (b.get(k) || 0) : null, g: K.cmp ? growth(s.get(k) || 0, b.get(k) || 0) : null })).sort((x, y) => y.v - x.v); }, [K, unit]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mkOpt = hbarOpt(mk.slice(0, 12), { cmp: !!K.cmp, fmtV: qf, color: '#35A9DE' });
+
+  const head = ['Verkoper', unit === 'k' ? 'Tonnes' : 'Pieces', ...(K.cmp ? ['Comparison', 'Change'] : []), 'Revenue', 'Avg price', 'Share', 'Buyers', ...(K.cmp ? ['New', 'Stopped'] : [])];
+  const price = r => r.q ? (unit === 'k' ? fmtEur2(r.rev / r.q) + '/kg' : fmtEur2(r.rev / r.q) + '/pc') : '—';
+  const rows = reps.map(r => [r.n, qf(r.q), ...(K.cmp ? [qf(r.c), pctTxt(r.g)] : []), fmtFull(r.rev), price(r), tot ? fmtShare(r.q / tot * 100) : '—', fmtN(r.buyers), ...(K.cmp ? [fmtN(r.neu), fmtN(r.lost)] : [])]);
+
+  /* week by week (ignores the period: most recent weeks) */
+  /* week by week (ignores the period: the most recent Monday–Sunday weeks) */
+  const wkTbl = useMemo(() => {
+    const WL = X.weeks, weeks = wk ? WL.slice(-wk) : WL, idx = new Map(weeks.map((w, j) => [w, j]));
+    const dp = dimPred(f), cell = new Map(), rt = new Map(), ct = weeks.map(() => 0); let gt = 0;
+    for (let i = 0; i < X.n; i++) {
+      const j = idx.get(X.facts.W[i]); if (j == null || !dp(i) || (sel && !sel.has(X.facts.p[i]))) continue;
+      const v = X.facts.v[i], x = uv(i), k = v + '|' + j;
+      cell.set(k, (cell.get(k) || 0) + x); rt.set(v, (rt.get(v) || 0) + x); ct[j] += x; gt += x;
+    }
+    const reps = [...rt.keys()].sort((x, y) => rt.get(y) - rt.get(x));
+    const meta = weeks.map(w => { const a = X.weekMon.get(w), e = Math.min(a + 6, X.ltT); return { w, a, e, full: a + 6 <= X.ltT, n: e - a + 1 }; });
+    const ok = Math.abs(reps.reduce((x, v) => x + rt.get(v), 0) - gt) < 1e-6 && Math.abs(ct.reduce((x, v) => x + v, 0) - gt) < 1e-6;
+    return { weeks, meta, cell, rt, ct, gt, reps, ok };
+  }, [f, sel, unit, wk]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const custRows = useMemo(() => {
+    const a = new Map(), b = new Map(); for (const i of K.cur) a.set(X.facts.c[i], (a.get(X.facts.c[i]) || 0) + uv(i)); for (const i of K.cmp || []) b.set(X.facts.c[i], (b.get(X.facts.c[i]) || 0) + uv(i));
+    return [...new Set([...a.keys(), ...b.keys()])].map(c => ({ c, q: a.get(c) || 0, p: b.get(c) || 0 })).filter(r => r.q > 0 || (K.cmp && r.p > 0)).sort((x, y) => y.q - x.q)
+      .map(r => [X.customers[r.c][0], X.customers[r.c][2], X.customers[r.c][1], qf(r.q), ...(K.cmp ? [qf(r.p), r.q > 0 && r.p <= 0 ? 'New' : r.q <= 0 ? 'Stopped' : pctTxt(growth(r.q, r.p))] : [])]);
+  }, [K, unit]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const wkLab = m => `${m.w.split(' ')[0]} · ${sd(m.a)}–${sd(m.e)}${m.full ? '' : ' (so far)'}`;
+  const wkProof = (j, v) => { const m = wkTbl.meta[j], mi = X.months.indexOf(isoOfT(m.a).slice(0, 7)), mj = X.months.indexOf(isoOfT(m.e).slice(0, 7));
+    proof({ title: `${v != null ? X.verkopers[v] : 'All verkopers'} · ${line[1]} · ${wkLab(m)}`, def: 'Quantities of the selected products sold in this week, net of returns.', f: { ...f, from: mi, to: mj, cmp: 'none' }, extra: i => (!extra || extra(i)) && X.facts.W[i] === m.w && (v == null || X.facts.v[i] === v), dims: ['customer', 'product', 'verkoper', 'market'], col: unit }); };
+  const copyWk = () => { const T = wkTbl, dv = unit === 'k' ? 1000 : 1; const rows = [['Verkoper', ...T.meta.map(m => `${m.w} ${isoOfT(m.a)}${m.full ? '' : ' (so far)'}`), 'Total'], ...T.reps.map(v => [X.verkopers[v], ...T.weeks.map((_, j) => (T.cell.get(v + '|' + j) || 0) / dv), T.rt.get(v) / dv]), ['Total', ...T.ct.map(x => x / dv), T.gt / dv]];
+    try { navigator.clipboard.writeText(rows.map(r => r.join('\t')).join('\n')); } catch { /* ignore */ } };
+  const vp = (title, ex, col) => proof({ title, def: `Quantities of ${line[1].toLowerCase()}.`, f, extra: ex ? i => (!extra || extra(i)) && ex(i) : extra, dims: ['customer', 'product', 'month', 'market', 'verkoper'], col });
+  return (
+    <div className="page-area fin-scroll" key="volumes">
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}>
+        <span className="filter-label">Product line</span>
+        {lines.map(l => <button key={l[0]} className={`filter-chip${l[0] === preset ? ' active' : ''}`} onClick={() => { setPreset(l[0]); setUnitPick(null); }}>{l[1]}{l[2] ? <span style={{ opacity: .6 }}> ({l[2].size})</span> : null}</button>)}
+        {!!(kgP && qP) && <><div className="filter-divider" /><span className="filter-label">Show in</span>
+          <button className={`filter-chip${unit === 'k' ? ' active' : ''}`} onClick={() => setUnitPick('k')}>Tonnes</button>
+          <button className={`filter-chip${unit === 'q' ? ' active' : ''}`} onClick={() => setUnitPick('q')}>Pieces</button></>}
+      </div>
+      <KpiNote text={`${line[1]}: ${qf(tot)} sold in ${P.label}${K.cmp && totC ? `, ${pctTxt(growth(totB, totC))} vs ${P.cmpLabel}` : ''}`} extra="Lines may overlap — never add lines together" />
+      <div className="kpi-strip">
+        {kgP ? <Kpi color="blue" label="Tonnes" value={tonD(K.kg)} sub={<><Trend g={growth(K.kgCur4Cmp, K.kgC)} /><span>Net of returns</span></>} onClick={() => vp('Tonnes · ' + line[1], null, 'k')} /> : null}
+        {qP ? <Kpi color="sky" label="Pieces" value={fmtN(K.q)} sub={<><Trend g={growth(K.qCur4Cmp, K.qC)} /><span>Units sold per piece</span></>} onClick={() => vp('Pieces · ' + line[1], null, 'q')} /> : null}
+        <Kpi color="green" label="Revenue" value={fmtFull(K.rev)} sub={<><Trend g={growth(K.revCur4Cmp, K.revC)} /><span>{unit === 'k' && K.kg ? `avg ${fmtEur2(revKg[0] / 100 / K.kg)}/kg` : ''}</span></>} onClick={() => vp('Revenue · ' + line[1], null, 'r')} />
+        <Kpi color="teal" label="Buyers" value={fmtN(allBuyers.size)} sub="Customers with positive quantity" />
+        {top && <Kpi color="amber" label="Top verkoper" value={top.n.split(' ')[0]} sub={`${qf(top.q)} · ${tot ? fmtShare(top.q / tot * 100) : '—'} of the volume`} onClick={() => vp(`${top.n} · ${line[1]}`, i => X.facts.v[i] === top.v, unit)} />}
+      </div>
+      <div className="charts-row">
+        <Panel title={`${unit === 'k' ? 'Tonnes' : 'Pieces'} per Verkoper over Time`} subtitle={`Top five verkopers, others combined · per ${weekly ? 'week (from Apr 2026)' : 'month'} · Drill-down Week/Day in the filter bar for weekly`} height={360} className="fin-fixed" style={{ flex: 2 }}
+          tableHeaders={['Period', ...ts.ser.map(s => s.name)]} tableRows={ts.labels.map((l, i) => [l, ...ts.ser.map(s => fmtNum(s.data[i]))])}><EC option={tsOpt} /></Panel>
+        <Panel title={`${unit === 'k' ? 'Tonnes' : 'Pieces'} per Market`} subtitle="Click a market to filter this page's market" height={360} className="fin-fixed" style={{ flex: 1 }}
+          tableHeaders={['Market', 'Quantity', ...(K.cmp ? ['Comparison'] : [])]} tableRows={mk.map(r => [r.n, qf(r.v), ...(K.cmp ? [qf(r.c)] : [])])}>
+          <EC option={mkOpt} onEvents={{ click: p => { const r = mk[p.dataIndex]; if (r) setF(x => ({ ...x, mkts: [r.n] })); } }} />
+        </Panel>
+      </div>
+      <div className="charts-row">
+        <Panel title="Volume per Verkoper" subtitle="Avg price = revenue ÷ quantity in that unit · New/Stopped = buyers vs comparison · click a row" height={340} className="fin-fixed" style={{ flex: 1 }} hideToggle
+          controls={<ExportExcelButton filename="volume_per_verkoper.xlsx" headers={head} rows={rows} />}>
+          <InlineTable headers={head} rows={rows} height="100%" onRowClick={i => vp(`${reps[i].n} · ${line[1]}`, j => X.facts.v[j] === reps[i].v, unit)} />
+        </Panel>
+      </div>
+      <div className="charts-row">
+        <Panel title={`${unit === 'k' ? 'Tonnes' : 'Pieces'} per Verkoper, Week by Week`} subtitle={`Monday–Sunday weeks up to the last invoice (${X.ledgerLabel}); the current week is still running. Ignores the period and shows the most recent weeks; daily data starts Apr 2026. Click a cell for the customers and products behind it.`} height={480} className="fin-fixed" style={{ flex: 1 }} hideToggle
+          controls={<><div className="view-tog">{[[4, '4 weeks'], [8, '8 weeks'], [13, '13 weeks'], [26, '26 weeks'], [0, 'All weeks']].map(([n, l]) => <button key={n} className={`vt-btn${wk === n ? ' active' : ''}`} onClick={() => setWk(n)}>{l}</button>)}</div>
+            <button className="panel-btn" onClick={copyWk}>Copy table</button></>}>
+          <WeekTable T={wkTbl} qf={qf} onCell={wkProof} />
+        </Panel>
+      </div>
+      <div className="charts-row">
+        <Panel title="Volume per Customer" subtitle="Who buys the selected products" height={340} className="fin-fixed" style={{ flex: 1 }} hideToggle
+          controls={<input className="ledger-search" style={{ width: 200 }} placeholder="Search customer" value={cq} onChange={e => setCq(e.target.value)} />}>
+          <InlineTable headers={['Customer', 'Verkoper', 'Market', 'Quantity', ...(K.cmp ? ['Comparison', 'Change'] : [])]} rows={cq.trim() ? custRows.filter(r => r[0].toLowerCase().includes(cq.trim().toLowerCase())) : custRows} height="100%" />
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+/* ══ Receivables ══════════════════════════════════════════════════════ */
+function arPeriodStats(R) {
+  const m = new Map(); let billed = 0, open = 0, n = 0, dSum = 0, dN = 0;
+  for (const a of R) {
+    const k = a[2].slice(0, 7); const x = m.get(k) || { billed: 0, open: 0, n: 0, dSum: 0, dN: 0 };
+    x.billed += a[4] / 100; x.open += Math.max(0, a[6]) / 100; if (a[4] > 0) x.n++;
+    if (a[4] > 0 && a[8] != null) { x.dSum += a[8]; x.dN++; }
+    m.set(k, x); billed += a[4] / 100; open += Math.max(0, a[6]) / 100; if (a[4] > 0) n++; if (a[4] > 0 && a[8] != null) { dSum += a[8]; dN++; }
+  }
+  return { byMonth: m, billed, open, n, days: dN ? dSum / dN : null, share: billed ? open / billed * 100 : null };
+}
+function Receivables({ f }) {
+  const proof = useProof();
+  const P = period(f);
+  const A = useMemo(() => arKPI(f), [f]);
+  const AP = useMemo(() => arKPI(f, true), [f]);
+  const cmpF = P.cmp ? { ...f, from: P.cmp[0].m, to: P.cmp[P.cmp.length - 1].m } : null;
+  const AC = cmpF ? arKPI(cmpF, true) : null;
+  const S = arPeriodStats(AP.R), SC = AC ? arPeriodStats(AC.R) : null;
+  const cmpOK = SC && SC.n > 0;
+  const cmpNote = !P.cmp ? (P.note || 'No comparison selected') : !cmpOK ? `No invoices in ${P.cmpLabel} — receivables start ${dLab(X.meta.arStart)}; choose “Previous period”` : `vs invoices of ${P.cmpLabel}`;
+  const RD = X.ledgerLabel, S0 = dLab(X.meta.arStart);
+  const RC = reconSteps();
+  const cust = useMemo(() => { const m = new Map(); for (const a of A.R) if (a[6] > 0) m.set(a[0], (m.get(a[0]) || 0) + a[6] / 100); return [...m].sort((a, b) => b[1] - a[1]); }, [A]);
+  const list = (title, def, R2) => proof({ title, def, list: { head: ['Customer', 'Invoice', 'Date', 'Due', 'Status', 'Open'], rows: R2.sort((a, b) => b[6] - a[6]).map(a => [X.customers[a[0]][0], a[1], a[2], a[3] || '—', a[7], fmtEur2(a[6] / 100)]), check: `✓ ${R2.length} items add up to <b>${fmtEur2(R2.reduce((s, a) => s + a[6], 0) / 100)}</b>` } });
+  const open = A.R.filter(a => a[6] > 0);
+  const kp = { over: open.filter(a => a[7] !== 'Current'), over30: open.filter(a => a[7] !== 'Current' && a[7] !== '1–30'), credit: A.R.filter(a => a[6] < 0) };
+  const ageRows = AGE.map(a => ({ n: a === 'Current' ? 'Not yet due' : a + ' days late', v: A.byAge.get(a) || 0, k: a }));
+  const ageOpt = hbarOpt(ageRows.map(r => ({ n: r.n, v: r.v, extra: A.open ? fmtShare(r.v / A.open * 100) + ' of open' : '' })), { colors: AGE_COLORS, labelW: 18 });
+  const topOpt = hbarOpt(cust.slice(0, 12).map(([c, v]) => ({ n: X.customers[c][0], v, extra: `${X.customers[c][2]} · ${X.customers[c][1]}` })), { color: '#5B8FA3' });
+  /* unpaid share per invoice month, current vs comparison (aligned by position) */
+  const shareOf = (st, ym) => { const x = st?.byMonth.get(ym); return x && x.billed ? +(x.open / x.billed * 100).toFixed(1) : null; };
+  const pairs = P.cur.map((c, i) => [X.months[c.m], P.cmp && P.cmp[i] ? X.months[P.cmp[i].m] : null]).filter(([ym]) => S.byMonth.has(ym));
+  const payOpt = colOpt(pairs.map(([ym]) => MN[+ym.slice(5) - 1] + ' ' + ym.slice(2, 4)), pairs.map(([ym]) => shareOf(S, ym)), cmpOK ? pairs.map(([, c]) => c ? shareOf(SC, c) : null) : null,
+    { fmtV: v => fmtShare(v), axisFmt: v => v + '%', curName: 'Still open · period', cmpName: 'Still open · comparison', curColor: '#E5A93D', cmpColor: '#C8D8DE' });
+  const cOK = c => (!f.reps.length || f.reps.includes(X.customers[c][2])) && (!f.mkts.length || f.mkts.includes(X.customers[c][1]));
+  const LG = X.legacy.filter(x => cOK(x[0])), UA = X.unallocated.filter(x => cOK(x[0]));
+  const filtered = f.reps.length || f.mkts.length;
+  return (
+    <div className="page-area fin-scroll" key="receivables">
+      <KpiNote text={`Position in Microfas on ${RD} · invoices from ${S0} · verkoper & market filters apply; product group does not`} />
+      <div className="kpi-strip">
+        <Kpi color="blue" label="Open invoices" value={fmtFull(A.open)} sub={`${fmtN(A.nOpen)} invoices`} onClick={() => list('Open invoices', 'Invoices Microfas still shows as not (fully) paid.', open)} />
+        <Kpi color="red" label="Overdue" value={fmtFull(A.over)} sub={`${fmtShare(A.open ? A.over / A.open * 100 : 0)} of open`} onClick={() => list('Overdue', 'Open invoices past their due date.', kp.over)} />
+        <Kpi color="amber" label="More than 30 days late" value={fmtFull(A.over30)} sub={`${fmtShare(A.open ? A.over30 / A.open * 100 : 0)} of open`} onClick={() => list('More than 30 days late', 'Overdue by more than 30 days.', kp.over30)} />
+        <Kpi color="sky" label="Open credits" value={fmtFull(-A.credit)} sub={`${fmtN(kp.credit.length)} items`} onClick={() => list('Open credits', 'Credit notes and overpayments still open.', kp.credit)} />
+        <Kpi color="navy" label="Owed after credits" value={fmtFull(A.net)} sub="Open invoices − open credits" />
+      </div>
+      <div className="charts-row">
+        <Panel title="Ageing of Open Invoices" subtitle={`Days past due on ${RD} · click a bucket for its invoices`} height={320} className="fin-fixed" style={{ flex: 1 }}
+          tableHeaders={['Bucket', 'Open', 'Share']} tableRows={ageRows.map(r => [r.n, fmtFull(r.v), A.open ? fmtShare(r.v / A.open * 100) : '—'])}>
+          <EC option={ageOpt} onEvents={{ click: p => { const r = ageRows[p.dataIndex]; if (r) list(r.n, 'Open invoices in one ageing bucket.', open.filter(a => a[7] === r.k)); } }} />
+        </Panel>
+        <Panel title="Largest Open Balances" subtitle="Click a customer for their open items" height={320} className="fin-fixed" style={{ flex: 1 }}
+          tableHeaders={['Customer', 'Verkoper', 'Open']} tableRows={cust.map(([c, v]) => [X.customers[c][0], X.customers[c][2], fmtFull(v)])}>
+          <EC option={topOpt} onEvents={{ click: p => { const c = cust[p.dataIndex]?.[0]; if (c != null) list(X.customers[c][0], 'Open items of one customer.', A.R.filter(a => a[0] === c && a[6] !== 0)); } }} />
+        </Panel>
+      </div>
+      <div className="charts-row">
+        <Panel title="Still Unpaid, by Invoice Month" subtitle={`Share of each month's billed value still open on ${RD} · ${cmpNote}`} height={320} className="fin-fixed" style={{ flex: 1.3 }}
+          tableHeaders={['Invoice month', 'Billed', 'Still open', 'Share', ...(cmpOK ? ['Comparison month', 'Comparison share'] : [])]}
+          tableRows={pairs.map(([ym, c]) => { const x = S.byMonth.get(ym); return [mLong(ym), fmtFull(x.billed), fmtFull(x.open), fmtShare(shareOf(S, ym)), ...(cmpOK ? [c ? mLong(c) : '—', c && SC.byMonth.get(c) ? fmtShare(shareOf(SC, c)) : '—'] : [])]; })}>
+          {pairs.length ? <EC option={payOpt} onEvents={{ click: p => { const m = pairs[p.dataIndex]?.[p.seriesName?.includes('comparison') ? 1 : 0]; if (m) list('Still open · invoices of ' + mLong(m), 'Invoices of one month still open.', (p.seriesName?.includes('comparison') ? AC : AP).R.filter(a => a[2].startsWith(m) && a[6] > 0)); } }} /> : <div className="watch-empty">No invoices in this period — receivables start with invoices of {S0}.</div>}
+        </Panel>
+        <Panel title="Open Items not in the Tiles" subtitle="Part of the tie-out below" height={320} className="fin-fixed" style={{ flex: 1 }} hideToggle noZoom>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+            <p style={{ margin: 0 }}>Microfas still shows <b>{LG.length} items for {fmtFull(LG.reduce((s, x) => s + x[2], 0) / 100)}</b> from before {S0}, and <b>{UA.length} items for {fmtFull(UA.reduce((s, x) => s + x[3], 0) / 100)}</b> with no matching invoice — mostly payments received on account.</p>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button className="panel-btn" onClick={() => proof({ title: 'Open from before ' + S0, def: 'Items still open from the opening balance, excl. VAT.', list: { head: ['Customer', 'Invoice', 'Open'], rows: LG.map(x => [X.customers[x[0]][0], x[1], fmtEur2(x[2] / 100)]), check: `✓ ${LG.length} rows` } })}>Items from before {S0}</button>
+              <button className="panel-btn" onClick={() => proof({ title: 'Open items without an invoice', def: 'Customer postings without an invoice reference, excl. VAT.', list: { head: ['Customer', 'Date', 'Bank', 'Amount'], rows: UA.map(x => [X.customers[x[0]][0], x[1], x[2], fmtEur2(x[3] / 100)]), check: `✓ ${UA.length} rows` } })}>Items without an invoice</button>
+            </div>
+          </div>
+        </Panel>
+      </div>
+      <div className="charts-row">
+        <Panel title="From Open Items to the Debtors Account" subtitle={filtered ? 'Whole company — ignores the verkoper and market filters' : 'How the receivables tie to debtors account 132000 in Microfas, to the cent'} className="hug" style={{ flex: 1 }} hideToggle noZoom>
+          <div className="rc-strip">
+            {RC.steps.map(([l, v, op, eq], i) => <span key={i} style={{ display: 'contents' }}><div className={`rc-box${eq ? ' eq' : ''}`}><span>{l}</span><b>{fmtEur2(v / 100)}</b></div>{op && <span className="rc-op">{op}</span>}</span>)}
+            <div className={`rc-ok${RC.ok ? '' : ' bad'}`}>{RC.ok ? '✓ exact' : '✗ off by ' + fmtEur2(RC.diff / 100)}</div>
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+/* ══ Reorder radar ════════════════════════════════════════════════════ */
+function Reorder({ f }) {
+  const proof = useProof();
+  const Rr = useMemo(() => reorder(f, true), [f]);
+  const R = Rr.rows, tot = R.reduce((s, r) => s + r.mrev, 0);
+  const custs = new Set(R.map(r => r.c));
+  const byRep = useMemo(() => { const m = new Map(); for (const r of R) { const k = X.customers[r.c][2]; m.set(k, (m.get(k) || 0) + r.mrev); } return [...m].sort((a, b) => b[1] - a[1]); }, [R]);
+  const head = ['Customer', 'Product', 'Verkoper', 'Orders', 'Gap', 'Last order', 'Expected Reorder Date', 'Since', 'Late', '€ / Month'];
+  const rows = R.map(r => [X.customers[r.c][0], X.products[r.p][0], X.customers[r.c][2], r.n, fmtN(r.gap) + ' d', r.last, r.fell, r.since, r.due, fmtFull(r.mrev)]);
+  const win = Rr.window ? (Rr.window[0] === Rr.window[1] ? dLab(Rr.window[0]) : `${dLab(Rr.window[0])} – ${dLab(Rr.window[1])}`) : '';
+  const card = r => proof({ title: X.customers[r.c][0], def: `Customer card · ${X.products[r.p][0]} usually every ${fmtN(r.gap)} days, last ordered ${r.last}`, f: { ...f, from: 0, to: X.nM - 1, preset: 'all' }, extra: i => X.facts.c[i] === r.c, dims: ['product', 'month'] });
+  return (
+    <div className="page-area fin-scroll" key="reorder">
+      <KpiNote text={`Pairs that became late ${win} and are still not reordered on ${X.ledgerLabel}`} extra="Regular = 3+ order days since Apr 2026 · late = more than 1,5× the usual gap, up to 120 days" />
+      <div className="kpi-strip">
+        <Kpi color="blue" label="Customers to call" value={fmtN(custs.size)} sub={`${fmtN(byRep.length)} verkopers involved`} />
+        <Kpi color="teal" label="Avg days late" value={R.length ? fmtN(R.reduce((s, r) => s + r.due, 0) / R.length) : '—'} sub="beyond the usual gap" />
+        <Kpi color="red" label="Late reorders" value={fmtN(R.length)} sub="customer-product pairs" />
+        <Kpi color="amber" label="Value at risk / month" value={fmtFull(tot)} sub="average monthly revenue, last 6 complete months" />
+      </div>
+      <div className="charts-row">
+        <Panel title={<>Call List <span className="cp-title-desc">(Customers to be called who were past the expected reorder date)</span></>} subtitle="Sorted by monthly value · Gap = usual days between orders · Since / Late in days · click a row for the customer card" height={560} className="fin-fixed" style={{ flex: 1 }} hideToggle
+          controls={<ExportExcelButton filename="reorder_call_list.xlsx" headers={head} rows={rows} />}>
+          {R.length ? <div className="compact-tbl" style={{ height: '100%' }}><InlineTable headers={head} rows={rows} height="100%" searchable onRowClick={i => card(R[i])} /></div> : <div className="watch-empty">Nothing overdue for this selection.</div>}
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+/* ══ Products & price ═════════════════════════════════════════════════ */
+function ProductsPrice({ f, setF }) {
+  const proof = useProof();
+  const K = useSales(f), P = K.P;
+  const w = i => X.kgProd.has(X.facts.p[i]);
+  const mpF = { ...f, grps: ['Milk powder'] }, fdF = { ...f, grps: ['Feed'] };
+  const MP = useSales(mpF, w), FD = useSales(fdF, w);
+  const ppk = (r, k) => k ? r / k : null;
+  const ms = P.months, cm = P.cmp ? P.cmp.map(c => c.m) : null;
+  const cK = by(MP.cur, i => X.facts.m[i], 'k'), cR = by(MP.cur, i => X.facts.m[i], 'r'), pK = by(MP.cmp, i => X.facts.m[i], 'k'), pR = by(MP.cmp, i => X.facts.m[i], 'r');
+  const labels = ms.map(m => X.mLabel[m]);
+  const tOpt = colOpt(labels, ms.map(m => +((cK.get(m) || 0) / 1000).toFixed(1)), cm ? cm.map(m => +((pK.get(m) || 0) / 1000).toFixed(1)) : null, { fmtV: v => fmtNum(v) + ' t', axisFmt: v => fmtNum(v) + ' t', curColor: '#40BCF3', cmpColor: '#C8D8DE' });
+  const pOpt = colOpt(labels, ms.map(m => cK.get(m) ? +((cR.get(m) || 0) / 100 / cK.get(m)).toFixed(3) : null), cm ? cm.map(m => pK.get(m) ? +((pR.get(m) || 0) / 100 / pK.get(m)).toFixed(3) : null) : null, { fmtV: v => '€ ' + v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }), axisFmt: v => '€' + v.toLocaleString('de-DE', { minimumFractionDigits: 2 }), line: true, curName: '€/kg', curColor: '#40BCF3', cmpColor: '#8A9AA1' });
+  const gr = useMemo(() => aggregate(K.cur, i => X.facts.G[i]), [K]), grC = useMemo(() => aggregate(K.cmp, i => X.facts.G[i]), [K]), grB = useMemo(() => aggregate(K.curC, i => X.facts.G[i]), [K]);
+  const mix = [0, 1, 2, 3, 4, 5].filter(g => gr.get(g)?.rev || grC.get(g)?.rev).map(gi => ({ gi, n: GROUPS[gi], v: gr.get(gi)?.rev || 0, c: K.cmp ? (grC.get(gi)?.rev || 0) : null, g: K.cmp ? growth(grB.get(gi)?.rev || 0, grC.get(gi)?.rev || 0) : null }));
+  const [open, setOpen] = useState(new Set());
+  const tree = useMemo(() => {
+    const cr = aggregate(K.cur, i => X.facts.g[i]), cc = aggregate(K.cmp, i => X.facts.g[i]), pr = aggregate(K.cur, i => X.facts.p[i]), pc = aggregate(K.cmp, i => X.facts.p[i]);
+    const cb = aggregate(K.curC, i => X.facts.g[i]), pb = aggregate(K.curC, i => X.facts.p[i]), gb = aggregate(K.curC, i => X.facts.G[i]);
+    const out = [];
+    for (const m of mix) {
+      out.push({ lvl: 0, key: 'g' + m.gi, l: m.n, v: m.v, c: m.c, b: gb.get(m.gi)?.rev || 0, kg: gr.get(m.gi)?.kg || 0, pcs: gr.get(m.gi)?.pcs || 0 });
+      if (!open.has('g' + m.gi)) continue;
+      X.categories.forEach((ct, ci) => {
+        if (X.gOfCat[ci] !== m.gi) return; const v = cr.get(ci)?.rev || 0, c = cc.get(ci)?.rev || 0; if (!v && !c) return;
+        out.push({ lvl: 1, key: 'c' + ci, l: ct[0], v, c: K.cmp ? c : null, b: cb.get(ci)?.rev || 0, kg: cr.get(ci)?.kg || 0, pcs: cr.get(ci)?.pcs || 0 });
+        if (!open.has('c' + ci)) return;
+        [...new Set([...pr.keys(), ...pc.keys()])].filter(p => X.products[p][1] === ci).sort((a, b) => (pr.get(b)?.rev || 0) - (pr.get(a)?.rev || 0))
+          .forEach(p => out.push({ lvl: 2, l: X.products[p][0], v: pr.get(p)?.rev || 0, c: K.cmp ? (pc.get(p)?.rev || 0) : null, b: pb.get(p)?.rev || 0, kg: pr.get(p)?.kg || 0, pcs: X.kgProd.has(p) ? 0 : (pr.get(p)?.pcs || 0), byKg: X.kgProd.has(p) }));
+      });
+    }
+    return out;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [K, open, gr]);
+  const toggle = k => setOpen(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const fdP = ppk(FD.rev, FD.kg), fdPC = ppk(FD.revC, FD.kgC);
+  const fdB = ppk(FD.revCur4Cmp, FD.kgCur4Cmp);
+  /* latest milk powder price: the current (latest) month only, vs the month before */
+  const lastM = X.nM - 1;
+  const MPL = useSales({ ...mpF, from: lastM, to: lastM, preset: 'custom', cmp: 'pp' }, w);
+  const mpL = ppk(MPL.rev, MPL.kg), mpLP = ppk(MPL.revC, MPL.kgC);
+  const e2 = v => v == null ? '—' : '€ ' + v.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const feedByProduct = () => { const a = aggregate(FD.cur, i => X.facts.p[i]); proof({ title: 'Feed price by product', def: 'Revenue ÷ kg per feed product in the period.', list: { head: ['Product', 'Tonnes', 'Revenue', '€/kg'], rows: [...a.values()].filter(x => x.kg).sort((x, y) => y.kg - x.kg).map(x => [X.products[x.k][0], tonD(x.kg), fmtFull(x.rev), e2(x.rev / x.kg)]), check: `✓ ${a.size} products · total ${tonD(FD.kg)}` } }); };
+  return (
+    <div className="page-area fin-scroll" key="ckproducts">
+      <KpiNote text={`${P.label} · price per kg uses products sold by weight; totals are ratios of sums`} />
+      <div className="kpi-strip">
+        <Kpi color="blue" label={`Milk powder € / kg · ${X.mLabel[lastM]}`} value={e2(mpL)} sub={<><Trend g={growth(mpL, mpLP)} /><span>latest month{X.partial.m === lastM ? ` (1–${X.partial.day})` : ''}{mpLP != null ? ` · ${X.mLabel[lastM - 1]} ${e2(mpLP)}` : ''}</span></>} onClick={() => proof({ title: `Milk powder · ${mLong(X.months[lastM])}`, def: 'Milk powder sold by weight in the latest month; price = revenue ÷ kg.', f: { ...mpF, from: lastM, to: lastM, cmp: 'none' }, extra: w, col: 'k', dims: ['product', 'customer', 'verkoper', 'week'] })} />
+        <Kpi color="teal" label="Milk powder tonnes" value={tonD(MP.kg)} sub={<><Trend g={growth(MP.kgCur4Cmp, MP.kgC)} /><span>{MP.kgC != null ? 'vs ' + tonD(MP.kgC) : 'No comparison'}</span></>} />
+        <Kpi color="green" label="Feed € / kg" value={e2(fdP)} sub={<><Trend g={growth(fdB, fdPC)} /><span>{tonD(FD.kg)}</span></>} onClick={feedByProduct} />
+        <Kpi color="amber" label="Revenue" value={fmtFull(K.rev)} sub={<><Trend g={growth(K.revCur4Cmp, K.revC)} /><span>all groups</span></>} onClick={() => proof({ title: 'Revenue by product group', def: 'Revenue for the selection.', f, dims: ['group', 'category', 'product'] })} />
+      </div>
+      <div className="charts-row">
+        <Panel title="Milk Powder: Tonnes per Month" subtitle={P.cmp ? `vs ${P.cmpLabel}` : 'No comparison'} height={300} className="fin-fixed" style={{ flex: 1 }} tableHeaders={['Month', 'Tonnes', 'Comparison']} tableRows={ms.map((m, i) => [X.mLabel[m], tonD(cK.get(m) || 0), cm ? tonD(pK.get(cm[i]) || 0) : '—'])}><EC option={tOpt} /></Panel>
+        <Panel title="Milk Powder: € per kg per Month" subtitle="Axis starts near the lowest price so movements are visible" height={300} className="fin-fixed" style={{ flex: 1 }} tableHeaders={['Month', '€/kg', 'Comparison']} tableRows={ms.map((m, i) => [X.mLabel[m], e2(cK.get(m) ? (cR.get(m) || 0) / 100 / cK.get(m) : null), cm ? e2(pK.get(cm[i]) ? (pR.get(cm[i]) || 0) / 100 / pK.get(cm[i]) : null) : '—'])}><EC option={pOpt} /></Panel>
+      </div>
+      <div className="charts-row">
+        <Panel title="Group → Category → Product" subtitle="Click a group or category to open it · every level adds up to the level above" height={420} className="fin-fixed" style={{ flex: 1.6 }} hideToggle>
+          <div className="tbl-wrap" style={{ height: '100%', overflow: 'auto' }}>
+            <table className="itbl tree">
+              <thead><tr><th>Group / category / product</th><th>Revenue</th>{K.cmp && <><th>Comparison</th><th>Change</th></>}<th>Share</th><th>Tonnes</th><th>Pieces</th></tr></thead>
+              <tbody>
+                {tree.map((r, i) => (
+                  <tr key={i} onClick={r.key ? () => toggle(r.key) : undefined} style={r.key ? { cursor: 'pointer' } : undefined}>
+                    <td style={{ paddingLeft: 8 + r.lvl * 18, fontWeight: r.lvl === 0 ? 700 : 400 }}>{r.key ? (open.has(r.key) ? '▾ ' : '▸ ') : ''}{r.l}</td>
+                    <td>{fmtFull(r.v)}</td>{K.cmp && <><td>{fmtFull(r.c)}</td><td className={r.b >= r.c ? 'up' : 'down'}>{pctTxt(growth(r.b, r.c))}</td></>}
+                    <td>{K.rev ? fmtShare(r.v / K.rev * 100) : '—'}</td><td>{r.lvl === 2 ? (r.byKg ? tonD(r.kg) : '—') : (r.kg ? tonD(r.kg) : '—')}</td><td>{r.lvl === 2 ? (r.byKg ? '—' : fmtN(r.pcs)) : (r.pcs ? fmtN(r.pcs) : '—')}</td>
+                  </tr>
+                ))}
+                <tr className="tot"><td>Total</td><td>{fmtFull(K.rev)}</td>{K.cmp && <><td>{fmtFull(K.revC)}</td><td>{pctTxt(growth(K.revCur4Cmp, K.revC))}</td></>}<td>100,0%</td><td>{tonD(K.kg)}</td><td>{fmtN([...gr.values()].reduce((s, x) => s + x.pcs, 0))}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+        <div className="charts-col" style={{ flex: 1 }}>
+          <Panel title="Feed: Tonnes and Price" subtitle="Products sold by weight" className="hug" hideToggle noZoom>
+            {FD.kg ? <div style={{ fontSize: 13 }}><p style={{ margin: '0 0 8px' }}>{tonD(FD.kg)} at <b>{e2(fdP)}/kg</b>{FD.kgC ? <> · comparison {tonD(FD.kgC)} at {e2(fdPC)}/kg</> : null}.</p><button className="panel-btn" onClick={feedByProduct}>Show feed price by product</button></div> : <div className="watch-empty">No feed sold by weight in this selection.</div>}
+          </Panel>
+          <Panel title="Product Mix by Group" subtitle="Click a group to filter this page" height={260} className="fin-fixed" tableHeaders={['Group', 'Revenue', 'Share']} tableRows={mix.map(m => [m.n, fmtFull(m.v), K.rev ? fmtShare(m.v / K.rev * 100) : '—'])}>
+            <EC option={hbarOpt(mix, { cmp: !!K.cmp, colors: mix.map(m => GROUP_COLORS[m.gi]) })} onEvents={{ click: p => { const m = mix[p.dataIndex]; if (m && m.gi < 5) setF(x => ({ ...x, grps: [m.n] })); } }} />
+          </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══ Markets ══════════════════════════════════════════════════════════ */
+function Markets({ f, setF }) {
+  const proof = useProof();
+  const K = useSales(f), P = K.P;
+  const rows = useMemo(() => {
+    const a = aggregate(K.cur, i => X.facts.M[i]), b = aggregate(K.cmp, i => X.facts.M[i]), s = aggregate(K.curC, i => X.facts.M[i]);
+    return [...new Set([...a.keys(), ...b.keys()])].map(k => ({ k, n: X.mkts[k], v: a.get(k)?.rev || 0, c: K.cmp ? (b.get(k)?.rev || 0) : null, g: K.cmp ? growth(s.get(k)?.rev || 0, b.get(k)?.rev || 0) : null, buyers: a.get(k)?.cust.size || 0, kg: a.get(k)?.kg || 0 })).filter(r => r.v || r.c).sort((x, y) => y.v - x.v);
+  }, [K]);
+  const tot = rows.reduce((s, r) => s + r.v, 0), top = rows[0];
+  const nl = rows.find(r => r.n === 'Netherlands');
+  const hm = useMemo(() => aggregate(K.cur, i => X.facts.M[i] + '|' + X.facts.G[i]), [K]);
+  const gs = [0, 1, 2, 3, 4, 5].filter(g => rows.some(r => hm.get(r.k + '|' + g)?.rev));
+  const max = Math.max(1, ...rows.flatMap(r => gs.map(g => hm.get(r.k + '|' + g)?.rev || 0)));
+  const cell = (k, g) => proof({ title: `${X.mkts[k]} · ${GROUPS[g]}`, def: 'Revenue of one market and product group.', f: { ...f, mkts: [X.mkts[k]], grps: g < 5 ? [GROUPS[g]] : f.grps }, extra: g === 5 ? i => X.facts.G[i] === 5 : undefined, dims: ['customer', 'product', 'verkoper', 'month'] });
+  return (
+    <div className="page-area fin-scroll" key="markets">
+      <KpiNote text={`${P.label} · market = customer's delivery country in the master data`} />
+      <div className="kpi-strip">
+        <Kpi color="blue" label="Top market" value={top ? top.n : '—'} sub={top ? <><Trend g={top.g} /><span>{fmtShare(top.v / tot * 100)} of revenue</span></> : ''} onClick={top ? () => proof({ title: top.n, def: 'Revenue of one market.', f: { ...f, mkts: [top.n] }, dims: ['group', 'customer', 'verkoper', 'month'] }) : undefined} />
+        <Kpi color="teal" label="Markets with revenue" value={fmtN(rows.filter(r => r.v > 0).length)} sub={`of ${X.mkts.length} in the master data`} />
+        <Kpi color="green" label="Export share" value={nl ? fmtShare((tot - nl.v) / tot * 100) : '—'} sub="Revenue outside the Netherlands" />
+        <Kpi color="amber" label="Revenue" value={fmtFull(tot)} sub={<><Trend g={growth(K.revCur4Cmp, K.revC)} /><span>{P.cmp ? 'vs ' + P.cmpLabel : 'No comparison'}</span></>} onClick={() => proof({ title: 'Revenue by market', def: 'Revenue per delivery country.', f, dims: ['market', 'group', 'month'] })} />
+      </div>
+      <div className="charts-row">
+        <Panel title="Revenue by Market" subtitle={`${K.cmp ? 'Tick = comparison · ' : ''}click a market to filter this page`} height={520} className="fin-fixed" style={{ flex: 1 }}
+          tableHeaders={['Market', 'Revenue', ...(K.cmp ? ['Comparison', 'Change'] : []), 'Share', 'Buyers', 'Tonnes']} tableRows={rows.map(r => [r.n, fmtFull(r.v), ...(K.cmp ? [fmtFull(r.c), pctTxt(r.g)] : []), tot ? fmtShare(r.v / tot * 100) : '—', fmtN(r.buyers), ton(r.kg)])}>
+          <EC option={hbarOpt(rows, { cmp: !!K.cmp, color: '#40BCF3' })} onEvents={{ click: p => { const r = rows[p.dataIndex]; if (r) setF(x => ({ ...x, mkts: x.mkts.length === 1 && x.mkts[0] === r.n ? [] : [r.n] })); } }} />
+        </Panel>
+        <Panel title="Market × Product Group" subtitle="Click a cell for its rows" height={520} className="fin-fixed" style={{ flex: 1.4 }} hideToggle>
+          <div className="tbl-wrap" style={{ height: '100%', overflow: 'auto' }}>
+            <table className="itbl">
+              <thead><tr><th>Market</th>{gs.map(g => <th key={g}>{GROUPS[g]}</th>)}<th>Total</th></tr></thead>
+              <tbody>
+                {rows.map(r => <tr key={r.k}><td>{r.n}</td>{gs.map(g => { const v = hm.get(r.k + '|' + g)?.rev || 0; return <td key={g} onClick={() => cell(r.k, g)} style={{ cursor: 'pointer', background: v ? `rgba(64,188,243,${0.06 + 0.5 * v / max})` : undefined }}>{v ? fmt(v) : '·'}</td>; })}<td><b>{fmt(r.v)}</b></td></tr>)}
+                <tr className="tot"><td>Total</td>{gs.map(g => <td key={g}>{fmt(rows.reduce((s, r) => s + (hm.get(r.k + '|' + g)?.rev || 0), 0))}</td>)}<td>{fmt(tot)}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Finance.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* Finance pages — the books (P&L postings) from dash.json.
+   Books start 1 April 2026; verkoper / group / market filters do not apply. */
+const COST_ORDER = ['Purchases', 'Personnel', 'Transport', 'Housing', 'Sales & marketing', 'Office & admin', 'Finance & tax', 'Other'];
+const fmtAxis = v => { const a = Math.abs(v), s = v < 0 ? '-' : ''; if (a >= 1e6) return s + '€' + (a / 1e6).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + 'M'; if (a >= 1e3) return s + '€' + (a / 1e3).toLocaleString('de-DE', { maximumFractionDigits: 0 }) + 'K'; return s + '€' + Math.round(a).toLocaleString('de-DE'); };
+const pct1 = v => v == null || !isFinite(v) ? '—' : v.toFixed(1).replace('.', ',') + '%';
+
+/* Books for the filter period and its comparison */
+function useBooks(f) {
+  return useMemo(() => {
+    const P = period(f), start = X.meta.booksOpening.slice(0, 7);
+    const inM = ms => { const s = new Set(ms.map(m => X.months[m])); return X.pnl.filter(r => r[0] >= start && s.has(r[0])); };
+    const cur = inM(P.months);
+    let cmp = null, cmpLabel = null, note = '';
+    if (P.cmp) {
+      const cm = P.cmp.map(c => c.m);
+      if (X.months[cm[0]] < start) note = `Books start ${dLab(X.meta.booksOpening)} — no comparison for ${P.cmpLabel}. Choose “Previous period” for a later range.`;
+      else { cmp = inM(cm); cmpLabel = P.cmpLabel; }
+    }
+    const months = [...new Set(cur.map(r => r[0]))].sort();
+    const sum = (R, pred) => R.reduce((s, r) => s + (pred(r) ? r[4] : 0), 0) / 100;
+    const kpis = R => { if (!R) return null; const rev = sum(R, r => r[2] === 'Revenue'), pur = -sum(R, r => r[2] === 'Purchases'), opex = -sum(R, r => r[2] !== 'Revenue' && r[2] !== 'Purchases'); return { rev, pur, opex, gp: rev - pur, res: rev - pur - opex }; };
+    const cats = R => { const m = new Map(); for (const r of R || []) m.set(r[2], (m.get(r[2]) || 0) + r[4] / 100); return m; };
+    const accts = R => { const m = new Map(); for (const r of R || []) { const k = r[1]; const x = m.get(k) || { acct: k, cat: r[2], v: 0 }; x.v += r[4] / 100; m.set(k, x); } return m; };
+    return { P, cur, cmp, cmpLabel, note, months, K: kpis(cur), KC: kpis(cmp), C: cats(cur), CC: cmp ? cats(cmp) : null, A: accts(cur), AC: cmp ? accts(cmp) : null,
+      label: months.length ? (months.length === 1 ? mLong(months[0]) : `${mLong(months[0])} – ${mLong(months[months.length - 1])}`) : 'No booked months in this period' };
+  }, [f]);
+}
+
+function FinNote({ B }) {
+  return <div className="fin-note">⚠ Books: {B.label}{B.cmpLabel ? ` vs ${B.cmpLabel}` : ''} · purchases are booked when bought, not when sold, so monthly results swing with purchase timing{B.note ? ` · ${B.note}` : ''}</div>;
+}
+function YoyBadge({ cy, py, goodIfUp = true }) {
+  if (py == null) return <span className="fin-badge" style={{ color: 'var(--muted2)' }}>no comparison</span>;
+  const d = cy - py, p = py !== 0 ? Math.abs(d / py) * 100 : null, good = goodIfUp ? d >= 0 : d <= 0;
+  return <span className={`fin-badge ${good ? 'good' : 'bad'}`}>{d >= 0 ? '▲' : '▼'} {p != null ? p.toFixed(1).replace('.', ',') + '%' : '—'}</span>;
+}
+const mkBarOpt = (labels, vals, colorFn, lw) => {
+  const L = lw || (isMobileViewport() ? 105 : 150);
+  return {
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `<strong>${p[0].name}</strong><br/>${fmtFull(p[0].value)}` },
+    grid: { left: L, right: 18, bottom: 22, top: 6, containLabel: false },
+    xAxis: { type: 'value', splitNumber: 4, axisLabel: { color: '#5F7078', fontSize: 8, formatter: fmtAxis, hideOverlap: true }, splitLine: { lineStyle: { color: '#F0F3F4' } }, axisTick: { show: false } },
+    yAxis: { type: 'category', data: labels, axisLabel: { color: '#5F7078', fontSize: 8, width: L - 10, overflow: 'truncate', ellipsis: '…' }, inverse: true, axisTick: { show: false } },
+    series: [{ type: 'bar', barMaxWidth: 12, data: vals.map((v, i) => ({ value: Math.round(v), itemStyle: { color: colorFn(i, v), borderRadius: [0, 3, 3, 0] } })) }],
+  };
+};
+
+/* Margin gauge used on the P&L Summary page */
+function Gauge({ value, label, py }) {
+  const clamp = v => Math.max(-30, Math.min(30, v)), angle = (clamp(value) + 30) / 60 * 180 - 90, r = 38, cx = 50, cy = 44;
+  const xy = d => { const rad = (d - 90) * Math.PI / 180; return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) }; };
+  const arc = (a, b, c) => { const p = xy(a * 3), q = xy(b * 3); return `<path d="M ${p.x} ${p.y} A ${r} ${r} 0 0 1 ${q.x} ${q.y}" stroke="${c}" stroke-width="7" fill="none"/>`; };
+  const color = value >= 10 ? '#2E9B62' : value >= 0 ? '#E5A93D' : '#D95C5C', n = xy(angle);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+      <svg viewBox="0 0 100 58" style={{ width: '100%', maxWidth: 110, overflow: 'visible' }}><g dangerouslySetInnerHTML={{ __html: arc(-30, 0, '#D95C5C') + arc(0, 10, '#E5A93D') + arc(10, 30, '#2E9B62') + `<line x1="${cx}" y1="${cy}" x2="${n.x}" y2="${n.y}" stroke="#1F3741" stroke-width="2.5" stroke-linecap="round"/><circle cx="${cx}" cy="${cy}" r="3.5" fill="#1F3741"/>` }} /></svg>
+      <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'JetBrains Mono,monospace', color, marginTop: -2 }}>{pct1(value)}</div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
+      <div style={{ fontSize: 12, color: 'var(--muted)' }}>Comparison: {pct1(py)}</div>
+    </div>
+  );
+}
+
+/* ══ P&L Summary ══ */
+function PLSummary({ f }) {
+  const B = useBooks(f), K = B.K, KC = B.KC, proof = useProof();
+  const gm = K.rev ? K.gp / K.rev * 100 : 0, em = K.rev ? K.res / K.rev * 100 : 0;
+  const gmC = KC?.rev ? KC.gp / KC.rev * 100 : null, emC = KC?.rev ? KC.res / KC.rev * 100 : null;
+  /* bridge: revenue → each cost category → result (cockpit bridge chart) */
+  const steps = [{ n: 'Revenue', v: K.rev, tot: true }, ...COST_ORDER.filter(c => B.C.get(c)).map(c => ({ n: c, v: B.C.get(c) })), { n: 'Result', v: K.res, tot: true }];
+  let run = 0; const base = [], val = [], col = [];
+  steps.forEach((s, i) => { if (s.tot) { base.push(Math.min(0, s.v)); val.push(Math.abs(s.v)); col.push(i === 0 ? '#40BCF3' : (s.v >= 0 ? '#2E9B62' : '#D95C5C')); run = s.v; } else { base.push(Math.min(run, run + s.v)); val.push(Math.abs(s.v)); col.push(s.v >= 0 ? '#2E9B62' : '#D95C5C'); run += s.v; } });
+  const wfOpt = {
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `<strong>${steps[p[0].dataIndex].n}</strong><br/>${fmtFull(steps[p[0].dataIndex].v)}` },
+    grid: { left: 14, right: 14, bottom: isMobileViewport() ? 54 : 40, top: 30, containLabel: true },
+    xAxis: { type: 'category', data: steps.map(s => s.n), axisLabel: { ...catAxisLabel(steps.length, 8), rotate: 25 }, axisTick: { show: false } },
+    yAxis: { type: 'value', axisLabel: { color: '#5F7078', fontSize: 8, formatter: fmtAxis }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: [
+      { type: 'bar', stack: 'wf', data: base, itemStyle: { color: 'transparent' }, silent: true, tooltip: { show: false } },
+      { type: 'bar', stack: 'wf', barWidth: '55%', data: val.map((v, i) => ({ value: v, itemStyle: { color: col[i], borderRadius: 3 } })), label: { show: true, position: 'top', distance: 4, color: '#1F3741', fontSize: 8, fontWeight: 700, formatter: p => fmtAxis(steps[p.dataIndex].v) } },
+    ],
+  };
+  const wfTable = { headers: ['Step', B.label, ...(KC ? [B.cmpLabel] : [])], rows: steps.map(s => [s.n, fmtFull(s.v), ...(KC ? [fmtFull(s.n === 'Revenue' ? KC.rev : s.n === 'Result' ? KC.res : B.CC.get(s.n) || 0)] : [])]) };
+
+  const cats = COST_ORDER.filter(c => B.C.get(c) || B.CC?.get(c));
+  const monthly = B.months.map(m => { const R = B.cur.filter(r => r[0] === m); const rev = R.filter(r => r[2] === 'Revenue').reduce((s, r) => s + r[4], 0) / 100, cost = -R.filter(r => r[2] !== 'Revenue').reduce((s, r) => s + r[4], 0) / 100; return { m, rev, cost, res: rev - cost }; });
+  const resOpt = {
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => `<strong>${p[0].name}</strong><br/>` + p.map(s => `${s.marker} ${s.seriesName}: ${fmtFull(s.value)}`).join('<br/>') },
+    legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 9 } }, grid: { left: 10, right: 14, bottom: 34, top: 14, containLabel: true },
+    xAxis: { type: 'category', data: monthly.map(r => MN[+r.m.slice(5) - 1] + ' ' + r.m.slice(2, 4)), axisLabel: catAxisLabel(monthly.length, 8) },
+    yAxis: { type: 'value', axisLabel: { color: '#5F7078', fontSize: 8, formatter: fmtAxis }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: [{ name: 'Revenue', type: 'bar', data: monthly.map(r => Math.round(r.rev)), itemStyle: { color: '#40BCF3', borderRadius: [3, 3, 0, 0] } }, { name: 'Costs', type: 'bar', data: monthly.map(r => Math.round(r.cost)), itemStyle: { color: '#C8D8DE', borderRadius: [3, 3, 0, 0] } }, { name: 'Result', type: 'line', data: monthly.map(r => Math.round(r.res)), itemStyle: { color: '#1F3741' }, lineStyle: { width: 2 } }],
+  };
+  const catProof = c => proof({ title: c, def: `Booked postings in category “${c}”.`, list: { head: ['Month', 'Account', 'Amount'], rows: B.cur.filter(r => r[2] === c).sort((a, b) => a[0].localeCompare(b[0]) || a[4] - b[4]).map(r => [r[0], r[1], fmtFull(r[4] / 100)]), check: `✓ adds up to <b>${fmtFull((B.C.get(c) || 0))}</b>` } });
+  return (
+    <div className="page-area fin-scroll" key="plsummary">
+      <FinNote B={B} />
+      <div className="kpi-strip">
+        <Kpi color="blue" label="Revenue (books)" value={fmtFull(K.rev)} sub={<YoyBadge cy={K.rev} py={KC?.rev} />} onClick={() => catProof('Revenue')} />
+        <Kpi color="sky" label={<>Gross Margin<span className="indicative-tag">Indicative</span></>} value={fmtFull(K.gp)} sub={`${pct1(gm)} margin${gmC != null ? ' · vs ' + pct1(gmC) : ''}`} onClick={() => catProof('Purchases')} />
+        <Kpi color="amber" label="OpEx" value={pct1(K.rev ? K.opex / K.rev * 100 : null)} sub={`${fmtFull(K.opex)} · of revenue`} />
+        <Kpi color="green" label={<>Result<span className="indicative-tag">Indicative</span></>} value={fmtFull(K.res)} sub={`${pct1(em)} margin${emC != null ? ' · vs ' + pct1(emC) : ''}`} />
+        <Kpi color="navy" label="Booked months" value={fmtN(B.months.length)} sub={`Books from ${dLab(X.meta.booksOpening)}`} />
+      </div>
+      <div className="charts-row">
+        <Panel title="P&L Bridge" subtitle={`${B.label} · revenue → cost categories → result`} height={420} className="fin-fixed" style={{ flex: 1.3 }} tableHeaders={wfTable.headers} tableRows={wfTable.rows}><EC option={wfOpt} onEvents={{ click: p => { const s = steps[p.dataIndex]; if (s && s.n !== 'Result') catProof(s.n); } }} /></Panel>
+        <Panel title="Margin Health" subtitle="Gross & result margins" tag="Indicative" height={420} className="fin-fixed" style={{ flex: 0.7 }} tableHeaders={['Metric', B.label, 'Comparison']} tableRows={[['Gross margin %', pct1(gm), pct1(gmC)], ['Result margin %', pct1(em), pct1(emC)]]}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, height: '100%', alignItems: 'center', justifyContent: 'center', padding: '8px 12px' }}><Gauge value={gm} label="Gross Margin" py={gmC} /><div style={{ height: 1, background: 'var(--border)', alignSelf: 'stretch' }} /><Gauge value={em} label="Result Margin" py={emC} /></div>
+        </Panel>
+        <Panel title="Revenue, Costs & Result per Month" subtitle="Booked months in the period" height={420} className="fin-fixed" style={{ flex: 1 }} tableHeaders={['Month', 'Revenue', 'Costs', 'Result']} tableRows={monthly.map(r => [mLong(r.m), fmtFull(r.rev), fmtFull(r.cost), fmtFull(r.res)])}><EC option={resOpt} /></Panel>
+      </div>
+      <div className="charts-row">
+        <Panel title="Category Change vs Comparison" subtitle={B.CC ? `${B.label} vs ${B.cmpLabel} · green = favourable` : 'Needs a comparison inside the books — choose “Previous period”'} height={300} className="fin-fixed" style={{ flex: 1 }} defaultView={B.CC ? 'chart' : 'table'}
+          tableHeaders={['Category', B.label, 'Comparison', 'Change €', 'Change %']} tableRows={['Revenue', ...cats].map(c => { const a = B.C.get(c) || 0, b = B.CC?.get(c); return [c, fmtFull(a), b != null ? fmtFull(b) : '—', b != null ? fmtFull(a - b) : '—', b ? fmtPct((a - b) / Math.abs(b) * 100) : '—']; })}>
+          {B.CC ? <EC option={mkBarOpt(['Revenue', ...cats], ['Revenue', ...cats].map(c => (B.C.get(c) || 0) - (B.CC.get(c) || 0)), (i, v) => v >= 0 ? '#2E9B62' : '#D95C5C', 120)} /> : <div className="watch-empty">No comparison inside the books for this period.</div>}
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+/* ══ Revenue & Costs ══ */
+function FinRevCosts({ f }) {
+  const B = useBooks(f);
+  const all = [...B.A.values()];
+  const revL = all.filter(l => l.cat === 'Revenue').sort((a, b) => b.v - a.v);
+  const costL = all.filter(l => l.cat !== 'Revenue').map(l => ({ ...l, c: -l.v })).sort((a, b) => b.c - a.c);
+  const inc = B.AC ? costL.map(l => ({ ...l, p: -(B.AC.get(l.acct)?.v || 0) })).filter(l => l.c > l.p && l.c > 500).map(l => ({ ...l, d: l.c - l.p })).sort((a, b) => b.d - a.d) : [];
+  const rev = B.K.rev;
+  const cmpV = (acct, sign = 1) => B.AC ? fmtFull(sign * (B.AC.get(acct)?.v || 0)) : '—';
+  const pctTurn = v => rev ? fmtPct(v / rev * 100) : '—';
+  const months = B.months, cats = COST_ORDER.filter(c => B.C.get(c));
+  const byMC = useMemo(() => { const m = new Map(); for (const r of B.cur) m.set(r[0] + '|' + r[2], (m.get(r[0] + '|' + r[2]) || 0) + r[4] / 100); return m; }, [B]);
+  const pctOpt = {
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => `<strong>${p[0].axisValue}</strong><br/>` + p.map(i => `${i.marker} ${i.seriesName}: ${pct1(i.value)}`).join('<br/>') },
+    legend: { top: 0, textStyle: { color: '#5F7078', fontSize: 9 }, itemWidth: 10, itemHeight: 10, type: 'scroll' },
+    grid: { left: 44, right: 20, bottom: 24, top: 34, containLabel: true },
+    xAxis: { type: 'category', data: months.map(m => MN[+m.slice(5) - 1] + ' ' + m.slice(2, 4)), axisLabel: catAxisLabel(months.length, 9) },
+    yAxis: { type: 'value', axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => v + '%' }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: cats.map((c, i) => ({ name: c, type: 'line', symbol: 'circle', symbolSize: 5, lineStyle: { width: 2, color: PALETTE[i % PALETTE.length] }, itemStyle: { color: PALETTE[i % PALETTE.length] }, data: months.map(m => { const r = byMC.get(m + '|Revenue') || 0; return r ? +(-(byMC.get(m + '|' + c) || 0) / r * 100).toFixed(2) : null; }) })),
+  };
+  const short = s => s.length > 28 ? s.slice(0, 28) + '…' : s;
+  return (
+    <div className="page-area fin-scroll" key="finrevcosts">
+      <FinNote B={B} />
+      <div className="kpi-strip">
+        <Kpi color="teal" label="Revenue Accounts" value={fmtN(revL.length)} sub="Active in the books" />
+        <Kpi color="navy" label="Cost Accounts" value={fmtN(costL.length)} sub={`${new Set(costL.map(l => l.cat)).size} categories`} />
+        <Kpi color="amber" label="Cost Increases" value={B.AC ? fmtN(inc.length) : '—'} sub={B.AC ? 'vs comparison · watch list' : 'Needs a comparison in the books'} />
+        <Kpi color="blue" label="Top Revenue" value={short(revL[0]?.acct || '—')} sub={fmtFull(revL[0]?.v || 0)} />
+        <Kpi color="red" label="Top Cost" value={short(costL[0]?.acct || '—')} sub={fmtFull(costL[0]?.c || 0)} />
+        <Kpi color="sky" label="Purchases / Revenue" value={rev ? pct1(B.K.pur / rev * 100) : '—'} sub={B.KC?.rev ? 'vs ' + pct1(B.KC.pur / B.KC.rev * 100) : 'booked when bought'} />
+      </div>
+      <div className="charts-row">
+        <div className="charts-col" style={{ flex: 1 }}><Panel title="Top Revenue Accounts" subtitle={`${B.label}, largest first`} height={420} className="fin-fixed" tableHeaders={['Account', 'Amount', 'Comparison', '% of revenue']} tableRows={revL.map(l => [l.acct, fmtFull(l.v), cmpV(l.acct), pctTurn(l.v)])}><EC option={mkBarOpt(revL.slice(0, 10).map(l => l.acct), revL.slice(0, 10).map(l => l.v), () => '#40BCF3')} /></Panel></div>
+        <div className="charts-col" style={{ flex: 1 }}><Panel title="Top Cost Accounts" subtitle={`${B.label}, largest first`} height={420} className="fin-fixed" tableHeaders={['Account', 'Category', 'Amount', 'Comparison', '% of revenue']} tableRows={costL.map(l => [l.acct, l.cat, fmtFull(l.c), cmpV(l.acct, -1), pctTurn(l.c)])}><EC option={mkBarOpt(costL.slice(0, 10).map(l => l.acct), costL.slice(0, 10).map(l => l.c), () => '#35A9DE')} /></Panel></div>
+        <div className="charts-col" style={{ flex: 1 }}><Panel title="Cost Increases" subtitle={B.AC ? `vs ${B.cmpLabel}` : 'Needs a comparison inside the books'} height={420} className="fin-fixed" tableHeaders={['Account', 'Category', 'Amount', 'Comparison', 'Increase']} tableRows={inc.map(l => [l.acct, l.cat, fmtFull(l.c), fmtFull(l.p), fmtFull(l.d)])}>
+          {inc.length ? <EC option={mkBarOpt(inc.slice(0, 10).map(l => l.acct), inc.slice(0, 10).map(l => l.d), () => '#1F3741')} /> : <div className="watch-empty">{B.AC ? 'No cost increases above €500.' : 'Choose “Previous period” to compare inside the books.'}</div>}
+        </Panel></div>
+      </div>
+      <div className="charts-row">
+        <div className="charts-col" style={{ flex: 1 }}><Panel title="Cost Categories as % of Revenue" subtitle="Per booked month" height={340} className="fin-fixed" tableHeaders={['Category', ...months.map(m => MN[+m.slice(5) - 1] + ' ' + m.slice(2, 4))]} tableRows={cats.map(c => [c, ...months.map(m => { const r = byMC.get(m + '|Revenue') || 0; return r ? pct1(-(byMC.get(m + '|' + c) || 0) / r * 100) : '—'; })])}><EC option={pctOpt} /></Panel></div>
+      </div>
+    </div>
+  );
+}
+
+/* ══ Ledger ══ */
+function FinLedger({ f }) {
+  const B = useBooks(f);
+  const [q, setQ] = useState(''), [cat, setCat] = useState('All');
+  const lines = [...B.A.values()];
+  const cats = ['All', 'Revenue', ...COST_ORDER.filter(c => lines.some(l => l.cat === c))];
+  const filt = lines.filter(l => (cat === 'All' || l.cat === cat) && (!q.trim() || l.acct.toLowerCase().includes(q.trim().toLowerCase()))).sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
+  const rev = B.K.rev;
+  const newCosts = B.AC ? lines.filter(l => l.cat !== 'Revenue' && l.v < -500 && !B.AC.get(l.acct)).sort((a, b) => a.v - b.v) : [];
+  const gone = B.AC ? [...B.AC.values()].filter(l => l.cat === 'Revenue' && l.v > 0 && !(B.A.get(l.acct)?.v)).sort((a, b) => b.v - a.v) : [];
+  const head = ['Account', 'Category', B.label, 'Comparison', 'Change €', '% of revenue'];
+  const rows = filt.map(l => { const c = B.AC ? (B.AC.get(l.acct)?.v || 0) : null; return [l.acct, l.cat, fmtFull(l.v), c != null ? fmtFull(c) : '—', c != null ? fmtFull(l.v - c) : '—', rev ? fmtPct(Math.abs(l.v) / rev * 100) : '—']; });
+  return (
+    <div className="page-area fin-scroll" key="finledger">
+      <FinNote B={B} />
+      <div className="kpi-strip">
+        <Kpi color="blue" label="Accounts" value={fmtN(lines.length)} sub="with postings in the period" />
+        <Kpi color="teal" label="Showing" value={fmtN(filt.length)} sub="After filter" />
+        <Kpi color="amber" label="New Costs" value={B.AC ? fmtN(newCosts.length) : '—'} sub={B.AC ? 'Not in the comparison' : 'Needs a comparison in the books'} />
+        <Kpi color="sky" label="Revenue Lost" value={B.AC ? fmtN(gone.length) : '—'} sub={B.AC ? 'Had revenue, now zero' : 'Needs a comparison in the books'} />
+      </div>
+      <div className="charts-row">
+        <div className="charts-col" style={{ flex: 1.8 }}>
+          <Panel title="Full Account Ledger" subtitle={`${fmtN(lines.length)} accounts · search & filter`} className="ledger-fixed" height={520} hideToggle>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+              <div className="ledger-toolbar"><input className="ledger-search" placeholder="Search account…" value={q} onChange={e => setQ(e.target.value)} /><span className="ledger-count">{fmtN(filt.length)} / {fmtN(lines.length)}</span></div>
+              <div className="ledger-cats">{cats.map(c => <button key={c} className={`filter-chip${cat === c ? ' active' : ''}`} style={{ fontSize: 12, padding: '2px 7px' }} onClick={() => setCat(p => p === c ? 'All' : c)}>{c}</button>)}</div>
+              <div style={{ flex: 1, minHeight: 0 }}><InlineTable headers={head} rows={rows} height="100%" /></div>
+            </div>
+          </Panel>
+        </div>
+        <div className="charts-col" style={{ flex: 1 }}>
+          <Panel title="🆕 New Costs" subtitle={B.AC ? `Not booked in ${B.cmpLabel}` : 'Needs a comparison in the books'} className="hug" hideToggle noZoom>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>{!newCosts.length ? <div className="watch-empty">None detected</div> : newCosts.map(l => <div className="watch-row" key={l.acct}><div className="watch-row-desc" title={l.acct}>{l.acct}</div><div className="watch-row-amt">{fmtFull(-l.v)} · {l.cat}</div></div>)}</div>
+          </Panel>
+          <Panel title="🔻 Revenue Lost" subtitle="Had revenue in the comparison, now zero" className="hug" hideToggle noZoom>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>{!gone.length ? <div className="watch-empty">None detected</div> : gone.map(l => <div className="watch-row" key={l.acct}><div className="watch-row-desc" title={l.acct}>{l.acct}</div><div className="watch-row-amt">was {fmtFull(l.v)}</div></div>)}</div>
+          </Panel>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   App.jsx
+   ══════════════════════════════════════════════════════════════════════ */
+/* DairyTop Business Intelligence — app shell.
+   Every figure comes from dash.json (src/data/model.js). */
+const ICONS = Object.fromEntries(Object.entries(import.meta.glob('./assets/icons/*.png', { eager: true, import: 'default' })).map(([k, v]) => [k.split('/').pop().replace(/^icon-|\.png$/g, ''), v]));
+
+const NAV = [
+  { section: 'Overview', items: [{ id: 'overview', icon: '▦', label: 'Dashboard', desc: 'Live KPIs & monthly trend' }, { id: 'revenue', icon: '↗', label: 'Revenue Trends', desc: 'Revenue over time & period comparison' }] },
+  { section: 'Performance', items: [{ id: 'salesreps', icon: '◈', label: 'Verkoper', desc: 'Verkoper leaderboard & rankings' }, { id: 'ck-volumes', icon: '▤', label: 'Sales per Verkoper', desc: 'Tonnes and pieces per verkoper and product line' }, { id: 'ck-reorder', icon: '↻', label: 'Reorder Radar', desc: 'Regular buyers who are late to reorder' }, { id: 'customers', icon: '⬡', label: 'Customers', desc: 'Customers by revenue' }] },
+  { section: 'Catalogue', items: [{ id: 'products', icon: '◻', label: 'Products', desc: 'Product-level revenue breakdown' }, { id: 'ck-products', icon: '◫', label: 'Products & Prices', desc: 'Product groups, price per kg and mix' }, { id: 'categories', icon: '⊞', label: 'Categories', desc: 'Categories & product groups' }, { id: 'ck-markets', icon: '◎', label: 'Markets', desc: 'Revenue by country' }] },
+  { section: 'Channels', items: [{ id: 'channels', icon: '⇌', label: 'Channel Mix', desc: 'Direct sales vs webshop split' }] },
+  { section: 'Debtors', items: [{ id: 'ck-receivables', icon: '€', label: 'Receivables', desc: 'Open invoices, ageing and the debtors tie-out' }] },
+  { section: 'Finance', items: [{ id: 'plsummary', icon: '⟡', label: 'P&L Summary', desc: 'Margins & result from the books' }, { id: 'finrevcosts', icon: '↕', label: 'Revenue & Costs', desc: 'Revenue vs cost accounts' }, { id: 'finledger', icon: '≣', label: 'Ledger', desc: 'Every account in the books' }] },
+];
+const PAGE_NAMES = { 'ck-volumes': 'Sales per Verkoper', 'ck-receivables': 'Receivables', 'ck-reorder': 'Reorder Radar', 'ck-products': 'Products & Prices', 'ck-markets': 'Markets', overview: 'Overview Dashboard', revenue: 'Revenue Trends', salesreps: 'Verkoper', customers: 'Customers', products: 'Product Analysis', categories: 'Category Breakdown', channels: 'Channel Mix', plsummary: 'P&L Summary', finrevcosts: 'Revenue & Costs', finledger: 'Ledger' };
+
+const SUGGESTED_QUESTIONS = {
+  overview: ['How much have we sold this month so far?', 'What is our open order value?', 'How did the last 3 complete months compare with last year?', 'How much milk powder did we sell this year?'],
+  revenue: ['What was our best month?', 'How does this year compare with last year?', 'What is the average monthly revenue?'],
+  salesreps: ['Who is the top verkoper?', 'How concentrated is revenue in the top 3 verkopers?', 'Which verkoper sells the most milk powder?'],
+  customers: ['Who are our top 5 customers?', 'How many customers bought this year?', 'What share of revenue comes from the top 15 customers?'],
+  products: ['What is our best-selling product?', 'Which product groups grow fastest?', 'How many products did we sell?'],
+  categories: ['Which category has the biggest share of revenue?', 'How does each product group compare?'],
+  channels: ['How is revenue split between webshop and direct?', 'What is the webshop average order value?'],
+  'ck-volumes': ['How many tonnes of milk powder did we sell?', 'Who sells the most tonnes?'],
+  'ck-receivables': ['How much is still open?', 'How much is overdue more than 30 days?', 'Which customers owe us the most?'],
+  'ck-reorder': ['Which customers are late to reorder?', 'How much monthly revenue is at risk?'],
+  'ck-products': ['What is the milk powder price per kg?', 'What is the feed price per kg?'],
+  'ck-markets': ['Which market is the biggest?', 'What share of revenue is export?'],
+  plsummary: ['What is the result in the books?', 'What is the gross margin?'],
+  finrevcosts: ['What are our biggest cost accounts?', 'How big are purchases compared with revenue?'],
+  finledger: ['What are the biggest cost accounts?', 'How many accounts are in the books?'],
+  default: ['What can you tell me about this page?'],
+};
+
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000, AUTH_KEY = 'dairytop_auth', AUTH_ACTIVITY_KEY = 'dairytop_auth_activity', AUTH_USER_KEY = 'dairytop_username';
+const ZOOM_KEY = 'dairytop_zoom', ZMIN = 0.7, ZMAX = 1.5;
+const FINANCE = new Set(['plsummary', 'finrevcosts', 'finledger']);
+const IGNORES = {
+  'ck-receivables': 'Product group does not apply to receivables',
+  'ck-reorder': 'Compare with does not apply to the reorder radar',
+  plsummary: 'Books are company-wide: verkoper, group and market filters do not apply',
+  finrevcosts: 'Books are company-wide: verkoper, group and market filters do not apply',
+  finledger: 'Books are company-wide: verkoper, group and market filters do not apply',
+};
+
+function Sidebar({ page, setPage, sideOpen, setSideOpen, setHighlightQuery, stats, handleLogout, localPages }) {
+  const [peek, setPeek] = useState(false);
+  const collapsed = !peek;
+  const [fly, setFly] = useState(null);
+  const hover = (e, item) => { if (!collapsed) return; const r = e.currentTarget.getBoundingClientRect(); setFly({ ...item, top: r.top + r.height / 2, left: r.right + 6 }); };
+  const goTo = id => { setPage(id); setSideOpen(false); setHighlightQuery(null); };
+  return (
+    <>
+      <div className={`sidebar collapsed${peek ? ' peek' : ''}${sideOpen ? ' open' : ''}`} onMouseEnter={() => { setPeek(true); document.body.classList.add('sb-peek'); }} onMouseLeave={() => { setPeek(false); setFly(null); document.body.classList.remove('sb-peek'); }}>
         <div className="sidebar-inner">
           <div className="sb-logo">
             <div className="sb-brand"><span className="sb-mark">▸</span><span className="sb-brand-text">DairyTop</span></div>
             <div className="sb-tag">Business Intelligence</div>
           </div>
           <nav className="nav">
-            {NAV.map((s,i)=>(
+            {NAV.map((s, i) => (
               <div key={i}>
-                {i>0&&<div className="nav-divider"/>}
+                {i > 0 && <div className="nav-divider" />}
                 <div className="nav-section">{s.section}</div>
-                {s.items.map(item=>(
-                  <div key={item.id} className={`nav-item${page===item.id?' active':''}${navFlyout?.id===item.id?' hovered':''}`}
-                    onClick={()=>goTo(item.id)}
-                    onMouseEnter={(e)=>handleNavHover(e,item)}
-                    onMouseLeave={handleNavLeave}
-                    role="button" tabIndex={0} onKeyDown={e=>e.key==='Enter'&&goTo(item.id)}>
-                    <span className="nav-icon"><img src={`/icons/icon-${item.id}.png`} alt={item.label} draggable="false"/></span>
-                    <span className="nav-label">{item.label}</span>
-                    {page===item.id&&<span className="nav-pip"/>}
+                {s.items.map(item => (
+                  <div key={item.id} className={`nav-item${page === item.id ? ' active' : ''}${fly?.id === item.id ? ' hovered' : ''}`} onClick={() => goTo(item.id)}
+                    onMouseEnter={e => hover(e, item)} onMouseLeave={() => setFly(null)} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && goTo(item.id)}>
+                    <span className="nav-icon">{ICONS[item.id] ? <img src={ICONS[item.id]} alt={item.label} draggable="false" /> : item.icon}</span>
+                    <span className="nav-label">{item.label}{localPages.includes(item.id) && <span className="nav-local" title="This page uses its own filters">●</span>}</span>
+                    {page === item.id && <span className="nav-pip" />}
                   </div>
                 ))}
               </div>
             ))}
           </nav>
           <div className="sb-footer">
-            <div className="sb-footer-stats" style={{marginBottom:8}}>
-              <div className="stat-row"><span className="stat-lbl">Period</span><span className="stat-val">{dateRange}</span></div>
-              <div className="stat-row"><span className="stat-lbl">Trans.</span><span className="stat-val">{totalTx.toLocaleString('de-DE')}</span></div>
-              <div className="stat-row"><span className="stat-lbl">Clients</span><span className="stat-val">{totalClients.toLocaleString('de-DE')}</span></div>
+            <div className="sb-footer-stats" style={{ marginBottom: 8 }}>
+              <div className="stat-row"><span className="stat-lbl">Period</span><span className="stat-val">{stats.period}</span></div>
+              <div className="stat-row"><span className="stat-lbl">Invoices</span><span className="stat-val">{stats.invoices}</span></div>
+              <div className="stat-row"><span className="stat-lbl">Customers</span><span className="stat-val">{stats.customers}</span></div>
             </div>
-            <button className="logout-btn" onClick={handleLogout} title={collapsed?'Sign out':undefined}
-              onMouseEnter={(e)=>collapsed&&handleNavHover(e,{id:'logout',icon:'↩',label:'Sign out',desc:'End your session'})}
-              onMouseLeave={handleNavLeave}>
-              <span>↩</span><span className="logout-btn-label"> Sign out</span>
-            </button>
+            <button className="logout-btn" onClick={handleLogout} title={collapsed ? 'Sign out' : undefined}><span>↩</span><span className="logout-btn-label"> Sign out</span></button>
           </div>
         </div>
-        <button className="sb-collapse-btn" onClick={toggleCollapsed} title={collapsed?'Expand sidebar':'Collapse sidebar'} aria-label={collapsed?'Expand sidebar':'Collapse sidebar'} aria-pressed={collapsed}>
-          {collapsed?'›':'‹'}
-        </button>
       </div>
-      {navFlyout&&createPortal(
-        <div key={navFlyout.id} className="nav-flyout" style={{top:navFlyout.top,left:navFlyout.left,transform:'translateY(-50%)'}}>
-          <span className="nav-flyout-badge">{navFlyout.icon}</span>
-          <span className="nav-flyout-text"><span className="nav-flyout-title">{navFlyout.label}</span>{navFlyout.desc&&<span className="nav-flyout-desc">{navFlyout.desc}</span>}</span>
+      {fly && createPortal(
+        <div className="nav-flyout" style={{ top: fly.top, left: fly.left, transform: 'translateY(-50%)' }}>
+          <span className="nav-flyout-badge">{fly.icon}</span>
+          <span className="nav-flyout-text"><span className="nav-flyout-title">{fly.label}</span>{fly.desc && <span className="nav-flyout-desc">{fly.desc}</span>}</span>
           <span className="nav-flyout-chevron">›</span>
-        </div>,
-        document.body
-      )}
+        </div>, document.body)}
     </>
   );
 }
 
-const AUTH_USER_KEY='dairytop_username';
+function PageZoom({ z, setZ }) {
+  const step = d => setZ(v => Math.min(ZMAX, Math.max(ZMIN, Math.round((v + d) * 10) / 10)));
+  return (
+    <div className="tb-zoom" role="group" aria-label="Page zoom">
+      <button onClick={() => step(-0.1)} disabled={z <= ZMIN} title="Zoom out (whole page)" aria-label="Zoom out"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="6.8" cy="6.8" r="4.8" /><path d="M10.4 10.4 14.5 14.5M4.6 6.8h4.4" /></svg></button>
+      <button className="tb-zoom-val" onClick={() => setZ(1)} title="Reset to 100%">{Math.round(z * 100)}%</button>
+      <button onClick={() => step(0.1)} disabled={z >= ZMAX} title="Zoom in (whole page)" aria-label="Zoom in"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="6.8" cy="6.8" r="4.8" /><path d="M10.4 10.4 14.5 14.5M4.6 6.8h4.4M6.8 4.6v4.4" /></svg></button>
+    </div>
+  );
+}
 
-export default function App() {
-  const [showWelcome,setShowWelcome]=useState(false);
-  const finishWelcome=useCallback(()=>setShowWelcome(false),[]);
-  const [userName,setUserName]=useState(()=>{try{return localStorage.getItem(AUTH_USER_KEY)||'';}catch{return'';}});
-  const [authed,setAuthed]=useState(()=>{
-    const savedAuth=localStorage.getItem(AUTH_KEY);
-    const lastActivity=localStorage.getItem(AUTH_ACTIVITY_KEY);
-    if(savedAuth==='true'&&lastActivity){const elapsed=Date.now()-parseInt(lastActivity,10);if(elapsed<SESSION_TIMEOUT_MS)return true;else{localStorage.removeItem(AUTH_KEY);localStorage.removeItem(AUTH_ACTIVITY_KEY);return false;}}
-    return false;
-  });
+function Shell({ userName, handleLogout }) {
+  const [page, setPage] = useState(() => sessionStorage.getItem('dairytop_last_page') || 'overview');
+  const PF = usePageFilter(page);
+  const { f, setF } = PF;
+  const [sideOpen, setSideOpen] = useState(false);
+  const [z, setZ] = useState(() => { const v = parseFloat(localStorage.getItem(ZOOM_KEY)); return v >= ZMIN && v <= ZMAX ? v : 1; });
+  useEffect(() => {
+    try { localStorage.setItem(ZOOM_KEY, String(z)); } catch { /* ignore */ }
+    document.documentElement.style.setProperty('--chat-text-zoom', String(1 + (z - 1) * 0.5));
+    const t = setTimeout(() => liveChartInstances.forEach(i => { try { i.resize(); } catch { /* ignore */ } }), 80);
+    return () => clearTimeout(t);
+  }, [z]);
+  useEffect(() => { sessionStorage.setItem('dairytop_last_page', page); }, [page]);
+  useEffect(() => {
+    const go = () => liveChartInstances.forEach(i => { try { i.resize(); } catch { /* ignore */ } });
+    const ts = [60, 200, 400, 800].map(ms => setTimeout(go, ms));
+    window.addEventListener('resize', go);
+    return () => { ts.forEach(clearTimeout); window.removeEventListener('resize', go); };
+  }, [page, f]);
+  const [time, setTime] = useState(new Date());
+  useEffect(() => { const t = setInterval(() => setTime(new Date()), 15000); return () => clearInterval(t); }, []);
 
-  const SESSION_PAGE_KEY='dairytop_last_page';
-  const SESSION_FILTER_KEY='dairytop_last_filter';
-  const [page,setPage]=useState(()=>sessionStorage.getItem(SESSION_PAGE_KEY)||'overview');
-  const [filter,setFilter]=useState(()=>{
-    try{
-      const saved=sessionStorage.getItem(SESSION_FILTER_KEY);
-      if(saved){
-        const parsed=JSON.parse(saved);
-        return {
-          years: parsed.years || [],
-          months: parsed.months || {},
-          weeks: parsed.weeks || {}
-        };
-      }
-    }catch{}
-    return {years:[],months:{},weeks:{}};
-  });
-  const [sideOpen,setSideOpen]=useState(false);
+  /* search box: customers, products, verkopers, categories */
+  const [q, setQ] = useState(''), [open, setOpen] = useState(false), [hl, setHl] = useState(null);
+  const index = useMemo(() => [
+    ...X.customers.map(c => ({ name: c[0], type: 'Customer', page: 'customers' })),
+    ...[...new Set(X.products.map(p => p[0]))].map(n => ({ name: n, type: 'Product', page: 'products' })),
+    ...X.reps.map(n => ({ name: n, type: 'Verkoper', page: 'salesreps' })),
+    ...X.categories.map(c => ({ name: c[0], type: 'Category', page: 'categories' })),
+  ], []);
+  const groups = useMemo(() => {
+    const s = q.trim().toLowerCase(); if (!s) return [];
+    return [['Customer', 'Customers', 'customers'], ['Product', 'Products', 'products'], ['Verkoper', 'Verkopers', 'salesreps'], ['Category', 'Categories', 'categories']]
+      .map(([t, l, p]) => { const m = index.filter(i => i.type === t && i.name.toLowerCase().includes(s)); return { type: t, label: l, page: p, items: m.slice(0, 6), total: m.length }; }).filter(g => g.items.length);
+  }, [q, index]);
+  const sRef = useRef(null), rRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  useLayoutEffect(() => { if (open && q.trim() && sRef.current) { const r = sRef.current.getBoundingClientRect(); setPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right), width: Math.max(r.width, 300) }); } }, [open, q, groups.length]);
+  useEffect(() => { const h = e => { if (sRef.current?.contains(e.target) || rRef.current?.contains(e.target)) return; setOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, []);
+  const goResult = r => { setPage(r.page); setHl(r.name); setQ(r.name); setOpen(false); };
 
-  const SIDEBAR_COLLAPSE_KEY='dairytop_sidebar_collapsed';
-  const [collapsed,setCollapsed]=useState(()=>{try{return JSON.parse(localStorage.getItem(SIDEBAR_COLLAPSE_KEY)||'false');}catch{return false;}});
-  const toggleCollapsed=()=>{setCollapsed(v=>{const next=!v;try{localStorage.setItem(SIDEBAR_COLLAPSE_KEY,JSON.stringify(next));}catch{}return next;});};
-
-  useEffect(()=>{
-    const DURATION=340;const start=performance.now();let raf;
-    const tick=(now)=>{liveChartInstances.forEach(inst=>{try{inst.resize();}catch{}});if(now-start<DURATION)raf=requestAnimationFrame(tick);};
-    raf=requestAnimationFrame(tick);
-    return()=>cancelAnimationFrame(raf);
-  },[collapsed]);
-
-  const resizeAllCharts=useCallback(()=>{
-    liveChartInstances.forEach(inst=>{try{inst.resize();}catch{}});
-  },[]);
-  useEffect(()=>{
-    if(!authed||showWelcome)return;
-    const delays=[50,150,350,600,1000];
-    const timers=delays.map(ms=>setTimeout(resizeAllCharts,ms));
-    window.addEventListener('resize',resizeAllCharts);
-    window.addEventListener('orientationchange',resizeAllCharts);
-    return()=>{
-      timers.forEach(clearTimeout);
-      window.removeEventListener('resize',resizeAllCharts);
-      window.removeEventListener('orientationchange',resizeAllCharts);
-    };
-  },[authed,showWelcome,resizeAllCharts]);
-  useEffect(()=>{
-    const t=setTimeout(resizeAllCharts,120);
-    return()=>clearTimeout(t);
-  },[page,resizeAllCharts]);
-
-  const [time,setTime]=useState(new Date());
-
-  useEffect(()=>{
-    sessionStorage.setItem(SESSION_PAGE_KEY,page);
-    window.scrollTo({top:0});
-  },[page]);
-
-  useEffect(()=>{try{sessionStorage.setItem(SESSION_FILTER_KEY,JSON.stringify(filter));}catch{}},[filter]);
-
-  useEffect(()=>{
-    document.documentElement.classList.toggle('no-scroll',sideOpen);
-    return()=>document.documentElement.classList.remove('no-scroll');
-  },[sideOpen]);
-
-  const [searchQuery,setSearchQuery]=useState('');
-  const [searchOpen,setSearchOpen]=useState(false);
-  const [highlightQuery,setHighlightQuery]=useState(null);
-  const searchIndex=useMemo(()=>{
-    const seen=new Set();const idx=[];
-    customersRaw.forEach(c=>{if(!seen.has('c:'+c.n)){seen.add('c:'+c.n);idx.push({name:c.n,type:'Customer',page:'customers'});}});
-    productsRaw.forEach(p=>{if(!seen.has('p:'+p.n)){seen.add('p:'+p.n);idx.push({name:p.n,type:'Product',page:'products'});}});
-    salesrepsRaw.forEach(r=>{if(!seen.has('r:'+r.n)){seen.add('r:'+r.n);idx.push({name:r.n,type:'Verkoper',page:'salesreps'});}});
-    categoriesRaw.forEach(c=>{if(!seen.has('cat:'+c.n)){seen.add('cat:'+c.n);idx.push({name:c.n,type:'Category',page:'categories'});}});
-    return idx;
-  },[]);
-  const SEARCH_GROUPS=[{type:'Customer',page:'customers',label:'Customers'},{type:'Product',page:'products',label:'Products'},{type:'Verkoper',page:'salesreps',label:'Verkopers'},{type:'Category',page:'categories',label:'Categories'}];
-  const MAX_PER_GROUP=6;
-  const groupedResults=useMemo(()=>{
-    const q=searchQuery.trim().toLowerCase();if(!q)return[];
-    return SEARCH_GROUPS.map(g=>{const matches=searchIndex.filter(i=>i.type===g.type&&i.name.toLowerCase().includes(q));return{...g,items:matches.slice(0,MAX_PER_GROUP),total:matches.length};}).filter(g=>g.items.length>0);
-  },[searchQuery,searchIndex]);
-  const firstResult=groupedResults[0]?.items?.[0];
-  const goToSearchResult=(result)=>{setPage(result.page);setHighlightQuery(result.name);setSearchQuery(result.name);setSearchOpen(false);};
-
-  const searchRef=useRef(null);
-  const searchResultsRef=useRef(null);
-  useEffect(()=>{
-    const handler=(e)=>{if(searchRef.current?.contains(e.target))return;if(searchResultsRef.current?.contains(e.target))return;setSearchOpen(false);};
-    document.addEventListener('mousedown',handler);return()=>document.removeEventListener('mousedown',handler);
-  },[]);
-
-  const [searchPos,setSearchPos]=useState(null);
-  useLayoutEffect(()=>{
-    if(searchOpen&&searchQuery.trim()&&searchRef.current){const rect=searchRef.current.getBoundingClientRect();setSearchPos({top:rect.bottom+6,right:Math.max(8,window.innerWidth-rect.right),width:Math.max(rect.width,300)});}
-  },[searchOpen,searchQuery,groupedResults.length]);
-  useEffect(()=>{
-    if(!searchOpen)return;
-    const close=(e)=>{if(searchResultsRef.current?.contains(e.target))return;setSearchOpen(false);};
-    window.addEventListener('scroll',close,true);window.addEventListener('resize',close);
-    return()=>{window.removeEventListener('scroll',close,true);window.removeEventListener('resize',close);};
-  },[searchOpen]);
-
-  useEffect(()=>{
-    if(!authed)return;
-    let lastWrite=0;
-    const markActive=()=>{const now=Date.now();if(now-lastWrite<ACTIVITY_WRITE_THROTTLE_MS)return;lastWrite=now;localStorage.setItem(AUTH_ACTIVITY_KEY,now.toString());};
-    markActive();
-    const events=['mousemove','mousedown','keydown','wheel','scroll','touchstart','click'];
-    events.forEach(evt=>window.addEventListener(evt,markActive,{passive:true}));
-    return()=>{events.forEach(evt=>window.removeEventListener(evt,markActive));};
-  },[authed]);
-
-  useEffect(()=>{
-    if(!authed)return;
-    const checkSession=()=>{const lastActivity=localStorage.getItem(AUTH_ACTIVITY_KEY);if(lastActivity){const elapsed=Date.now()-parseInt(lastActivity,10);if(elapsed>=SESSION_TIMEOUT_MS){localStorage.removeItem(AUTH_KEY);localStorage.removeItem(AUTH_ACTIVITY_KEY);setAuthed(false);}}};
-    const interval=setInterval(checkSession,10000);return()=>clearInterval(interval);
-  },[authed]);
-
-  useEffect(()=>{const t=setInterval(()=>setTime(new Date()),30000);return()=>clearInterval(t);},[]);
-
-  const handleLogin=(username)=>{setShowWelcome(true);setAuthed(true);localStorage.setItem(AUTH_KEY,'true');localStorage.setItem(AUTH_ACTIVITY_KEY,Date.now().toString());setUserName(username||'');try{localStorage.setItem(AUTH_USER_KEY,username||'');}catch{}};
-  const handleLogout=()=>{setAuthed(false);localStorage.removeItem(AUTH_KEY);localStorage.removeItem(AUTH_ACTIVITY_KEY);localStorage.removeItem(AUTH_USER_KEY);setUserName('');};
-
-  const fm=useMemo(()=>{
-    if(!filter.years||filter.years.length===0)return monthly;
-    return monthly.filter(m=>{const[,yr]=m.m.split(' ');if(!filter.years.includes(yr))return false;const ym=filter.months[yr];if(!ym||ym.length===0)return true;return ym.includes(m.m);});
-  },[filter]);
-
-  const filterLabel=useMemo(()=>{
-    if(!filter.years||filter.years.length===0)return'Full period';
-    const eff = effGrainFor(filter);
-    return filter.years.map(y=>{
-      const m=filter.months[y];
-      const w=filter.weeks?.[y];
-      const parts = [];
-      if (m && m.length) parts.push(`${m.length}m`);
-      if (w && w.length) parts.push(`${w.length}w`);
-      const suffix = parts.length ? ` (${parts.join(' · ')})` : (eff==='yearly' ? ' (all)' : '');
-      return `20${y}${suffix}`;
-    }).join(', ');
-  },[filter]);
-
-  const dateRange=useMemo(()=>{if(fm.length===0)return'No data';return`${fm[0].m} – ${fm[fm.length-1].m}`;},[fm]);
-  const totalTx=useMemo(()=>fm.reduce((s,m)=>s+m.orders,0),[fm]);
-
-  if(!authed)return(<><style>{css}</style><Login onLogin={handleLogin}/></>);
-
-  if(showWelcome)return(<><style>{css}</style><DashboardWelcome userName={userName} onComplete={finishWelcome}/></>);
-
-  const effGrain = effGrainFor(filter);
-
-  const renderPage=()=>{
-    const props={fm,label:filterLabel,effGrain,filter};
-    const searchProps={highlightQuery};
-    switch(page){
-      case'overview':return<Overview/>;
-      case'revenue':return<Revenue{...props}/>;
-      case'salesreps':return<SalesReps{...props}{...searchProps}/>;
-      case'customers':return<Customers{...props}{...searchProps}/>;
-      case'products':return<Products{...props}{...searchProps}/>;
-      case'categories':return<Categories{...props}{...searchProps}/>;
-      case'channels':return<Channels{...props}/>;
-      case'plsummary':return<PLSummary/>;
-      case'finrevcosts':return<FinRevCosts/>;
-      case'finledger':return<FinLedger/>;
-      default:return<Overview{...props}/>;
+  const P = period(f);
+  const stats = useMemo(() => ({ period: `${X.mLabel[f.from]} – ${X.mLabel[f.to]}`, invoices: invoices(f, P.months.filter(m => !X.isPortalM[m])).length.toLocaleString('de-DE'), customers: (f.reps.length || f.mkts.length ? X.customers.filter(c => (!f.reps.length || f.reps.includes(c[2])) && (!f.mkts.length || f.mkts.includes(c[1]))).length : totals.customers).toLocaleString('de-DE') }), [f, P]);
+  const live = liveMonth();
+  const isOv = page === 'overview';
+  const props = { f, setF, highlightQuery: hl, page };
+  const render = () => {
+    switch (page) {
+      case 'overview': return <Overview />;
+      case 'revenue': return <Revenue {...props} />;
+      case 'salesreps': return <SalesReps {...props} />;
+      case 'customers': return <Customers {...props} />;
+      case 'products': return <Products {...props} />;
+      case 'categories': return <Categories {...props} />;
+      case 'channels': return <Channels {...props} />;
+      case 'ck-volumes': return <Volumes {...props} />;
+      case 'ck-receivables': return <Receivables {...props} />;
+      case 'ck-reorder': return <Reorder {...props} />;
+      case 'ck-products': return <ProductsPrice {...props} />;
+      case 'ck-markets': return <Markets {...props} />;
+      case 'plsummary': return <PLSummary {...props} />;
+      case 'finrevcosts': return <FinRevCosts {...props} />;
+      case 'finledger': return <FinLedger {...props} />;
+      default: return <Overview />;
     }
   };
 
-  const handleExportPage=()=>window.print();
-
   return (
     <>
-      <style>{css}</style>
-      <div className="app">
-        <button className="mob-toggle" onClick={()=>setSideOpen(v=>!v)} aria-label="Menu">{sideOpen?'✕':'☰'}</button>
-        <div className={`mob-overlay${sideOpen?' open':''}`} onClick={()=>setSideOpen(false)}/>
-
-        <Sidebar
-          page={page} setPage={setPage} sideOpen={sideOpen} setSideOpen={setSideOpen}
-          collapsed={collapsed} toggleCollapsed={toggleCollapsed} setHighlightQuery={setHighlightQuery}
-          dateRange={dateRange} totalTx={totalTx} totalClients={totalClients} handleLogout={handleLogout}
-        />
-
-        <div className="main">
-          <div className={`topbar${page==='overview'?' topbar-overview':''}`}>
-            <div className="tb-row1">
-              <div className="tb-titlewrap">
-                <div className="tb-title">{PAGE_NAMES[page]}</div>
-                <div className="tb-sub">
-                  {page==='overview'?(
-                    <span>Live · Current month{monthly.length?` (${monthly[monthly.length-1].m})`:''}</span>
-                  ):(
-                    <><span>{filterLabel}</span><span className="tb-sep">·</span><span>{dateRange}</span><span className="tb-sep">·</span><span>All products</span></>
-                  )}
+      <div className={`zoom-root${z > 1 ? ' zoomed' : ''}`} style={z !== 1 ? { transform: `scale(${z})`, width: `${100 / z}%`, height: `${100 / z}%` } : undefined}>
+        <div className="app">
+          <button className="mob-toggle" onClick={() => setSideOpen(v => !v)} aria-label="Menu">{sideOpen ? '✕' : '☰'}</button>
+          <div className={`mob-overlay${sideOpen ? ' open' : ''}`} onClick={() => setSideOpen(false)} />
+          <Sidebar page={page} setPage={setPage} sideOpen={sideOpen} setSideOpen={setSideOpen} setHighlightQuery={setHl} stats={stats} handleLogout={handleLogout} localPages={PF.localPages} />
+          <div className="main">
+            <div className={`topbar${isOv ? ' topbar-overview' : ''}`}>
+              <div className="tb-row1">
+                <div className="tb-titlewrap">
+                  <div className="tb-title">{PAGE_NAMES[page]}</div>
+                  <div className="tb-sub">
+                    {isOv ? <span>Live view · Current month ({live.label}{live.day ? `, to ${live.day}` : ''}) · not affected by filters</span>
+                      : <><span>{P.label}</span>{P.cmp && <><span className="tb-sep">·</span><span>vs {P.cmpLabel}</span></>}<span className="tb-sep">·</span><span>{f.grps.length ? f.grps.join(', ') : 'All products'}</span></>}
+                  </div>
+                </div>
+                <div className="tb-right">
+                  {isOv && <PageZoom z={z} setZ={setZ} />}
+                  <button className="tb-print-btn" onClick={() => window.print()} title="Export this page as a PDF via your browser's print dialog">⬇ Export</button>
+                  <div className="live-badge" title={`Data snapshot ${X.snapshotLabel} · last invoice ${X.ledgerLabel}`}><span className="blink-dot" /><span className="tb-time-in">{time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span><span className="tb-snap">Last Update · {X.snapshotLabel}</span></div>
                 </div>
               </div>
-              <div className="tb-right">
-                <button className="tb-print-btn" onClick={handleExportPage} title="Export this page as a PDF via your browser's print dialog">⬇ Export</button>
-                <div className="tb-refresh">Updated <strong>{lastUpdated}</strong></div>
-                <div className="tb-time">{time.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>
-                <div className="live-badge"><span className="blink-dot"/>Live</div>
-              </div>
+              {!isOv && (
+                <div className="tb-search" ref={sRef}>
+                  <span className="tb-search-icon">🔍</span>
+                  <input type="text" placeholder="Find a customer, product, verkoper…" value={q} onChange={e => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
+                    onKeyDown={e => { if (e.key === 'Enter' && groups[0]?.items[0]) goResult(groups[0].items[0]); if (e.key === 'Escape') setOpen(false); }} aria-label="Global search" />
+                  {open && q.trim() && pos && createPortal(
+                    <div ref={rRef} className="tb-search-results" style={{ top: pos.top, right: pos.right, width: pos.width }}>
+                      {!groups.length ? <div className="tb-search-empty">No matches in customers, products, verkopers or categories</div> : groups.map(g => (
+                        <div key={g.type} className="tb-search-group">
+                          <div className="tb-search-group-head"><span><strong>{g.label}</strong> ({g.total})</span><span className="tb-search-group-dest">→ {PAGE_NAMES[g.page]}</span></div>
+                          {g.items.map((r, i) => <div key={i} className="tb-search-item" onClick={() => goResult(r)}><span className="tb-search-item-name" title={r.name}>{r.name}</span><span className="tb-search-item-arrow">→</span></div>)}
+                        </div>))}
+                    </div>, document.body)}
+                </div>
+              )}
             </div>
-            {page!=='overview'&&(
-              <div className="tb-search" ref={searchRef}>
-                <span className="tb-search-icon">🔍</span>
-                <input type="text" placeholder="Find a customer, product, verkoper…" value={searchQuery}
-                  onChange={e=>{setSearchQuery(e.target.value);setSearchOpen(true);}}
-                  onFocus={()=>setSearchOpen(true)}
-                  onKeyDown={e=>{if(e.key==='Enter'&&firstResult)goToSearchResult(firstResult);if(e.key==='Escape')setSearchOpen(false);}}
-                  aria-label="Global search"/>
-                {searchOpen&&searchQuery.trim()&&searchPos&&createPortal(
-                  <div ref={searchResultsRef} className="tb-search-results" style={{top:searchPos.top,right:searchPos.right,width:searchPos.width}}>
-                    {groupedResults.length===0?(<div className="tb-search-empty">No matches in customers, products, or verkopers</div>):groupedResults.map(g=>(
-                      <div key={g.type} className="tb-search-group">
-                        <div className="tb-search-group-head"><span><strong>{g.label}</strong> ({g.total})</span><span className="tb-search-group-dest">→ {PAGE_NAMES[g.page]}</span></div>
-                        {g.items.map((r,i)=>(<div key={i} className="tb-search-item" onClick={()=>goToSearchResult(r)}><span className="tb-search-item-name" title={r.name}>{r.name}</span><span className="tb-search-item-arrow">→</span></div>))}
-                        {g.total>g.items.length&&(<div className="tb-search-empty" style={{padding:'5px 12px',fontStyle:'normal'}}>+{g.total-g.items.length} more — refine your search</div>)}
-                      </div>
-                    ))}
-                  </div>,
-                  document.body
-                )}
-              </div>
-            )}
+            {!isOv && <FilterBar f={f} setF={setF} corner={<PageZoom z={z} setZ={setZ} />} resetAll={PF.resetAll} ignores={IGNORES[page]} grainUsed={!FINANCE.has(page)} />}
+            {render()}
           </div>
-          {page!=='overview'&&<DateFilterBar filter={filter} setFilter={setFilter}/>}
-          {renderPage()}
+          <ScrollHint watchKey={page} disabled={sideOpen} />
         </div>
-
-        <ChatBot
-          context={{page,pageName:PAGE_NAMES[page],filterLabel,dateRange,effectiveGrain:effGrain}}
-          suggestedQuestions={SUGGESTED_QUESTIONS[page]||SUGGESTED_QUESTIONS.default}
-          userName={formatDisplayName(userName)}
-        />
-        <ScrollHint watchKey={page+JSON.stringify(filter)} disabled={sideOpen}/>
       </div>
+      <ChatBot liveData={DASH} context={{ page, pageName: PAGE_NAMES[page], filterLabel: P.label, dateRange: P.label }} suggestedQuestions={SUGGESTED_QUESTIONS[page] || SUGGESTED_QUESTIONS.default} userName={formatDisplayName(userName)} />
+    </>
+  );
+}
+
+export default function App() {
+  const [showWelcome, setShowWelcome] = useState(false);
+  const finishWelcome = useCallback(() => setShowWelcome(false), []);
+  const [userName, setUserName] = useState(() => { try { return localStorage.getItem(AUTH_USER_KEY) || ''; } catch { return ''; } });
+  const [authed, setAuthed] = useState(() => {
+    const a = localStorage.getItem(AUTH_KEY), t = localStorage.getItem(AUTH_ACTIVITY_KEY);
+    if (a === 'true' && t && Date.now() - parseInt(t, 10) < SESSION_TIMEOUT_MS) return true;
+    localStorage.removeItem(AUTH_KEY); localStorage.removeItem(AUTH_ACTIVITY_KEY); return false;
+  });
+  useEffect(() => {
+    if (!authed) return;
+    let last = 0;
+    const mark = () => { const n = Date.now(); if (n - last < 5000) return; last = n; localStorage.setItem(AUTH_ACTIVITY_KEY, String(n)); };
+    mark();
+    const ev = ['mousemove', 'mousedown', 'keydown', 'wheel', 'scroll', 'touchstart', 'click'];
+    ev.forEach(e => window.addEventListener(e, mark, { passive: true }));
+    const iv = setInterval(() => { const t = localStorage.getItem(AUTH_ACTIVITY_KEY); if (t && Date.now() - parseInt(t, 10) >= SESSION_TIMEOUT_MS) { localStorage.removeItem(AUTH_KEY); localStorage.removeItem(AUTH_ACTIVITY_KEY); setAuthed(false); } }, 10000);
+    return () => { ev.forEach(e => window.removeEventListener(e, mark)); clearInterval(iv); };
+  }, [authed]);
+  const handleLogin = u => { setShowWelcome(true); setAuthed(true); localStorage.setItem(AUTH_KEY, 'true'); localStorage.setItem(AUTH_ACTIVITY_KEY, String(Date.now())); setUserName(u || ''); try { localStorage.setItem(AUTH_USER_KEY, u || ''); } catch { /* ignore */ } };
+  const handleLogout = () => { setAuthed(false); localStorage.removeItem(AUTH_KEY); localStorage.removeItem(AUTH_ACTIVITY_KEY); localStorage.removeItem(AUTH_USER_KEY); setUserName(''); };
+  const style = <style>{css + TYPO_CSS + EXTRA_CSS}</style>;
+  if (!authed) return <>{style}<Login onLogin={handleLogin} /></>;
+  if (showWelcome) return <>{style}<DashboardWelcome userName={userName} onComplete={finishWelcome} /></>;
+  return (
+    <>
+      {style}
+      <FilterProvider><ProofProvider><Shell userName={userName} handleLogout={handleLogout} /></ProofProvider></FilterProvider>
     </>
   );
 }

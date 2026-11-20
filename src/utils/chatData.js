@@ -1,5 +1,2 @@
-/* Data source for the chatbot — knitworks-dashboard (static build).
-   The chatbot answers from the same data.js module the dashboard renders. */
-import * as data from './data.js';
-
-export const getChatData = () => data;
+/* The chatbot reads the dash.json data model that App.jsx passes in as liveData. */
+export const getChatData = live => live || {};

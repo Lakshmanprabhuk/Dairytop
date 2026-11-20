@@ -179,7 +179,7 @@ function Svg({ name, size = 15, strokeWidth = 1.7, fill = 'none', style }) {
   const isStop = name === 'stop';
   const isRoundedCopy = name === 'copy';
 
-  let inner = null;
+  let inner;
   if (isGrid) {
     inner = (
       <>
@@ -676,7 +676,7 @@ const chatCss = `
 `;
 
 // ── Component ────────────────────────────────────────────────────────────────
-// liveData (optional): Supabase snapshot from App.jsx. Without it the static data.js module is used.
+// liveData: the dash.json data model passed in by App.jsx (DASH).
 export default function ChatBot({ context, suggestedQuestions, userName, liveData } = {}) {
   const [open,         setOpen]         = useState(false);
   const [lang,         setLang]         = useState('en');

@@ -1,121 +1,67 @@
-/* ── CHATBOT SUGGESTED QUESTIONS ─────────────────────────────────────────
-   Every question in this file is answered by the local engine without AI.
-   tests/chips.test.mjs fails if one of them (or one of App.jsx's
-   SUGGESTED_QUESTIONS) ever stops being answerable — run `npm test`
-   after adding or rewording a chip.
-   This file is identical in knitworks-dashboard and knitworks-dashboard-1.
-   ───────────────────────────────────────────────────────────────────── */
-
-/* Dutch wording for the per-page questions defined in App.jsx (SUGGESTED_QUESTIONS). */
+/* Suggested questions, follow-ups and Dutch labels for the assistant. */
 export const QUESTION_NL = {
-  'How is revenue trending this month?': 'Hoe ontwikkelt de omzet zich deze maand?',
-  'Which category is driving sales right now?': 'Welke categorie levert op dit moment de meeste omzet?',
-  "Who is this month's top verkoper?": 'Wie is deze maand de beste verkoper?',
-  'What was our best month on record?': 'Wat was onze beste maand ooit?',
-  'How does this period compare to the previous one?': 'Hoe verhoudt deze periode zich tot de vorige periode?',
-  "What's the average monthly revenue?": 'Wat is de gemiddelde maandelijkse omzet?',
-  'Who is the top-performing verkoper?': 'Wie is de best presterende verkoper?',
-  'How concentrated is revenue among the top 3 reps?': 'Hoe geconcentreerd is de omzet bij de top 3 verkopers?',
-  'Break down sales by verkoper and category': 'Omzet per verkoper en categorie',
-  'Who are our top 5 customers?': 'Wie zijn onze top 5 klanten?',
-  'What share of revenue comes from our top customers?': 'Welk aandeel van de omzet komt van onze beste klanten?',
-  "What's the average revenue per client?": 'Wat is de gemiddelde omzet per klant?',
-  'What is our best-selling product?': 'Wat is ons best verkopende product?',
-  'How concentrated is revenue across products?': 'Hoe geconcentreerd is de omzet over producten?',
-  'Show me products with the smallest share': 'Toon producten met het kleinste aandeel',
-  'Which category has the biggest share of revenue?': 'Welke categorie heeft het grootste aandeel in de omzet?',
-  'How many active category groups are there?': 'Hoeveel categorieën zijn er?',
-  'Compare the top two categories': 'Vergelijk de top twee categorieën',
-  'Which channel drives the most revenue?': 'Welk kanaal levert de meeste omzet?',
-  'How is revenue split across channels?': 'Hoe is de omzet verdeeld over de kanalen?',
-  'How is gross margin trending?': 'Hoe ontwikkelt de brutomarge zich?',
-  'What is driving EBITDA this period?': 'Wat bepaalt de EBITDA deze periode?',
-  'What are our biggest cost drivers?': 'Wat zijn onze grootste kostenposten?',
-  'How do revenue and costs compare year over year?': 'Hoe verhouden omzet en kosten zich jaar op jaar?',
-  'What are the largest YoY swings in the ledger?': 'Wat zijn de grootste verschillen jaar op jaar in het grootboek?',
-  'Which accounts saw the biggest cost increases?': 'Welke rekeningen hadden de grootste kostenstijging?',
-  'What is the total open AR?': 'Wat is het totaal aan openstaande debiteuren?',
-  'Which customers have the oldest outstanding invoices?': 'Welke klanten hebben de oudste openstaande facturen?',
-  'How much AR is over 90 days?': 'Hoeveel debiteuren zijn ouder dan 90 dagen?',
-  'Which customer has the highest open AR?': 'Welke klant heeft het hoogste open saldo?',
-  'How many customers are flagged as non-payer?': 'Hoeveel klanten zijn wanbetaler?',
-  'Show me all Risk D customers': 'Toon alle klanten met risico D',
-  'What is the average days to pay this year?': 'Wat is de gemiddelde betaaltermijn dit jaar?',
-  'How has the % paid within 30 days changed over time?': 'Hoe heeft het betaalgedrag binnen 30 dagen zich ontwikkeld?',
-  'Which quarter had the best payment performance?': 'Welk kwartaal had het beste betaalgedrag?',
-  'What can you tell me about this page?': 'Wat kun je me vertellen over deze pagina?',
-  'Summarize the key numbers here': 'Geef een samenvatting van de kerncijfers',
+ "How much have we sold this month so far?": "Hoeveel hebben we deze maand tot nu toe verkocht?",
+ "What is our open order value?": "Wat is onze openstaande orderwaarde?",
+ "How did the last 3 complete months compare with last year?": "Hoe verhouden de laatste 3 volledige maanden zich tot vorig jaar?",
+ "How much milk powder did we sell this year?": "Hoeveel melkpoeder hebben we dit jaar verkocht?",
+ "What was our best month?": "Wat was onze beste maand?",
+ "How does this year compare with last year?": "Hoe verhoudt dit jaar zich tot vorig jaar?",
+ "What is the average monthly revenue?": "Wat is de gemiddelde omzet per maand?",
+ "Who is the top verkoper?": "Wie is de beste verkoper?",
+ "How concentrated is revenue in the top 3 verkopers?": "Hoeveel omzet komt van de top 3 verkopers?",
+ "Which verkoper sells the most milk powder?": "Welke verkoper verkoopt het meeste melkpoeder?",
+ "Who are our top 5 customers?": "Wie zijn onze top 5 klanten?",
+ "How many customers bought this year?": "Hoeveel klanten hebben dit jaar gekocht?",
+ "What share of revenue comes from the top 15 customers?": "Welk deel van de omzet komt van de top 15 klanten?",
+ "What is our best-selling product?": "Wat is ons best verkochte product?",
+ "Which product groups grow fastest?": "Welke productgroepen groeien het snelst?",
+ "How many products did we sell?": "Hoeveel producten hebben we verkocht?",
+ "Which category has the biggest share of revenue?": "Welke categorie heeft het grootste omzetaandeel?",
+ "How does each product group compare?": "Hoe verhouden de productgroepen zich?",
+ "How is revenue split between webshop and direct?": "Hoe is de omzet verdeeld tussen webshop en direct?",
+ "What is the webshop average order value?": "Wat is de gemiddelde orderwaarde van de webshop?",
+ "How many tonnes of milk powder did we sell?": "Hoeveel ton melkpoeder hebben we verkocht?",
+ "Who sells the most tonnes?": "Wie verkoopt de meeste tonnen?",
+ "How much is still open?": "Hoeveel staat er nog open?",
+ "How much is overdue more than 30 days?": "Hoeveel is meer dan 30 dagen te laat?",
+ "Which customers owe us the most?": "Welke klanten zijn ons het meeste schuldig?",
+ "Which customers are late to reorder?": "Welke klanten zijn laat met nabestellen?",
+ "How much monthly revenue is at risk?": "Hoeveel maandomzet loopt risico?",
+ "What is the milk powder price per kg?": "Wat is de melkpoederprijs per kg?",
+ "What is the feed price per kg?": "Wat is de voerprijs per kg?",
+ "Which market is the biggest?": "Wat is de grootste markt?",
+ "What share of revenue is export?": "Welk deel van de omzet is export?",
+ "What is the result in the books?": "Wat is het resultaat in de boekhouding?",
+ "What is the gross margin?": "Wat is de brutomarge?",
+ "What are our biggest cost accounts?": "Wat zijn onze grootste kostenrekeningen?",
+ "What are the biggest cost accounts?": "Wat zijn de grootste kostenrekeningen?",
+ "How big are purchases compared with revenue?": "Hoe groot zijn de inkopen ten opzichte van de omzet?",
+ "How many accounts are in the books?": "Hoeveel rekeningen staan er in de boekhouding?",
+ "What can you tell me about this page?": "Wat kun je me over deze pagina vertellen?",
+ "Summarize the key numbers": "Vat de belangrijkste cijfers samen"
 };
-
-const q = (icon, enLabel, nlLabel, en, nl) => ({ icon, label: { en: enLabel, nl: nlLabel }, prompt: { en, nl } });
-
-/* Chips for the dashboard-context switcher inside the chat window. */
+const nl = en => QUESTION_NL[en] || en;
+const q = (icon, label, prompt) => ({ icon, label: { en: label, nl: label }, prompt: { en: prompt, nl: nl(prompt) } });
 export const CONTEXT_SUGGESTIONS = {
-  overview: [
-    q('trend', 'Revenue trend', 'Omzettrend', 'How is revenue trending this month?', 'Hoe ontwikkelt de omzet zich deze maand?'),
-    q('people', 'Top customers', 'Top klanten', 'Top 5 customers by revenue', 'Top 5 klanten op omzet'),
-    q('box', 'Open orders', 'Open orders', 'What is our open order value?', 'Wat is onze openstaande orderwaarde?'),
-    q('grid', 'By category', 'Per categorie', 'Revenue by category', 'Omzet per categorie'),
-  ],
-  sales: [
-    q('people', 'Top customers', 'Top klanten', 'Top 5 customers this year', 'Top 5 klanten dit jaar'),
-    q('grid', 'By category', 'Per categorie', 'Revenue by category this year', 'Omzet per categorie dit jaar'),
-    q('trend', 'Monthly trend', 'Maandelijkse trend', 'Monthly revenue trend this year', 'Maandelijkse omzettrend dit jaar'),
-    q('box', 'Product revenue', 'Productomzet', 'Top 5 products by revenue', 'Top 5 producten op omzet'),
-  ],
-  finance: [
-    q('trend', 'Finance totals', 'Financiële totalen', 'Finance totals', 'Financiële totalen'),
-    q('grid', 'COGS and OPEX', 'COGS en OPEX', 'What are our COGS and OPEX?', 'Wat zijn onze COGS en OPEX?'),
-    q('box', 'Margin and EBITDA', 'Marge en EBITDA', 'What is our gross margin and EBITDA?', 'Wat is onze brutomarge en EBITDA?'),
-    q('people', 'Cost drivers', 'Kostenposten', 'What are our biggest cost drivers?', 'Wat zijn onze grootste kostenposten?'),
-  ],
-  orders: [
-    q('box', 'Open order value', 'Openstaande waarde', 'What is our open order value?', 'Wat is onze openstaande orderwaarde?'),
-    q('trend', 'MTD vs projected', 'MTD vs prognose', 'What is our MTD actual vs projected?', 'Wat is onze MTD actueel vs prognose?'),
-    q('grid', 'This week', 'Deze week', 'Revenue this week', 'Omzet deze week'),
-    q('people', 'Last week', 'Vorige week', 'Revenue last week', 'Omzet vorige week'),
-  ],
-  reps: [
-    q('people', 'Top reps', 'Top verkopers', 'Top 5 sales reps by revenue', 'Top 5 verkopers op omzet'),
-    q('trend', 'Rep trend', 'Verkooptrend', 'Monthly revenue per sales rep', 'Maandelijkse omzet per verkoper'),
-    q('grid', 'Reps by category', 'Verkopers per categ.', 'Which categories does each rep sell?', 'Welke categorieën verkoopt elke verkoper?'),
-    q('box', 'Rep tonnage', 'Tonnage verkopers', 'Top reps by tonnage', 'Top verkopers op tonnage'),
-  ],
+  overview: [q('trend', 'This month', 'How much have we sold this month so far?'), q('people', 'Top customers', 'Who are our top 5 customers?'), q('grid', 'By category', 'Which category has the biggest share of revenue?'), q('box', 'Key numbers', 'Summarize the key numbers')],
+  sales: [q('trend', 'This year vs last', 'How does this year compare with last year?'), q('box', 'Best month', 'What was our best month?'), q('grid', 'Group growth', 'Which product groups grow fastest?'), q('people', 'Markets', 'Which market is the biggest?')],
+  finance: [q('trend', 'Result', 'What is the result in the books?'), q('box', 'Gross margin', 'What is the gross margin?'), q('people', 'Cost accounts', 'What are our biggest cost accounts?'), q('grid', 'Receivables', 'How much is still open?')],
+  orders: [q('box', 'Open order value', 'What is our open order value?'), q('box', 'Late reorders', 'Which customers are late to reorder?'), q('trend', 'Revenue at risk', 'How much monthly revenue is at risk?'), q('grid', 'Overdue', 'How much is overdue more than 30 days?'), q('people', 'Biggest debtors', 'Which customers owe us the most?')],
+  reps: [q('people', 'Top verkopers', 'Who is the top verkoper?'), q('trend', 'Top 3 share', 'How concentrated is revenue in the top 3 verkopers?'), q('grid', 'Milk powder', 'Which verkoper sells the most milk powder?'), q('box', 'Tonnes', 'Who sells the most tonnes?')],
 };
-
-const f = (en, nl) => ({ en, nl });
-/* Follow-up chips shown under the latest answer, by answer topic. */
-export const FOLLOWUPS = {
-  revenue: [f('Compare to last month', 'Vergelijk met vorige maand'), f('Monthly revenue trend this year', 'Maandelijkse omzettrend dit jaar'), f('Revenue 2025 vs 2026', 'Omzet 2025 vs 2026'), f('Top 5 customers this year', 'Top 5 klanten dit jaar')],
-  customers: [f('Top 10 customers this year', 'Top 10 klanten dit jaar'), f('What share of revenue comes from the top 10 customers?', 'Welk aandeel van de omzet komt van de top 10 klanten?'), f('Average revenue per customer', 'Gemiddelde omzet per klant')],
-  products: [f('Top 10 products this year', 'Top 10 producten dit jaar'), f('How concentrated is revenue across products?', 'Hoe geconcentreerd is de omzet over producten?'), f('Top 5 products last month', 'Top 5 producten vorige maand')],
-  salesreps: [f('Top 5 sales reps this year', 'Top 5 verkopers dit jaar'), f('Monthly revenue per sales rep', 'Maandelijkse omzet per verkoper'), f('Sales by sales rep and category', 'Omzet per verkoper en categorie')],
-  categories: [f('Revenue by category this year', 'Omzet per categorie dit jaar'), f('Compare the top two categories', 'Vergelijk de top twee categorieën'), f('Tonnage by category', 'Tonnage per categorie')],
-  channels: [f('Webshop revenue this year', 'Webshop omzet dit jaar'), f('Channel split last month', 'Kanaalverdeling vorige maand'), f('Revenue this month', 'Omzet deze maand')],
-  orders: [f('MTD actual vs projected', 'MTD actueel vs prognose'), f('Revenue this week', 'Omzet deze week'), f('Revenue last week', 'Omzet vorige week'), f('Open order value', 'Openstaande orderwaarde')],
-  debtor: [f('How much AR is over 90 days?', 'Hoeveel debiteuren zijn ouder dan 90 dagen?'), f('Show Risk D customers', 'Toon klanten met risico D'), f('Oldest outstanding invoices', 'Oudste openstaande facturen'), f('Receivables ageing', 'Ouderdom debiteuren')],
-  finance: [f('What is the gross margin?', 'Wat is de brutomarge?'), f('Biggest cost drivers', 'Grootste kostenposten'), f('What is driving EBITDA?', 'Wat bepaalt de EBITDA?'), f('Finance totals', 'Financiële totalen')],
-  tonnage: [f('Top reps by tonnage', 'Top verkopers op tonnage'), f('Tonnage by category', 'Tonnage per categorie'), f('Revenue by category this year', 'Omzet per categorie dit jaar')],
-  general: [f('Summarize the key numbers', 'Geef een samenvatting van de kerncijfers'), f('Revenue this month', 'Omzet deze maand'), f('Top 5 customers this year', 'Top 5 klanten dit jaar')],
+const FU = {
+  revenue: ['How does this year compare with last year?', 'What was our best month?', 'What is the average monthly revenue?'],
+  tonnage: ['Who sells the most tonnes?', 'What is the milk powder price per kg?', 'Which verkoper sells the most milk powder?'],
+  salesreps: ['Who is the top verkoper?', 'How concentrated is revenue in the top 3 verkopers?'],
+  customers: ['Who are our top 5 customers?', 'What share of revenue comes from the top 15 customers?', 'Which customers owe us the most?'],
+  products: ['What is our best-selling product?', 'Which product groups grow fastest?', 'What is the feed price per kg?'],
+  categories: ['How does each product group compare?', 'Which category has the biggest share of revenue?'],
+  channels: ['What is the webshop average order value?', 'How is revenue split between webshop and direct?'],
+  debtor: ['How much is overdue more than 30 days?', 'Which customers owe us the most?', 'How much is still open?'],
+  orders: ['How much monthly revenue is at risk?', 'Which customers are late to reorder?'],
+  finance: ['What is the gross margin?', 'What are our biggest cost accounts?', 'How big are purchases compared with revenue?'],
+  general: ['Summarize the key numbers', 'How much have we sold this month so far?', 'Who are our top 5 customers?'],
 };
-
-/** Topic for an AI-written answer (local answers already carry their topic). */
-export function topicFromText(text) {
-  const t = String(text || '').toLowerCase();
-  if (/receivable|debtor|debiteur|invoice|factu|overdue/.test(t)) return 'debtor';
-  if (/ebitda|cogs|opex|margin|marge|profit|winst|cost|kosten/.test(t)) return 'finance';
-  if (/open order|backlog|mtd|prognose|projected/.test(t)) return 'orders';
-  if (/sales rep|verkoper|vertegenwoordiger/.test(t)) return 'salesreps';
-  if (/customer|klant/.test(t)) return 'customers';
-  if (/product/.test(t)) return 'products';
-  if (/categor/.test(t)) return 'categories';
-  if (/revenue|omzet|sales|turnover/.test(t)) return 'revenue';
-  return 'general';
-}
-
-/** Up to `max` follow-up prompts for a topic, never repeating the question just asked. */
-export function followupsFor(topic, lang, justAsked = '', max = 3) {
-  const list = FOLLOWUPS[topic] || FOLLOWUPS.general;
-  const asked = justAsked.trim().toLowerCase();
-  return list.map(x => x[lang] || x.en).filter(x => x.toLowerCase() !== asked).slice(0, max);
-}
+const norm = s => s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+export function followupsFor(topic, lang, justAsked = '', max = 3) { const a = norm(justAsked); return (FU[topic] || FU.general).filter(x => norm(x) !== a && norm(nl(x)) !== a).slice(0, max).map(x => lang === 'nl' ? nl(x) : x); }
+export function topicFromText(t = '') { const s = t.toLowerCase(); if (/verkoper|salesrep/.test(s)) return 'salesreps'; if (/receiv|overdue|owe|debiteur|open invoice/.test(s)) return 'debtor'; if (/reorder|order/.test(s)) return 'orders'; if (/margin|cost|books|p&l|result/.test(s)) return 'finance'; if (/tonne|ton |milk powder|melkpoeder/.test(s)) return 'tonnage'; if (/customer|klant/.test(s)) return 'customers'; if (/product/.test(s)) return 'products'; if (/categor|group/.test(s)) return 'categories'; if (/webshop|channel/.test(s)) return 'channels'; if (/revenue|turnover|omzet|month|year/.test(s)) return 'revenue'; return 'general'; }

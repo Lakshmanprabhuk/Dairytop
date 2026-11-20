@@ -1,16 +1,42 @@
-# React + Vite
+# DairyTop Business Intelligence (React)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Sales, debtors and finance dashboard for DairyTop. Every figure comes from **`src/dash.json`** (Microfas extract, schema 5.0.0).
 
-Currently, two official plugins are available:
+## Run
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm install
+npm run dev        # http://localhost:5173
+npm run build      # production build in dist/
+npm test           # chatbot + data tests
+npm run lint
+```
 
-## React Compiler
+Sign in with the same accounts as before.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Files
 
-## Expanding the ESLint configuration
+| Path | What it is |
+|---|---|
+| `src/App.jsx` | The whole dashboard: data model on dash.json, filters, all 15 pages, charts, login, sidebar, styles |
+| `src/dash.json` | The data. Replace this file with a newer extract to update every page |
+| `src/ChatBot.jsx` | Chat window (UI) |
+| `src/utils/chatContext.js` | Chat answers from dash.json; builds the data context sent to Gemini |
+| `src/utils/chatSuggestions.js` | Suggested questions, follow-ups, Dutch labels |
+| `src/utils/chatData.js`, `chatRequest.js` | Chat helpers (data hand-over, AI timeout) |
+| `api/chat.js` | Vercel serverless proxy to Gemini (keeps the API key off the browser) |
+| `src/assets/` | Logo, chatbot images, sidebar icons |
+| `tests/chat.test.mjs`, `scripts/run-tests.mjs` | Tests, run through Vite so they use the real app code |
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Chatbot
+
+- Suggested questions, customer / verkoper / product / market / group names, and "revenue in March 2026"-style questions are answered **in the browser** straight from dash.json.
+- Anything else goes to Gemini through `api/chat.js` with a compact dash.json summary. Set `VITE_CHAT_PROXY_URL` (see `.env.example`) for the front end, and `GEMINI_API_KEY` on Vercel for the proxy.
+- The chatbot always answers on the full data unless the question names a period or a name.
+
+## Data notes
+
+- Amounts are euros excl. VAT. Weights are shown in tonnes.
+- Jan 2025 – Mar 2026 come from the former portal: monthly totals only (no weeks, days or invoices). Week/day drill-down, orders and average order value start Apr 2026.
+- Receivables start with invoices of 7 Apr 2026; the books (P&L) start 1 Apr 2026.
+- Filters are per page; Compare with starts on "No comparison".

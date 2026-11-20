@@ -2542,7 +2542,7 @@ const DIMS = {
   market: { n: 'Market', f: i => X.facts.M[i], l: k => X.mkts[k] },
 };
 const isoWk = k => { const t = X.weekMon.get(k); if (t == null) return ''; const d = a => { const x = new Date(a * 864e5); return x.getUTCDate() + ' ' + MN[x.getUTCMonth()]; }; return d(t) + ' – ' + d(t + 6); };
-const COLS = { r: ['Revenue', v => fmtFull(v / 100)], k: ['Tonnes', v => (v / 1e6).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' t'], q: ['Pieces', v => fmtN(v / X.qScale)] };
+const COLS = { r: ['Revenue', v => fmtFull(v / 100)], k: ['Tonnes', v => (v / 1000).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' t'], q: ['Pieces', v => fmtN(v / X.qScale)] };
 
 function ProofProvider({ children }) {
   const [cfg, setCfg] = useState(null);
@@ -3306,7 +3306,7 @@ const tonD = kg => (kg / 1000).toLocaleString('de-DE', { minimumFractionDigits: 
 const pcs = q => fmtN(q) + ' pcs';
 
 const sd = t => { const d = new Date(t * 864e5); return d.getUTCDate() + ' ' + MN[d.getUTCMonth()]; };
-function WeekTable({ T, qf, onCell }) {
+function WeekTable({ T, qf, onCell, onRep }) {
   const L = T.weeks.length - 1, fq = v => v ? qf(v) : '—';
   const chg = (a, b) => b > 0 ? <span className={a >= b ? 'up' : 'down'}>{pctTxt(growth(a, b))}</span> : '—';
   if (!T.reps.length) return <div className="watch-empty">No sales of the selected products in these weeks.</div>;
@@ -3318,7 +3318,7 @@ function WeekTable({ T, qf, onCell }) {
         <table className="itbl wk-tbl">
           <thead><tr><th>Verkoper</th>{T.meta.map((m, j) => <th key={m.w} style={hl(j)}><span className="wk-h1">{m.w.split(' ')[0]}{j === L ? ' · this week' : j === L - 1 ? ' · last week' : ''}</span><span className="wk-h2">{sd(m.a)}–{sd(m.e)}{m.full ? '' : ` (${m.n} day${m.n > 1 ? 's' : ''} so far)`}</span></th>)}<th>Total</th>{L >= 2 && <th title="Last full week vs the week before">Last week vs week before</th>}</tr></thead>
           <tbody>
-            {T.reps.map(v => <tr key={v}><td style={{ whiteSpace: 'nowrap' }}>{X.verkopers[v]}</td>{T.weeks.map((w, j) => <td key={w} style={{ cursor: 'pointer', ...(hl(j) || {}) }} onClick={() => onCell(j, v)}>{fq(T.cell.get(v + '|' + j) || 0)}</td>)}<td><b>{qf(T.rt.get(v))}</b></td>{L >= 2 && <td>{chg(T.cell.get(v + '|' + (L - 1)) || 0, T.cell.get(v + '|' + (L - 2)) || 0)}</td>}</tr>)}
+            {T.reps.map(v => <tr key={v}><td style={{ whiteSpace: 'nowrap', cursor: 'pointer' }} className="wk-rep" title="Show this verkoper week by week" onClick={() => onRep(v)}>{X.verkopers[v]}</td>{T.weeks.map((w, j) => <td key={w} style={{ cursor: 'pointer', ...(hl(j) || {}) }} onClick={() => onCell(j, v)}>{fq(T.cell.get(v + '|' + j) || 0)}</td>)}<td><b>{qf(T.rt.get(v))}</b></td>{L >= 2 && <td>{chg(T.cell.get(v + '|' + (L - 1)) || 0, T.cell.get(v + '|' + (L - 2)) || 0)}</td>}</tr>)}
           </tbody>
           <tfoot><tr className="tot"><td>Total</td>{T.weeks.map((w, j) => <td key={w} style={{ cursor: 'pointer' }} onClick={() => onCell(j, null)}>{fq(T.ct[j])}</td>)}<td>{qf(T.gt)}</td>{L >= 2 && <td>{chg(T.ct[L - 1], T.ct[L - 2])}</td>}</tr></tfoot>
         </table>
@@ -3425,7 +3425,10 @@ function Volumes({ f, setF }) {
 
   const wkLab = m => `${m.w.split(' ')[0]} · ${sd(m.a)}–${sd(m.e)}${m.full ? '' : ' (so far)'}`;
   const wkProof = (j, v) => { const m = wkTbl.meta[j], mi = X.months.indexOf(isoOfT(m.a).slice(0, 7)), mj = X.months.indexOf(isoOfT(m.e).slice(0, 7));
-    proof({ title: `${v != null ? X.verkopers[v] : 'All verkopers'} · ${line[1]} · ${wkLab(m)}`, def: 'Quantities of the selected products sold in this week, net of returns.', f: { ...f, from: mi, to: mj, cmp: 'none' }, extra: i => (!extra || extra(i)) && X.facts.W[i] === m.w && (v == null || X.facts.v[i] === v), dims: ['customer', 'product', 'verkoper', 'market'], col: unit }); };
+    proof({ title: `${v != null ? X.verkopers[v] : 'All verkopers'} · ${line[1]} · ${wkLab(m)}`, def: `Quantities of ${line[1].toLowerCase()} sold in ${wkLab(m)}, net of returns.`, f: { ...f, from: mi, to: mj, cmp: 'none', reps: v != null ? [X.verkopers[v]] : f.reps }, extra: i => (!extra || extra(i)) && X.facts.W[i] === m.w, dims: ['customer', 'product', 'verkoper', 'market'], col: unit }); };
+  const wkRepProof = v => { const T = wkTbl, ws = new Set(T.weeks), m0 = T.meta[0], m1 = T.meta[T.meta.length - 1];
+    const mi = X.months.indexOf(isoOfT(m0.a).slice(0, 7)), mj = X.months.indexOf(isoOfT(m1.e).slice(0, 7));
+    proof({ title: `${X.verkopers[v]} · ${line[1]} · ${T.weeks.length} weeks`, def: `Quantities of ${line[1].toLowerCase()} sold per week, ${sd(m0.a)} – ${sd(m1.e)}, net of returns.`, f: { ...f, from: mi, to: mj, cmp: 'none', reps: [X.verkopers[v]] }, extra: i => (!extra || extra(i)) && ws.has(X.facts.W[i]), dims: ['week', 'customer', 'product', 'market'], col: unit }); };
   const copyWk = () => { const T = wkTbl, dv = unit === 'k' ? 1000 : 1; const rows = [['Verkoper', ...T.meta.map(m => `${m.w} ${isoOfT(m.a)}${m.full ? '' : ' (so far)'}`), 'Total'], ...T.reps.map(v => [X.verkopers[v], ...T.weeks.map((_, j) => (T.cell.get(v + '|' + j) || 0) / dv), T.rt.get(v) / dv]), ['Total', ...T.ct.map(x => x / dv), T.gt / dv]];
     try { navigator.clipboard.writeText(rows.map(r => r.join('\t')).join('\n')); } catch { /* ignore */ } };
   const vp = (title, ex, col) => proof({ title, def: `Quantities of ${line[1].toLowerCase()}.`, f, extra: ex ? i => (!extra || extra(i)) && ex(i) : extra, dims: ['customer', 'product', 'month', 'market', 'verkoper'], col });
@@ -3461,10 +3464,10 @@ function Volumes({ f, setF }) {
         </Panel>
       </div>
       <div className="charts-row">
-        <Panel title={`${unit === 'k' ? 'Tonnes' : 'Pieces'} per Verkoper, Week by Week`} subtitle={`Monday–Sunday weeks up to the last invoice (${X.ledgerLabel}); the current week is still running. Ignores the period and shows the most recent weeks; daily data starts Apr 2026. Click a cell for the customers and products behind it.`} height={480} className="fin-fixed" style={{ flex: 1 }} hideToggle
+        <Panel title={`${unit === 'k' ? 'Tonnes' : 'Pieces'} per Verkoper, Week by Week`} subtitle={`Monday–Sunday weeks up to the last invoice (${X.ledgerLabel}); the current week is still running. Ignores the period and shows the most recent weeks; daily data starts Apr 2026. Click a cell for the customers and products behind it, or a verkoper name for their week-by-week breakdown.`} height={480} className="fin-fixed" style={{ flex: 1 }} hideToggle
           controls={<><div className="view-tog">{[[4, '4 weeks'], [8, '8 weeks'], [13, '13 weeks'], [26, '26 weeks'], [0, 'All weeks']].map(([n, l]) => <button key={n} className={`vt-btn${wk === n ? ' active' : ''}`} onClick={() => setWk(n)}>{l}</button>)}</div>
             <button className="panel-btn" onClick={copyWk}>Copy table</button></>}>
-          <WeekTable T={wkTbl} qf={qf} onCell={wkProof} />
+          <WeekTable T={wkTbl} qf={qf} onCell={wkProof} onRep={wkRepProof} />
         </Panel>
       </div>
       <div className="charts-row">

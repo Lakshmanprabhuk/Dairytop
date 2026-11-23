@@ -73,3 +73,16 @@ test('history is trimmed for the AI', () => {
   assert.equal(c.length, 6);
   assert.ok(c.every(m => m.text.length <= 500));
 });
+
+test('new overview figures: projected turnover, Kalverhuisvesting open orders, average days open', () => {
+  const eom = X.months[X.nM - 1] + '-31';
+  const OL = D.openOrderLines(), due = OL.filter(r => (r.l[8] || '') <= eom);
+  const kvh = due.filter(r => D.groupOfProduct(r.l[3]) === 2).reduce((s, r) => s + r.v, 0);
+  assert.ok(kvh > 0, 'Kalverhuisvesting open orders must not be 0');
+  const proj = D.liveMonth().rev + due.reduce((s, r) => s + r.v, 0);
+  const a = chat.resolve('What is the projected turnover this month?', {}, D).answer;
+  assert.ok(a.includes(D.fmtFull(proj)), a);
+  assert.ok(chat.resolve('What are the open orders for Kalverhuisvesting?', {}, D).answer.includes(D.fmtFull(kvh)));
+  assert.match(chat.resolve('What is the average days open?', {}, D).answer, /\d+ days/);
+  assert.equal(chat.resolve('Wat is de verwachte omzet deze maand?', { lang: 'nl' }, D).answer, a);
+});

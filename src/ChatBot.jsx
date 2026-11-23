@@ -261,6 +261,11 @@ const chatCss = `
 .cb-toggle::after  { animation: cbRipple 3.2s ease-out infinite 1.0s; }
 .cb-toggle.open::before,
 .cb-toggle.open::after { animation: none; opacity: 0; }
+@keyframes cbRippleSm {
+  0%   { transform: scale(1);    opacity: 0.7; }
+  70%  { transform: scale(1.45); opacity: 0;   }
+  100% { transform: scale(1.45); opacity: 0;   }
+}
 @keyframes cbRipple {
   0%   { transform: scale(1);    opacity: 0.85; }
   70%  { transform: scale(2.1);  opacity: 0;    }
@@ -613,6 +618,8 @@ const chatCss = `
     left: auto !important; top: auto !important;
     cursor: pointer !important; touch-action: manipulation;
   }
+  .cb-toggle-fixed, .cb-toggle-fixed .cb-fab-img { width: 52px !important; height: 52px !important; }
+  .cb-toggle-fixed::before, .cb-toggle-fixed::after { border-width: 2px; animation-name: cbRippleSm; }
   .cb-greet   { display: none !important; }
   .cb-moo-wrap{ display: none; }
   .cb-send, .cb-stop-btn { width: 40px; height: 40px; }
@@ -677,9 +684,12 @@ const chatCss = `
 
 // ── Component ────────────────────────────────────────────────────────────────
 // liveData: the dash.json data model passed in by App.jsx (DASH).
-export default function ChatBot({ context, suggestedQuestions, userName, liveData } = {}) {
+export default function ChatBot({ context, suggestedQuestions, userName, liveData, uiLang } = {}) {
   const [open,         setOpen]         = useState(false);
-  const [lang,         setLang]         = useState('en');
+  const [lang,         setLang]         = useState(uiLang === 'nl' ? 'nl' : 'en');
+  /* follow the dashboard language switch; the chat's own EN/NL toggle still works */
+  const [prevUi, setPrevUi] = useState(uiLang);
+  if (uiLang !== prevUi) { setPrevUi(uiLang); if (uiLang === 'en' || uiLang === 'nl') setLang(uiLang); }
   const [messages,     setMessages]     = useState([]);
   const [input,        setInput]        = useState('');
   const [loading,      setLoading]      = useState(false);

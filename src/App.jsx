@@ -352,40 +352,23 @@ function reconSteps() {
 /* Product group of a product (falls back to the product lines for products without a category) */
 const LINE_GRP = { proElite: 0, milkPowder: 0, feed: 1, calfPens: 2, calfHousing: 2, calfSupplies: 3, perfectUdder: 4 };
 let _pg = null;
+/* Every open order line (stage delivered-not-invoiced or still to deliver), priced or not */
+const STAGE_LBL = { deliveredNotInvoiced: 'Delivered', toDeliver: 'To deliver' };
+function openOrderLines() {
+  const sg = new Map(X.orders.filter(o => o[5]).map(o => [o[0], o[12]])), out = [];
+  for (const l of X.openLines || []) {
+    const g = sg.get(l[0]); if (g !== 'toDeliver' && g !== 'deliveredNotInvoiced') continue;
+    const priced = !!l[11], vd = priced ? l[10] / 100 : 0, vr = priced ? Math.max(0, l[9] - l[10]) / 100 : 0;
+    out.push({ l, g, stage: STAGE_LBL[g], priced, vd, vr, v: vd + vr });
+  }
+  return out;
+}
 function groupOfProduct(p) {
   if (!_pg) { _pg = new Map(); for (const l of X.lines || []) if (LINE_GRP[l.key] != null) for (const q of l.products) _pg.set(q, LINE_GRP[l.key]); }
   const c = X.products[p][1];
   return c >= 0 ? (X.gOfCat[c] ?? 5) : (_pg.has(p) ? _pg.get(p) : 5);
 }
 
-/* ── Reorder radar (same rules as the Business Cockpit) ───────────────── */
-const days = (a, b) => Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / DAY);
-const addDays = (d, n) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
-function reorder(f, inPeriod) {
-  const snap = X.meta.ledgerThrough, F = X.facts, cp = custPred(f);
-  const gs = f.grps?.length ? new Set(f.grps) : null;
-  let W = null;
-  if (inPeriod) {
-    const a = X.months[f.from] + '-01', e = X.months[f.to];
-    const end = e + '-' + pad(new Date(+e.slice(0, 4), +e.slice(5), 0).getDate());
-    W = [a, end < snap ? end : snap];
-  }
-  const msF = X.months.map((m, i) => i).filter(i => !X.isPortalM[i] && i !== X.partial.m);
-  const win = new Set(msF.slice(-6)), rv = new Map();
-  for (let i = 0; i < X.n; i++) if (win.has(F.m[i])) { const k = F.c[i] + '|' + F.p[i]; rv.set(k, (rv.get(k) || 0) + F.r[i]); }
-  const out = [];
-  for (const [c, p, n, last, gap] of X.cadence) {
-    const g = X.gOfCat[X.products[p][1]] ?? 5;
-    if (!cp(c) || (gs && !gs.has(GROUPS[g]))) continue;
-    const since = days(last, snap), due = Math.round(since - gap), fell = addDays(last, Math.floor(1.5 * gap) + 1);
-    if (W && (fell < W[0] || fell > W[1])) continue;
-    if (since > 1.5 * gap && since <= 120) out.push({ c, p, n, last, gap, since, due, fell, g, mrev: Math.round((rv.get(c + '|' + p) || 0) / win.size) / 100 });
-  }
-  return { rows: out.sort((a, b) => b.mrev - a.mrev), window: W };
-}
-
-
-/* ── Overview (live view, not filtered) ────────────────────────────────── */
 function liveMonth() {
   const m = X.nM - 1, F = X.facts;
   let rev = 0;
@@ -430,7 +413,7 @@ const repName = i => X.verkopers[X.facts.v[i]];
 
 /* The data model handed to the chatbot (it answers from the same dash.json) */
 // eslint-disable-next-line react-refresh/only-export-components
-export const DASH = { X, GROUPS, sales, applyPreset, defaultFilter, aggregate, arKPI, reorder, liveMonth, mLong, invoices, legacy, orderValue, hasOrderValues, fmtFull, fmtN, fmtShare, growth };
+export const DASH = { X, GROUPS, sales, applyPreset, defaultFilter, aggregate, arKPI, liveMonth, mLong, invoices, legacy, orderValue, hasOrderValues, openOrderLines, groupOfProduct, fmtFull, fmtN, fmtShare, growth };
 
 /* ══════════════════════════════════════════════════════════════════════
    typography.js
@@ -569,6 +552,266 @@ function catAxisLabel(count, baseFontSize, forceRotate) {
 }
 
 /* ── Chart magnifier: scales fonts, bars and markers of every chart inside a Panel ── */
+/* ══════════════════════════════════════════════════════════════════════
+   i18n — English (default) / Dutch.
+   The UI is written in English; when Dutch is chosen the visible text is
+   translated on screen (exact strings first, then phrase rules for text
+   with numbers, dates and names). Data names (customers, products,
+   ledger accounts) are never translated. Charts translate legends and
+   category labels; the chatbot keeps its own language handling.
+   ══════════════════════════════════════════════════════════════════════ */
+const LANG_KEY = 'dairytop_lang';
+const LangCtx = createContext({ lang: 'en', setLang: () => {} });
+const useLang = () => useContext(LangCtx);
+let CUR_LANG = (() => { try { return localStorage.getItem(LANG_KEY) === 'nl' ? 'nl' : 'en'; } catch { return 'en'; } })();
+
+const NL = {
+  /* shell, login, navigation */
+  'Overview': 'Overzicht', 'Dashboard': 'Dashboard', 'Overview Dashboard': 'Overzicht dashboard', 'Performance': 'Prestaties', 'Catalogue': 'Assortiment', 'Channels': 'Kanalen', 'Debtors': 'Debiteuren', 'Finance': 'Financieel',
+  'Revenue Trends': 'Omzettrends', 'Verkoper': 'Verkoper', 'Sales per Verkoper': 'Verkoop per verkoper', 'Customers': 'Klanten', 'Products': 'Producten', 'Products & Prices': 'Producten & prijzen', 'Categories': 'Categorieën', 'Markets': 'Markten',
+  'Channel Mix': 'Kanaalmix', 'Receivables': 'Debiteuren', 'P&L Summary': 'Winst- en verliesoverzicht', 'Revenue & Costs': 'Omzet & kosten', 'Ledger': 'Grootboek', 'Product Analysis': 'Productanalyse', 'Category Breakdown': 'Categorie-indeling',
+  'Live KPIs & monthly trend': 'Live kerncijfers & maandtrend', 'Revenue over time & period comparison': 'Omzet in de tijd & periodevergelijking', 'Verkoper leaderboard & rankings': 'Ranglijst verkopers', 'Tonnes and pieces per verkoper and product line': 'Tonnen en stuks per verkoper en productlijn',
+  'Customers by revenue': 'Klanten op omzet', 'Product-level revenue breakdown': 'Omzet per product', 'Product groups, price per kg and mix': 'Productgroepen, prijs per kg en mix', 'Categories & product groups': 'Categorieën & productgroepen', 'Revenue by country': 'Omzet per land',
+  'Direct sales vs webshop split': 'Verdeling directe verkoop en webshop', 'Open invoices, ageing and the debtors tie-out': 'Openstaande facturen, ouderdom en aansluiting debiteuren', 'Margins & result from the books': 'Marges & resultaat uit de boekhouding', 'Revenue vs cost accounts': 'Omzet- en kostenrekeningen', 'Every account in the books': 'Alle rekeningen in de boekhouding',
+  'Business Intelligence': 'Business Intelligence', 'Sign out': 'Afmelden', 'Sign In': 'Inloggen', 'Sign in to access your analytics': 'Log in om je analyses te openen', 'Username': 'Gebruikersnaam', 'Password': 'Wachtwoord', 'Enter username': 'Gebruikersnaam invullen', 'Enter password': 'Wachtwoord invullen',
+  'Preparing your analytics': 'Je analyses worden voorbereid', 'Powered by': 'Mogelijk gemaakt door', 'Good morning': 'Goedemorgen', 'Good afternoon': 'Goedemiddag', 'Good evening': 'Goedenavond', ', welcome back.': ', welkom terug.',
+  'Find a customer, product, verkoper…': 'Zoek een klant, product, verkoper…', 'Last Update ·': 'Laatste update ·', 'Last Update': 'Laatste update', '⬇ Export': '⬇ Exporteren', "Export this page as a PDF via your browser's print dialog": 'Exporteer deze pagina als pdf via het printvenster van je browser',
+  'Zoom in (whole page)': 'Inzoomen (hele pagina)', 'Zoom out (whole page)': 'Uitzoomen (hele pagina)', 'Open dashboard assistant': 'Dashboardassistent openen', 'Live view · Current month (': 'Live weergave · Huidige maand (', ') · not affected by filters': ') · niet beïnvloed door filters',
+  'Done': 'Gereed', 'Filters': 'Filters', 'Search': 'Zoeken', 'Menu': 'Menu',
+  'Language': 'Taal', 'English': 'Engels', 'Dutch': 'Nederlands',
+  /* filter bar */
+  'Period': 'Periode', 'From': 'Van', 'To': 'Tot en met', 'Compare with': 'Vergelijk met', 'Same period last year': 'Zelfde periode vorig jaar', 'Previous period': 'Vorige periode', 'No comparison': 'Geen vergelijking', 'No comparison selected.': 'Geen vergelijking gekozen.', 'no comparison': 'geen vergelijking',
+  'All verkopers': 'Alle verkopers', 'Product group': 'Productgroep', 'All product groups': 'Alle productgroepen', 'Market': 'Markt', 'All markets': 'Alle markten', 'Drill-down': 'Inzoomen', 'Year': 'Jaar', 'Month': 'Maand', 'Week': 'Week', 'Day': 'Dag', 'Reset filters': 'Filters wissen',
+  'Showing': 'Toont', 'All amounts excl. VAT · Last Invoice': 'Alle bedragen excl. btw · Laatste factuur', 'Search verkoper…': 'Zoek verkoper…', 'Search market…': 'Zoek markt…', 'Search product group…': 'Zoek productgroep…', 'Select shown': 'Getoonde selecteren', 'No match': 'Geen resultaat',
+  'Show time charts per month': 'Tijdgrafieken per maand', 'Show time charts per year': 'Tijdgrafieken per jaar', 'Custom months': 'Eigen maanden', 'Last 3 complete months': 'Laatste 3 volledige maanden', 'Last 12 complete months': 'Laatste 12 volledige maanden', 'Full period': 'Volledige periode',
+  'Product group does not apply to receivables': 'Productgroep geldt niet voor debiteuren', 'Books are company-wide: verkoper, group and market filters do not apply': 'De boekhouding is voor het hele bedrijf: filters op verkoper, groep en markt gelden niet',
+  '· earlier months have monthly totals only': '· eerdere maanden hebben alleen maandtotalen',
+  /* panels & common */
+  'Chart': 'Grafiek', 'Table': 'Tabel', 'Enlarge': 'Vergroten', 'Bigger chart text': 'Grotere grafiektekst', 'Smaller chart text': 'Kleinere grafiektekst', 'Export to Excel': 'Exporteren naar Excel', 'Export to CSV': 'Exporteren naar CSV', '⬇ Excel': '⬇ Excel', '⬇ CSV': '⬇ CSV',
+  'Search this table…': 'Zoek in deze tabel…', 'Total': 'Totaal', 'Share': 'Aandeel', 'Change': 'Verandering', 'Change %': 'Verandering %', 'Change €': 'Verandering €', 'Comparison': 'Vergelijking', 'Comparison:': 'Vergelijking:', 'Comparison · total': 'Vergelijking · totaal', '· comparison': '· vergelijking',
+  'This Year': 'Dit jaar', 'Last Year': 'Vorig jaar', 'Close (Esc)': 'Sluiten (Esc)', 'Copy table': 'Tabel kopiëren', 'Source: dash.json · excl. VAT': 'Bron: dash.json · excl. btw', 'Break down by': 'Uitsplitsen naar', 'Click to see how this number is built': 'Klik om te zien hoe dit getal is opgebouwd',
+  'Click a cell for its rows': 'Klik op een cel voor de regels', 'KPIs match your selected period and filters': 'Kerncijfers volgen de gekozen periode en filters', 'Period-aware': 'Volgt periode', 'Show all': 'Alles tonen', 'More ›': 'Meer ›', '‹ Less': '‹ Minder', 'Click to isolate': 'Klik om te isoleren', 'Reset to 100%': 'Terug naar 100%',
+  'Metric': 'Kengetal', 'Name': 'Naam', 'Amount': 'Bedrag', 'Date': 'Datum', 'Dates': 'Datums', 'Status': 'Status', 'Due': 'Vervaldatum', 'Invoice': 'Factuur', 'Invoices': 'Facturen', 'Orders': 'Orders', 'orders': 'orders', 'Order no.': 'Ordernr.', 'Quantity': 'Hoeveelheid', 'Group': 'Groep', 'Step': 'Stap', 'Bucket': 'Categorie', 'Other': 'Overig', 'Others': 'Overige', 'All': 'Alle', 'Multiple': 'Meerdere', 'Admin': 'Beheerder', 'Account': 'Rekening', 'Accounts': 'Rekeningen',
+  'Revenue': 'Omzet', 'Turnover': 'Omzet', 'Tonnes': 'Ton', 'Pieces': 'Stuks', 'Customer': 'Klant', 'Product': 'Product', 'Category': 'Categorie', 'Channel': 'Kanaal', 'Costs': 'Kosten', 'Result': 'Resultaat', 'Purchases': 'Inkopen', 'Personnel': 'Personeel', 'Transport': 'Transport', 'Housing': 'Huisvesting', 'Sales & marketing': 'Verkoop & marketing', 'Office & admin': 'Kantoor & administratie', 'Finance & tax': 'Financiën & belasting',
+  'New': 'Nieuw', 'Stopped': 'Gestopt', 'Increase': 'Stijging', 'Open': 'Open', 'Current': 'Niet vervallen', 'Indicative': 'Indicatief', 'Buyers': 'Kopers', 'Avg price': 'Gem. prijs', 'Order days': 'Besteldagen', 'Products Sold': 'Verkochte producten', 'Quantities of all milk powder.': 'Hoeveelheden van alle melkpoeder.',
+  'Milk powder': 'Melkpoeder', 'Feed': 'Voer', 'Calf housing': 'Kalverhuisvesting', 'Calf supplies': 'Kalverbenodigdheden', 'Perfect Udder': 'Perfect Udder', 'Direct Sales': 'Directe verkoop', 'Webshop': 'Webshop', 'Unassigned': 'Niet toegewezen',
+  'All products': 'Alle producten', 'All milk powder': 'Alle melkpoeder', 'All calf housing': 'Alle kalverhuisvesting', 'Pro Elite milk powder': 'Pro Elite-melkpoeder', 'Calf pens & hutches': 'Kalverhokken & iglo’s', 'All groups': 'Alle groepen', 'all groups': 'alle groepen', 'All salesmen': 'Alle verkopers', 'All weeks': 'Alle weken',
+  /* overview */
+  'Turnover MTD': 'Omzet maand tot nu', 'Revenue this month, to date': 'Omzet deze maand tot nu', 'Projected Turnover this month': 'Verwachte omzet deze maand', 'Open Orders – Kalverhuisvesting': 'Open orders – Kalverhuisvesting', 'Open Orders – Kalverhuis­vesting': 'Open orders – Kalverhuis­vesting', 'Open Value MTD': 'Open waarde deze maand',
+  'Total Receivables': 'Totaal debiteuren', 'Annual Turnover YTD': 'Jaaromzet tot nu', 'Voorraad (Stock level)': 'Voorraad', 'Awaiting stock data from Microfas': 'Wacht op voorraadgegevens uit Microfas', 'Show the open orders included': 'Toon de meegetelde open orders', 'Show these orders': 'Toon deze orders', 'Open the Receivables page': 'Open de pagina Debiteuren',
+  'Open orders due this month ·': 'Open orders met vervaldatum deze maand ·', 'Due till today + until': 'Vervallen t/m vandaag + tot', 'Open invoices − credits,': 'Openstaande facturen − creditnota’s,', 'Melkpoeder Tonnage': 'Melkpoeder tonnage', 'Per month · this year vs last year': 'Per maand · dit jaar t.o.v. vorig jaar',
+  'Ton TY': 'Ton DJ', 'Rev TY': 'Omzet DJ', 'Ton LY': 'Ton VJ', 'Rev LY': 'Omzet VJ', 'Category Trends': 'Categorietrends', 'Weekly': 'Per week', 'Monthly': 'Per maand', 'Delivered, not billed': 'Geleverd, niet gefactureerd', 'Delivered, not invoiced': 'Geleverd, niet gefactureerd', 'Delivered': 'Geleverd', 'To deliver': 'Nog te leveren', 'Open value': 'Open waarde', 'no price': 'geen prijs',
+  /* revenue / customers / products / categories / channels / markets */
+  'Revenue Over Time': 'Omzet in de tijd', 'Cumulative Revenue YoY': 'Cumulatieve omzet j-o-j', 'Running total by calendar month': 'Lopend totaal per kalendermaand', 'Turnover (selected period)': 'Omzet (gekozen periode)', 'Best Month in period': 'Beste maand in periode', 'Best Week in period': 'Beste week in periode', 'Best Year in period': 'Beste jaar in periode',
+  'Avg / Month (LTM)': 'Gem. / maand (LTM)', 'Orders (invoices)': 'Orders (facturen)', 'Avg Order Value': 'Gem. orderwaarde', 'AOV': 'Gem. order', 'Revenue vs tonnage per month': 'Omzet t.o.v. tonnage per maand', 'Tonnage (t)': 'Tonnage (t)',
+  'Verkoper Leaderboard': 'Ranglijst verkopers', 'Leaderboard': 'Ranglijst', 'Omzet per Verkoper': 'Omzet per verkoper', 'Sales per Verkoper by Product Group': 'Verkoop per verkoper per productgroep', 'Top verkoper': 'Topverkoper', 'Exclude Johan': 'Johan uitsluiten', 'Revenue of every verkoper except “Webshop”.': 'Omzet van alle verkopers behalve “Webshop”.', 'Revenue of one verkoper (current customer assignment).': 'Omzet van één verkoper (huidige klanttoewijzing).',
+  'Customers by Revenue': 'Klanten op omzet', 'Active Customers': 'Actieve klanten', 'Avg Rev / Active Customer': 'Gem. omzet / actieve klant', 'Top Customer': 'Topklant', 'Revenue by customer': 'Omzet per klant', 'Every customer with revenue in the period.': 'Elke klant met omzet in de periode.', 'Had revenue in the comparison, now zero': 'Had omzet in de vergelijking, nu nul',
+  'Top Products by Revenue': 'Topproducten op omzet', 'Product Share': 'Productaandeel', 'Product Mix by Group': 'Productmix per groep', 'Ranked by revenue · click a row for its breakdown': 'Gerangschikt op omzet · klik op een regel voor de uitsplitsing', 'Group / category / product': 'Groep / categorie / product', 'Group → Category → Product': 'Groep → Categorie → Product',
+  'Categories by Revenue': 'Categorieën op omzet', 'Category Change vs Comparison': 'Verandering per categorie t.o.v. vergelijking', 'Top Category': 'Topcategorie', 'Top Group': 'Topgroep', 'Group Split': 'Groepsverdeling', 'Revenue of one Microfas category.': 'Omzet van één Microfas-categorie.', 'Click a slice to focus a group': 'Klik op een segment om een groep te tonen', 'Click a group to filter this page': 'Klik op een groep om deze pagina te filteren',
+  'Click a group or category to open it · every level adds up to the level above': 'Klik op een groep of categorie om die te openen · elk niveau telt op tot het niveau erboven',
+  'Channel Revenue Share': 'Omzetaandeel per kanaal', 'Direct vs Webshop': 'Direct t.o.v. webshop', 'Direct Avg Order': 'Gem. order direct', 'Webshop Avg Order': 'Gem. order webshop', 'Order Volume': 'Ordervolume',
+  'Revenue by Market': 'Omzet per markt', 'Market × Product Group': 'Markt × productgroep', 'Top market': 'Topmarkt', 'Export share': 'Exportaandeel', 'Markets with revenue': 'Markten met omzet', 'Revenue outside the Netherlands': 'Omzet buiten Nederland', 'Revenue of one market.': 'Omzet van één markt.', 'Tick = comparison · click a market to filter this page': 'Streepje = vergelijking · klik op een markt om deze pagina te filteren', 'click a market to filter this page': 'klik op een markt om deze pagina te filteren',
+  'Feed & Milk Powder': 'Voer & melkpoeder', 'Feed: Tonnes and Price': 'Voer: ton en prijs', 'Milk Powder: Tonnes per Month': 'Melkpoeder: ton per maand', 'Milk Powder: € per kg per Month': 'Melkpoeder: € per kg per maand', 'Milk powder tonnes': 'Melkpoeder ton', 'Products sold by weight': 'Producten verkocht op gewicht', 'Show feed price by product': 'Toon voerprijs per product',
+  'Milk powder sold by weight in the latest month; price = revenue ÷ kg.': 'Melkpoeder verkocht op gewicht in de laatste maand; prijs = omzet ÷ kg.', 'Axis starts near the lowest price so movements are visible': 'As begint bij de laagste prijs zodat bewegingen zichtbaar zijn', 'latest month': 'laatste maand',
+  'Feed Rev': 'Omzet voer', 'Feed Ton': 'Ton voer', 'Feed € / kg': 'Voer € / kg', 'Milk powder Rev': 'Omzet melkpoeder', 'Milk powder Ton': 'Ton melkpoeder', 'Feed Revenue': 'Omzet voer', 'Feed Tonnage': 'Tonnage voer', 'Milk powder Revenue': 'Omzet melkpoeder', 'Milk powder Tonnage': 'Tonnage melkpoeder', 'Melkpoeder (Milk powder)': 'Melkpoeder',
+  'Order days = distinct customer-days with the product (from Apr 2026)': 'Besteldagen = verschillende klantdagen met het product (vanaf apr 2026)', 'Revenue excl. VAT for the selected period and filters.': 'Omzet excl. btw voor de gekozen periode en filters.',
+  /* sales per verkoper */
+  'Product line': 'Productlijn', '(pick one or more)': '(kies er een of meer)', 'Show in': 'Toon in', 'Net of returns': 'Na retouren', 'Units sold per piece': 'Verkochte eenheden per stuk', 'Customers with positive quantity': 'Klanten met positieve hoeveelheid', 'Lines may overlap — never add lines together': 'Lijnen kunnen overlappen — tel lijnen nooit op',
+  'Tonnes per Verkoper over Time': 'Ton per verkoper in de tijd', 'Pieces per Verkoper over Time': 'Stuks per verkoper in de tijd', 'Tonnes per Market': 'Ton per markt', 'Pieces per Market': 'Stuks per markt', "Click a market to filter this page's market": 'Klik op een markt om de markt van deze pagina te filteren',
+  'Volume per Verkoper': 'Volume per verkoper', 'Avg price = revenue ÷ quantity in that unit · New/Stopped = buyers vs comparison · click a row': 'Gem. prijs = omzet ÷ hoeveelheid in die eenheid · Nieuw/Gestopt = kopers t.o.v. vergelijking · klik op een regel',
+  'Tonnes per Verkoper, Week by Week': 'Ton per verkoper, week per week', 'Pieces per Verkoper, Week by Week': 'Stuks per verkoper, week per week', 'Volume per Customer': 'Volume per klant', 'Who buys the selected products': 'Wie koopt de gekozen producten', 'Search customer': 'Zoek klant',
+  '4 weeks': '4 weken', '8 weeks': '8 weken', '13 weeks': '13 weken', '26 weeks': '26 weken', 'Last full week vs the week before': 'Laatste volle week t.o.v. de week ervoor', 'Last week vs week before': 'Vorige week t.o.v. week ervoor', 'Show this verkoper week by week': 'Toon deze verkoper week per week', '✓ Weeks and verkopers add up': '✓ Weken en verkopers tellen op', '· this week': '· deze week', '· last week': '· vorige week',
+  'All verkopers, groups and markets': 'Alle verkopers, groepen en markten',
+  /* receivables */
+  'Open invoices': 'Openstaande facturen', 'Overdue': 'Vervallen', 'Open credits': 'Open creditnota’s', 'Owed after credits': 'Te ontvangen na creditnota’s', 'Open invoices − open credits': 'Openstaande facturen − open creditnota’s', 'Average days open': 'Gemiddeld aantal dagen open', 'Days open': 'Dagen open',
+  'Ageing of Open Invoices': 'Ouderdom openstaande facturen', 'Largest Open Balances': 'Grootste openstaande saldi', 'Click a customer for their open items': 'Klik op een klant voor de openstaande posten', 'Not yet due': 'Nog niet vervallen', 'Still Unpaid, by Invoice Month': 'Nog onbetaald, per factuurmaand', 'Invoice month': 'Factuurmaand', 'Billed': 'Gefactureerd', 'Still open': 'Nog open',
+  'Open Items not in the Tiles': 'Openstaande posten buiten de tegels', 'Part of the tie-out below': 'Onderdeel van de aansluiting hieronder', 'Items without an invoice': 'Posten zonder factuur', 'Open items without an invoice': 'Openstaande posten zonder factuur', 'From Open Items to the Debtors Account': 'Van openstaande posten naar de debiteurenrekening',
+  'Invoices Microfas still shows as not (fully) paid.': 'Facturen die Microfas nog als niet (volledig) betaald toont.', 'Open invoices past their due date.': 'Openstaande facturen voorbij de vervaldatum.', 'Overdue by more than 30 days.': 'Meer dan 30 dagen over de vervaldatum.', 'Credit notes and overpayments still open.': 'Creditnota’s en te veel betaalde bedragen die nog openstaan.', 'Open invoices in one ageing bucket.': 'Openstaande facturen in één ouderdomscategorie.', 'Open items of one customer.': 'Openstaande posten van één klant.',
+  'Receivables excl. VAT': 'Debiteuren excl. btw', 'VAT on these items': 'Btw op deze posten', 'Open items incl. VAT': 'Openstaande posten incl. btw', 'Matched items that do not net to zero': 'Afgeletterde posten die niet op nul uitkomen', '✓ exact': '✓ exact', 'Microfas still shows': 'Microfas toont nog', 'items for': 'posten voor', 'from before': 'van vóór', 'with no matching invoice — mostly payments received on account.': 'zonder bijbehorende factuur — meestal betalingen op rekening.', 'Items from before': 'Posten van vóór',
+  'Still open · period': 'Nog open · periode', 'Still open · comparison': 'Nog open · vergelijking',
+  /* finance */
+  'Gross Margin': 'Brutomarge', 'Gross margin %': 'Brutomarge %', 'Result Margin': 'Resultaatmarge', 'Result margin %': 'Resultaatmarge %', 'Margin Health': 'Gezondheid marges', 'Gross & result margins': 'Bruto- en resultaatmarge', 'P&L Bridge': 'Winst-en-verliesbrug', 'Revenue (books)': 'Omzet (boekhouding)', 'OpEx': 'Bedrijfskosten', 'Purchases / Revenue': 'Inkopen / omzet',
+  'Revenue, Costs & Result per Month': 'Omzet, kosten & resultaat per maand', 'Cost Categories as % of Revenue': 'Kostencategorieën als % van omzet', 'Top Cost': 'Grootste kosten', 'Top Revenue': 'Grootste omzet', 'Top Cost Accounts': 'Grootste kostenrekeningen', 'Top Revenue Accounts': 'Grootste omzetrekeningen', 'Cost Accounts': 'Kostenrekeningen', 'Revenue Accounts': 'Omzetrekeningen', 'Cost Increases': 'Kostenstijgingen', 'New Costs': 'Nieuwe kosten', '🆕 New Costs': '🆕 Nieuwe kosten', 'Revenue Lost': 'Verloren omzet', '🔻 Revenue Lost': '🔻 Verloren omzet', 'None detected': 'Niets gevonden',
+  'Full Account Ledger': 'Volledig grootboek', 'Search account…': 'Zoek rekening…', 'Active in the books': 'Actief in de boekhouding', 'Booked months': 'Geboekte maanden', 'Booked months in the period': 'Geboekte maanden in de periode', 'Per booked month': 'Per geboekte maand', 'with postings in the period': 'met boekingen in de periode', 'booked when bought': 'geboekt bij inkoop',
+  'Needs a comparison in the books': 'Vereist een vergelijking in de boekhouding', 'Needs a comparison inside the books': 'Vereist een vergelijking binnen de boekhouding', 'Needs a comparison inside the books — choose “Previous period”': 'Vereist een vergelijking binnen de boekhouding — kies “Vorige periode”', 'Choose “Previous period” to compare inside the books.': 'Kies “Vorige periode” om binnen de boekhouding te vergelijken.',
+  '⚠ Books:': '⚠ Boekhouding:', 'After filter': 'Na filter', '· purchases are booked when bought, not when sold, so monthly results swing with purchase timing': '· inkopen worden geboekt bij inkoop, niet bij verkoop, dus maandresultaten schommelen met het inkoopmoment',
+  'Booked postings in category “Revenue”.': 'Geboekte posten in categorie “Omzet”.', 'Debtors account': 'Debiteurenrekening',
+  /* markets */
+  'Austria': 'Oostenrijk', 'Belarus': 'Wit-Rusland', 'Belgium': 'België', 'Czechia': 'Tsjechië', 'Denmark': 'Denemarken', 'Finland': 'Finland', 'France': 'Frankrijk', 'Germany': 'Duitsland', 'Greece': 'Griekenland', 'Hungary': 'Hongarije', 'Italy': 'Italië', 'Latvia': 'Letland', 'Lithuania': 'Litouwen', 'Luxembourgh': 'Luxemburg',
+  'Netherlands': 'Nederland', 'Poland': 'Polen', 'Romania': 'Roemenië', 'Slovakia': 'Slowakije', 'Spain': 'Spanje', 'Sweden': 'Zweden', 'Switzerland': 'Zwitserland', 'Ukraine': 'Oekraïne', 'United Kingdom': 'Verenigd Koninkrijk', 'United States': 'Verenigde Staten', 'Unknown': 'Onbekend',
+  /* misc */
+  'at': 'om', 'in': 'in', 'over': 'over', 'to': 'tot', 'vs': 't.o.v.', 'of revenue': 'van de omzet', '% of revenue': '% van de omzet', 'of shown revenue': 'van de getoonde omzet', '/kg': '/kg', '€/kg': '€/kg',
+};
+
+/* Phrase rules for text that carries numbers, dates or names (applied in order). */
+const NL_PHRASES = [
+  [/(\d+) groups · last (\d+) weeks · weeks start Apr (\d{4}) — click Monthly for CY vs PY/g, '$1 groepen · laatste $2 weken · weken starten apr $3 — klik Per maand voor DJ t.o.v. VJ'], [/Direct Sales leads with ([\d,]+%) of revenue · Direct orders run ([\d,]+%) larger on average/g, 'Directe verkoop heeft $1 van de omzet · directe orders zijn gemiddeld $2 groter'], [/Melkpoeder · Milk powder · ([\d.,]+ t) sold in the period/g, 'Melkpoeder · $1 verkocht in de periode'], [/ · per month · click a month to see its weeks \(from Apr (\d{4})\)/g, ' · per maand · klik op een maand voor de weken (vanaf apr $1)'],
+  [/Year to date (\d{4}) \(Jan–(\w+) (\d+)\)/g, 'Jaar tot nu $1 (jan–$2 $3)'], [/Year to date (\d{4}) \(Jan–(\w+), complete months\)/g, 'Jaar tot nu $1 (jan–$2, volledige maanden)'],
+  [/Last complete month \(/g, 'Laatste volledige maand ('], [/Full year (\d{4})/g, 'Volledig jaar $1'], [/Full period \(/g, 'Volledige periode ('], [/ so far \((\d+)–(\d+)\)/g, ' tot nu ($1–$2)'],
+  [/\(to (\d+)\)/g, '(t/m $1)'], [/, to (\d+)\)/g, ', t/m $1)'], [/ \(so far\)/g, ' (tot nu)'], [/\((\d+) days? so far\)/g, '($1 dagen tot nu)'], [/\bto date\b/g, 'tot nu'],
+  [/Week & day drill-down:/g, 'Inzoomen op week & dag:'], [/ runs to day (\d+), /g, ' loopt t/m dag $1, '], [/ has monthly totals only, so it is left out of the change\./g, ' heeft alleen maandtotalen en telt daarom niet mee in de verandering.'],
+  [/No data for the same months a year earlier \(data starts /g, 'Geen gegevens voor dezelfde maanden een jaar eerder (gegevens starten '], [/No data before /g, 'Geen gegevens vóór '],
+  [/Revenue this month, to date/g, 'Omzet deze maand tot nu'], [/MTD \+ open orders due by /g, 'Maand tot nu + open orders met vervaldatum t/m '], [/Projected turnover /g, 'Verwachte omzet '], [/open orders due by /g, 'open orders met vervaldatum t/m '],
+  [/Open orders · Kalverhuisvesting · due by /g, 'Open orders · Kalverhuisvesting · vervaldatum t/m '], [/Open orders due in /g, 'Open orders met vervaldatum in '],
+  [/Turnover MTD (€[\d.]+) plus these open order lines \(due today or earlier, or later this month\), excl\. VAT\./g, 'Omzet maand tot nu $1 plus deze open orderregels (vervallen t/m vandaag of later deze maand), excl. btw.'],
+  [/Open order lines of the calf housing group \(Kalverhuisvesting, CalfOtel\): due today or earlier, plus due until the end of this month\./g, 'Open orderregels van de groep kalverhuisvesting (Kalverhuisvesting, CalfOtel): vervallen t/m vandaag plus vervaldatum tot het einde van deze maand.'],
+  [/Open order lines with a due date in this month, excl\. VAT\./g, 'Open orderregels met een vervaldatum in deze maand, excl. btw.'],
+  [/✓ ([\d.]+) orders, ([\d.]+) lines add up to/g, '✓ $1 orders, $2 regels tellen op tot'], [/ lines? ha(?:ve|s) no price in Microfas \(value unknown\)/g, ' regel(s) zonder prijs in Microfas (waarde onbekend)'],
+  [/✓ ([\d.]+) rows add up to/g, '✓ $1 regels tellen op tot'], [/✓ ([\d.]+) items add up to/g, '✓ $1 posten tellen op tot'], [/✓ ([\d.]+) rows/g, '✓ $1 regels'], [/✓ adds up to/g, '✓ telt op tot'],
+  [/Turnover per Week — Last (\d+) Weeks/g, 'Omzet per week — laatste $1 weken'],
+  [/This year · Mon–Sun weeks to (.+?) \(light bar = week still running\) · click a bar for its breakdown\. Weekly and detailed breakdowns exist only from April (\d{4}); (\d{4}) has monthly totals only, so there is no last-year comparison per week\./g,
+    'Dit jaar · weken ma–zo t/m $1 (lichte staaf = lopende week) · klik op een staaf voor de uitsplitsing. Week- en detailcijfers bestaan pas vanaf april $2; $3 heeft alleen maandtotalen, dus er is geen vergelijking per week met vorig jaar.'],
+  [/Last full week \((W\d+)\) (€[\d.]+) · (up|down) ([\d,]+%) vs the week before · average full week (€[\d.]+)/g, (m, w, a, ud, p, avg) => `Laatste volle week (${w}) ${a} · ${ud === 'up' ? 'stijging' : 'daling'} ${p} t.o.v. de week ervoor · gemiddelde volle week ${avg}`],
+  [/This Year \((\d{4})\)/g, 'Dit jaar ($1)'], [/Turnover: /g, 'Omzet: '], [/Turnover · /g, 'Omzet · '], [/Revenue invoiced in this Monday–Sunday week, excl\. VAT\./g, 'Omzet gefactureerd in deze week (ma–zo), excl. btw.'],
+  [/Since invoice date · ([\d.]+) days weighted by amount/g, 'Sinds factuurdatum · $1 dagen gewogen naar bedrag'], [/Open invoices by days since the invoice date \(to (.+?)\)\. Simple average ([\d.]+) days; weighted by open amount ([\d.]+) days\./g, 'Openstaande facturen naar dagen sinds factuurdatum (t/m $1). Gewoon gemiddelde $2 dagen; gewogen naar openstaand bedrag $3 dagen.'],
+  [/More than (\d+) days late/g, 'Meer dan $1 dagen te laat'], [/ of open\b/g, ' van open'],
+  [/Days past due on (.+?) · click a bucket for its invoices/g, 'Dagen over vervaldatum op $1 · klik op een categorie voor de facturen'], [/Share of each month's billed value still open on /g, 'Aandeel van de gefactureerde waarde per maand dat nog openstaat op '],
+  [/Position in Microfas on (.+?) · invoices from (.+?) · verkoper & market filters apply; product group does not/g, 'Stand in Microfas op $1 · facturen vanaf $2 · filters op verkoper en markt gelden; productgroep niet'],
+  [/How the receivables tie to debtors account (\d+) in Microfas, to the cent/g, 'Hoe de debiteuren aansluiten op debiteurenrekening $1 in Microfas, tot op de cent'], [/Whole company — ignores the verkoper and market filters/g, 'Hele bedrijf — negeert de filters op verkoper en markt'],
+  [/No invoices in (.+?) — receivables start (.+?); choose “Previous period”/g, 'Geen facturen in $1 — debiteuren starten $2; kies “Vorige periode”'], [/Open from before /g, 'Open van vóór '], [/Open from invoices since /g, 'Open uit facturen sinds '],
+  [/Top five verkopers, others combined · per (month|week)/g, (m, u) => `Top vijf verkopers, overige samen · per ${u === 'month' ? 'maand' : 'week'}`], [/red line = all verkopers in (.+?), (month by month|week by week)/g, (m, p, u) => `rode lijn = alle verkopers in ${p}, ${u === 'month by month' ? 'maand per maand' : 'week per week'}`],
+  [/ has monthly totals only, so no weekly comparison line/g, ' heeft alleen maandtotalen, dus geen wekelijkse vergelijkingslijn'], [/Drill-down Week\/Day in the filter bar for weekly/g, 'Inzoomen op week/dag in de filterbalk voor weekcijfers'],
+  [/Monday–Sunday weeks up to the last invoice \((.+?)\); the current week is still running\. Ignores the period and shows the most recent weeks; daily data starts Apr (\d{4})\. Click a cell for the customers and products behind it, or a verkoper name for their week-by-week breakdown\./g,
+    'Weken ma–zo t/m de laatste factuur ($1); de huidige week loopt nog. Negeert de periode en toont de meest recente weken; dagcijfers starten apr $2. Klik op een cel voor de klanten en producten erachter, of op een verkopersnaam voor de uitsplitsing per week.'],
+  [/ to (\d+ \w+ \d{4}) over (\d+) weeks \(/g, ' tot $1 over $2 weken ('], [/ over (\d+) weeks \(/g, ' over $1 weken ('],
+  [/Quantities of (.+?) sold in (.+?), net of returns\./g, 'Hoeveelheden $1 verkocht in $2, na retouren.'], [/Quantities of (.+?) sold per week, (.+?), net of returns\./g, 'Hoeveelheden $1 per week verkocht, $2, na retouren.'], [/Quantities of (.+?)\./g, 'Hoeveelheden $1.'],
+  [/^avg (€[\d,]+)\/kg$/g, 'gem. $1/kg'], [/ in (.+?) with positive/g, ' in $1 met positieve'],
+  [/Weeks exist from Apr (\d{4})\. Jan (\d{4}) – Mar (\d{4}) come from the former portal with monthly totals only, so they are shown as one line\./g, 'Weken bestaan vanaf apr $1. Jan $2 – mrt $3 komen uit het vorige portaal met alleen maandtotalen en staan daarom als één regel.'],
+  [/Verkoper: /g, 'Verkoper: '], [/Market: /g, 'Markt: '], [/Group: /g, 'Groep: '],
+  [/Revenue (up|down) ([\d,.]+%) vs /g, (m, ud, p) => `Omzet ${ud === 'up' ? 'gestegen' : 'gedaald'} ${p} t.o.v. `], [/Best (month|week|year): /g, (m, u) => `Beste ${{ month: 'maand', week: 'week', year: 'jaar' }[u]}: `],
+  [/Top customer: /g, 'Topklant: '], [/Top product: /g, 'Topproduct: '], [/ of revenue\)/g, ' van de omzet)'], [/% of revenue/g, '% van de omzet'], [/ new, (\d+) stopped vs comparison/g, ' nieuw, $1 gestopt t.o.v. vergelijking'], [/ leads with /g, ' staat voorop met '], [/% of shown revenue\)/g, '% van de getoonde omzet)'],
+  [/Top (\d+) lines make up /g, 'Top $1 regels maken '], [/% of total/g, '% van het totaal'], [/ share\) · top category /g, ' aandeel) · topcategorie '], 
+  [/Top (\d+) customers · click a row for the customer card/g, 'Top $1 klanten · klik op een regel voor de klantkaart'], [/Top (\d+) Revenue/g, 'Top $1 omzet'], [/Top (\d+) Share/g, 'Top $1 aandeel'],
+  [/ · click a bar for the customer card/g, ' · klik op een staaf voor de klantkaart'], [/ · click a bar to focus/g, ' · klik op een staaf om te focussen'], [/ · click a bar to isolate, table row for detail/g, ' · klik op een staaf om te isoleren, tabelregel voor details'], [/ · click a slice to highlight/g, ' · klik op een segment om te markeren'],
+  [/ · bar colour = product group/g, ' · staafkleur = productgroep'], [/ · tick = comparison/g, ' · streepje = vergelijking'], [/ · tick = /g, ' · streepje = '], [/ · market = customer's delivery country in the master data/g, ' · markt = afleverland van de klant in de stamgegevens'],
+  [/ · per week · click a week to see its days/g, ' · per week · klik op een week voor de dagen'], [/ · per year · click a year to see its months/g, ' · per jaar · klik op een jaar voor de maanden'],
+  [/ · price per kg uses products sold by weight; totals are ratios of sums/g, ' · prijs per kg gebruikt producten verkocht op gewicht; totalen zijn verhoudingen van sommen'], [/Stacked by group · /g, 'Gestapeld per groep · '], [/Same-month comparison · follows verkoper, group & market filters/g, 'Vergelijking per maand · volgt filters op verkoper, groep & markt'],
+  [/Invoices (?:by channel|per month|per week|per year) · from Apr (\d{4})/g, m => m.replace('Invoices by channel', 'Facturen per kanaal').replace('Invoices per month', 'Facturen per maand').replace('Invoices per week', 'Facturen per week').replace('Invoices per year', 'Facturen per jaar').replace('from Apr', 'vanaf apr')],
+  [/Per invoice · from Apr (\d{4})/g, 'Per factuur · vanaf apr $1'], [/Orders & avg order value from Apr (\d{4}) \(portal months have no invoice detail\)/g, 'Orders & gem. orderwaarde vanaf apr $1 (portaalmaanden hebben geen factuurdetails)'], [/Orders: /g, 'Orders: '],
+  [/with revenue in (.+?) · (\d+) ever bought/g, 'met omzet in $1 · $2 ooit gekocht'], [/ of (\d+) in the master data/g, ' van $1 in de stamgegevens'], [/(\d+) accounts · search & filter/g, '$1 rekeningen · zoeken & filteren'], [/(\d+) product groups/g, '$1 productgroepen'], [/(\d+) categories/g, '$1 categorieën'], [/(\d+) invoices/g, '$1 facturen'], [/(\d+) items\b/g, '$1 posten'], [/(\d+) orders\b/g, '$1 orders'],
+  [/(\d+) groups · solid = (\d{4}), dashed = (\d{4}) · same month comparison/g, '$1 groepen · doorgetrokken = $2, gestippeld = $3 · vergelijking per maand'],
+  [/Melkpoeder( · .+?)? +— Full period: /g, (m, w) => `Melkpoeder${w || ''} — Volledige periode: `], [/ vs last year/g, ' t.o.v. vorig jaar'], [/ · this year vs last year/g, ' · dit jaar t.o.v. vorig jaar'],
+  [/Data snapshot (.+?) · last invoice /g, 'Gegevensstand $1 · laatste factuur '], [/Active lines in /g, 'Actieve regels in '], [/Books from /g, 'Boekhouding vanaf '], [/ · revenue → cost categories → result/g, ' · omzet → kostencategorieën → resultaat'], [/ largest first/g, ' grootste eerst'],
+  [/· Books start (.+?) — no comparison for (.+?)\. Choose “Previous period” for a later range\./g, '· Boekhouding start $1 — geen vergelijking voor $2. Kies “Vorige periode” voor een latere reeks.'], [/· Nov compared on complete months/g, '· nov vergeleken op volledige maanden'],
+  [/Milk powder € \/ kg · /g, 'Melkpoeder € / kg · '], [/Milk powder · /g, 'Melkpoeder · '], [/Tonnes · /g, 'Ton · '], [/Pieces · /g, 'Stuks · '], [/Revenue · /g, 'Omzet · '], [/ · revenue$/g, ' · omzet'],
+  [/^vs /g, 't.o.v. '], [/ vs /g, ' t.o.v. '], [/(\d+) pcs\b/g, '$1 st.'], [/(\d+) new · (\d+) stopped vs comparison/g, '$1 nieuw · $2 gestopt t.o.v. vergelijking'], [/% margin\b/g, '% marge'], [/% share · /g, '% aandeel · '], [/(\d+) over (\w+ \d{4}) – (\w+ \d{4})/g, '$1 over $2 – $3'],
+  [/Reset to (\d+)%/g, 'Terug naar $1%'], [/This Year/g, 'Dit jaar'], [/Last Year/g, 'Vorig jaar'], [/All milk powder/g, 'Alle melkpoeder'], [/All products/g, 'Alle producten'], [/All calf housing/g, 'Alle kalverhuisvesting'], [/Calf pens & hutches/g, 'Kalverhokken & iglo’s'], [/Pro Elite milk powder/g, 'Pro Elite-melkpoeder'],
+  [/ weeks\b/g, ' weken'], [/\bweeks \(/g, 'weken ('],
+  [/(\d+)\+ days late/g, '$1+ dagen te laat'], [/(\d+) days late/g, '$1 dagen te laat'], [/(\d+) days\b/g, '$1 dagen'], [/(\d+) weeks\b/g, '$1 weken'], [/ sold in the period/g, ' verkocht in de periode'], [/ sold in /g, ' verkocht in '], [/ of the volume/g, ' van het volume'], [/ \(from Apr (\d{4})\)/g, ' (vanaf apr $1)'],
+  [/^(\d+) active$/g, '$1 actief'],   [/, and\b/g, ', en'], [/\bof ([\d.]+) in the master data/g, 'van $1 in de stamgegevens'], [/\bwith revenue in /g, 'met omzet in '], [/ · ([\d.]+) ever bought/g, ' · $1 ooit gekocht'],
+];
+const NL_MONTHS = { Jan: 'jan', Feb: 'feb', Mar: 'mrt', Apr: 'apr', May: 'mei', Jun: 'jun', Jul: 'jul', Aug: 'aug', Sep: 'sep', Oct: 'okt', Nov: 'nov', Dec: 'dec' };
+const NL_GROUPS = [[/\bMilk powder\b/g, 'Melkpoeder'], [/\bCalf housing\b/g, 'Kalverhuisvesting'], [/\bCalf supplies\b/g, 'Kalverbenodigdheden'], [/\bFeed\b(?! [A-Z])/g, 'Voer'], [/\bDirect Sales\b/g, 'Directe verkoop'], [/\bOthers\b/g, 'Overige']];
+let _names = null;
+const trCache = new Map();
+function trNL(src) {
+  if (!src) return src;
+  const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(src), s = m[2];
+  if (!s || !/[A-Za-z]/.test(s)) return src;
+  if (!_names) {
+    _names = new Set([...X.customers.map(c => c[0]), ...X.products.map(p => p[0]), ...X.verkopers, ...X.categories.map(c => c[0]), ...(X.pnl || []).map(r => r[1]), ...X.mkts]);
+    _names.delete('Webshop');
+  }
+  if (trCache.has(s)) return m[1] + trCache.get(s) + m[3];
+  let out;
+  if (NL[s] != null) out = NL[s];
+  else if (_names.has(s)) out = s;
+  else {
+    out = s;
+    for (const [re, rep] of NL_PHRASES) { re.lastIndex = 0; out = out.replace(re, rep); }
+    /* whole segments that are dictionary entries ("Revenue · Tonnes") */
+    if (out.includes(' · ')) out = out.split(' · ').map(seg => NL[seg] != null ? NL[seg] : seg).join(' · ');
+    if (!_names.has(s)) for (const [re, rep] of NL_GROUPS) { re.lastIndex = 0; out = out.replace(re, rep); }
+    out = out.replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b(?=\s?['’]?\d|\s?[–-]|\s?\)|,|$)|(?<=\d\s)(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b|(?<=[–-]\s?)(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/g, (w, a, b, c) => NL_MONTHS[a || b || c] || w);
+  }
+  if (trCache.size > 20000) trCache.clear();
+  trCache.set(s, out);
+  return m[1] + out + m[3];
+}
+const tr = s => CUR_LANG === 'nl' && typeof s === 'string' ? trNL(s) : s;
+
+/* On-screen translation: watches the page and translates text nodes and
+   placeholder/title attributes; restores English when switched back. */
+const SKIP_SEL = 'script,style,svg,textarea,[contenteditable],.cb-panel,.cb-root,[class^="cb-"],[class*=" cb-"],.no-tr';
+const _orig = new WeakMap();
+function trNode(n, lang) {
+  if (n.nodeType === 3) {
+    const p = n.parentElement; if (!p || p.closest(SKIP_SEL)) return;
+    const cur = n.nodeValue, o = _orig.get(n);
+    if (o && cur === (lang === 'nl' ? o.nl : o.en)) return;
+    const en = o && cur === o.nl ? o.en : cur;
+    if (lang === 'nl') { const t = trNL(en); _orig.set(n, { en, nl: t }); if (t !== cur) n.nodeValue = t; }
+    else if (o && cur === o.nl) n.nodeValue = o.en;
+  } else if (n.nodeType === 1) {
+    if (n.closest(SKIP_SEL)) return;
+    for (const a of ['placeholder', 'title', 'aria-label']) {
+      if (!n.hasAttribute(a)) continue;
+      const cur = n.getAttribute(a), key = '_tr_' + a, o = n[key];
+      if (o && cur === (lang === 'nl' ? o.nl : o.en)) continue;
+      const en = o && cur === o.nl ? o.en : cur;
+      if (lang === 'nl') { const t = trNL(en); n[key] = { en, nl: t }; if (t !== cur) n.setAttribute(a, t); }
+      else if (o && cur === o.nl) n.setAttribute(a, o.en);
+    }
+  }
+}
+function trTree(root, lang) {
+  trNode(root, lang);
+  if (root.nodeType !== 1) return;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, { acceptNode: x => (x.nodeType === 1 && x.matches(SKIP_SEL)) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+  let x; while ((x = w.nextNode())) trNode(x, lang);
+}
+function useDomTranslate(lang) {
+  useEffect(() => {
+    trTree(document.body, lang);
+    if (lang !== 'nl') return;
+    const mo = new MutationObserver(list => {
+      for (const r of list) {
+        if (r.type === 'characterData') trNode(r.target, lang);
+        else if (r.type === 'attributes') trNode(r.target, lang);
+        else r.addedNodes.forEach(n => trTree(n, lang));
+      }
+    });
+    mo.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['placeholder', 'title', 'aria-label'] });
+    return () => mo.disconnect();
+  }, [lang]);
+}
+function LangProvider({ children }) {
+  const [lang, setLangS] = useState(CUR_LANG);
+  const setLang = l => { CUR_LANG = l; trCache.clear(); try { localStorage.setItem(LANG_KEY, l); } catch { /* ignore */ } setLangS(l); };
+  useDomTranslate(lang);
+  useEffect(() => { document.documentElement.lang = lang; }, [lang]);
+  return <LangCtx.Provider value={{ lang, setLang }}>{children}</LangCtx.Provider>;
+}
+function LangSwitch({ dark }) {
+  const { lang, setLang } = useLang();
+  return (
+    <div className={`lang-sw no-tr${dark ? ' dark' : ''}`} role="group" aria-label="Language / Taal" title="Language / Taal">
+      {[['en', 'EN'], ['nl', 'NL']].map(([k, l]) => <button key={k} type="button" className={lang === k ? 'on' : ''} onClick={() => setLang(k)} aria-pressed={lang === k}>{l}</button>)}
+    </div>
+  );
+}
+/* Chart option in the chosen language: legends and category labels only (display),
+   series names stay English so click handlers keep working. */
+function trOption(o) {
+  if (CUR_LANG !== 'nl' || !o) return o;
+  const wrapAxis = ax => {
+    if (!ax) return ax;
+    const one = a => {
+      if (!a || (a.type && a.type !== 'category' && !a.data)) return a;
+      const lab = a.axisLabel || {}, f0 = lab.formatter;
+      return { ...a, axisLabel: { ...lab, formatter: (v, i) => tr(typeof f0 === 'function' ? f0(v, i) : typeof f0 === 'string' ? f0.replace('{value}', v) : String(v)) } };
+    };
+    return Array.isArray(ax) ? ax.map(one) : one(ax);
+  };
+  const lg = l => { if (!l) return l; const one = x => { const f0 = x.formatter; return { ...x, formatter: n => tr(typeof f0 === 'function' ? f0(n) : typeof f0 === 'string' ? f0.replace('{name}', n) : n) }; }; return Array.isArray(l) ? l.map(one) : one(l); };
+  const ser = (o.series ? (Array.isArray(o.series) ? o.series : [o.series]) : []).map(sv => {
+    if (sv.type !== 'pie' || !sv.label) return sv;
+    const f0 = sv.label.formatter;
+    return { ...sv, label: { ...sv.label, formatter: p => typeof f0 === 'function' ? tr(f0(p)) : typeof f0 === 'string' ? f0.replace('{b}', tr(p.name)).replace('{d}', p.percent).replace('{c}', p.value) : tr(p.name) } };
+  });
+  return { ...o, legend: lg(o.legend), xAxis: wrapAxis(o.xAxis), yAxis: wrapAxis(o.yAxis), series: o.series ? ser : o.series };
+}
+
 const ChartScale = createContext(1);
 const SCALE_KEYS = new Set(['fontSize', 'barMaxWidth', 'symbolSize', 'itemWidth', 'itemHeight', 'barWidth']);
 function scaleOption(o, s) {
@@ -617,16 +860,38 @@ function legendHighlight(o, hl) {
   return { ...o, legend: Array.isArray(o.legend) ? legend : legend[0], series };
 }
 
+/* Touch screens: a tooltip opened by a tap stays until something moves the pointer.
+   Close it (and the axis pointer) when the user taps or starts scrolling anywhere
+   outside that chart. Touch events only, so mouse/laptop behaviour is unchanged. */
+let touchTipGuard = false;
+function installTouchTipGuard() {
+  if (touchTipGuard || typeof document === 'undefined') return;
+  touchTipGuard = true;
+  const hide = e => {
+    for (const i of liveChartInstances) {
+      try {
+        const dom = i.getDom();
+        if (e && dom && dom.contains(e.target)) continue;
+        i.dispatchAction({ type: 'hideTip' });
+        i.dispatchAction({ type: 'updateAxisPointer', currTrigger: 'leave' });
+      } catch { /* chart disposed */ }
+    }
+  };
+  document.addEventListener('touchstart', hide, { capture: true, passive: true });
+  document.addEventListener('visibilitychange', () => hide(null));
+}
+
 function EC({ option, onEvents, style, onAxisClick }) {
   const s = useContext(ChartScale);
+  const { lang } = useLang();
   const [hl, setHl] = useState(null);
-  const scaled = useMemo(() => scaleOption(scaleChartFonts(legendSpace(legendHighlight(option, hl))), s), [option, s, hl]);
+  const scaled = useMemo(() => scaleOption(scaleChartFonts(trOption(legendSpace(legendHighlight(option, hl)))), s), [option, s, hl, lang]); // eslint-disable-line react-hooks/exhaustive-deps
   const inst = useRef(null);
   /* handlers always see the latest props (echarts-for-react keeps the first bound functions) */
   const live = useRef({});
   useEffect(() => { live.current = { onEvents: onEvents || {}, onAxisClick }; });
   const ready = i => {
-    inst.current = i; liveChartInstances.add(i);
+    inst.current = i; liveChartInstances.add(i); installTouchTipGuard();
     i.getZr().on('click', e => {
       const cb = live.current.onAxisClick; if (!cb) return;
       const pt = [e.offsetX, e.offsetY];
@@ -644,7 +909,7 @@ function EC({ option, onEvents, style, onAxisClick }) {
   return <ReactECharts option={scaled} style={{ height: '100%', width: '100%', ...style }} opts={{ renderer: 'svg' }} notMerge onEvents={events} onChartReady={ready} />;
 }
 
-function InlineTable({ headers, rows, height, searchable, initialQuery, onRowClick, footer }) {
+function InlineTable({ headers, rows, height, searchable, initialQuery, onRowClick, footer, wrapCols }) {
   const [sc, setSc] = useState(null);
   const [sd, setSd] = useState('asc');
   const [q, setQ] = useState(initialQuery || '');
@@ -675,7 +940,7 @@ function InlineTable({ headers, rows, height, searchable, initialQuery, onRowCli
           <tbody>{sorted.map(([row, oi], ri) => (
             <tr key={oi} onClick={onRowClick ? () => onRowClick(oi) : undefined} style={onRowClick ? { cursor: 'pointer' } : undefined}>{row.map((cell, ci) => {
               if (ci === 0 && headers[0] === '#') return <td key={ci}><span className={`rank ${ri === 0 ? 'r1' : ri === 1 ? 'r2' : ri === 2 ? 'r3' : 'rn'}`}>{cell}</span></td>;
-              return <td key={ci}>{cell}</td>;
+              return <td key={ci} style={wrapCols?.includes(ci) ? { whiteSpace: 'normal', minWidth: 150, maxWidth: 300 } : undefined}>{cell}</td>;
             })}</tr>
           ))}</tbody>
           {footer && <tfoot><tr className="tot">{footer.map((c, i) => <td key={i}>{c}</td>)}</tr></tfoot>}
@@ -774,7 +1039,7 @@ function Panel({ title, subtitle, tag, controls, flex, height, style, className,
 
 function KpiNote({ text = 'KPIs match your selected period and filters', extra }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginBottom: -2, flexWrap: 'wrap' }}>
+    <div className="kpi-note" style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginBottom: -2, flexWrap: 'wrap' }}>
       <span className="cp-tag" style={{ background: 'rgba(64,188,243,0.08)', color: 'var(--accent2)', borderColor: 'rgba(64,188,243,0.25)' }}>Period-aware</span>
       <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>{text}</span>
       {extra && <span style={{ fontSize: 12, color: 'var(--muted2)' }}>· {extra}</span>}
@@ -1966,6 +2231,7 @@ function Login({ onLogin }) {
         </svg>
       </div>
       <section className="login-box">
+        <div className="login-lang"><LangSwitch /></div>
         <header>
           <div className="login-logo">Business Intelligence</div>
           <h1 id="login-heading" className="login-title">Dashboard</h1>
@@ -2153,6 +2419,121 @@ function ScrollHint({ watchKey, disabled }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   mobile.css — phones only (≤900px). Laptop/desktop layout is untouched:
+   every rule below lives inside this media query.
+   ══════════════════════════════════════════════════════════════════════ */
+const MOBILE_CSS = `
+@media (max-width:900px){
+/* no page magnifier on phones (pinch-zoom instead) */
+.tb-zoom,.fb-corner{display:none !important;}
+.zoom-root{transform:none !important;width:100% !important;height:auto !important;}
+.zoom-root .app{height:auto !important;}
+.main{overflow:visible !important;}
+
+/* ── frozen header: slim top bar, then the collapsed filter bar ── */
+.topbar,.sidebar.collapsed ~ .main .topbar{position:sticky !important;top:0;z-index:130;margin:0 !important;border-radius:0 !important;
+  padding:8px 10px 8px 56px !important;background:var(--surface) !important;box-shadow:0 2px 10px rgba(20,40,50,.08);border-left:0 !important;border-right:0 !important;}
+.mob-toggle{top:9px !important;left:10px !important;width:36px !important;height:36px !important;}
+.topbar .tb-row1{display:flex !important;flex-direction:row !important;align-items:center !important;flex-wrap:nowrap !important;gap:8px !important;min-height:36px;}
+.topbar .tb-titlewrap{flex:1 1 auto !important;min-width:0 !important;}
+.topbar .tb-title{font-size:15px !important;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.topbar .tb-sub{display:block !important;font-size:10.5px !important;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+.topbar .tb-sub>span{display:inline !important;}
+.topbar .tb-right{flex:0 0 auto !important;display:flex !important;align-items:center !important;gap:5px !important;flex-wrap:nowrap !important;margin:0 !important;width:auto !important;}
+.topbar .tb-print-btn{font-size:0 !important;padding:0 !important;width:32px;height:32px;display:inline-flex !important;align-items:center;justify-content:center;border-radius:50% !important;}
+.topbar .tb-print-btn::before{content:'⬇';font-size:13px;}
+.topbar .live-badge{padding:4px 7px !important;}
+.topbar .live-badge .tb-snap{display:none !important;}
+.topbar .lang-sw button{padding:5px 7px;font-size:10px;}
+.tb-search-btn{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:var(--surface);font-size:13px;color:var(--accent3);cursor:pointer;padding:0;flex-shrink:0;}
+.topbar:not(.m-search) .tb-search{display:none !important;}
+.topbar.m-search .tb-search{display:flex !important;width:100% !important;max-width:100% !important;margin:8px 0 0 !important;}
+.topbar.m-search .tb-search input{font-size:16px !important;}
+
+.filter-bar.fb.fb-m,.sidebar.collapsed ~ .main .filter-bar.fb.fb-m{position:sticky !important;top:var(--mtb-h,54px) !important;z-index:125 !important;display:block !important;padding:6px 8px !important;margin:0 !important;
+  background:var(--bg,#EEF3F5) !important;border:0 !important;border-radius:0 !important;box-shadow:none !important;min-height:0 !important;}
+.fbm-bar{display:flex;align-items:center;gap:8px;width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 12px;
+  font:inherit;color:var(--text);cursor:pointer;box-shadow:0 2px 8px rgba(20,40,50,.07);text-align:left;}
+.fbm-bar.open{border-color:var(--accent);box-shadow:0 0 0 2px rgba(64,188,243,.18);}
+.fbm-ico{display:inline-flex;color:var(--accent2);flex-shrink:0;}
+.fbm-lbl{font-weight:700;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--accent3);flex-shrink:0;}
+.fbm-sum{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:var(--muted);}
+.fbm-dot{margin:0 5px;opacity:.6;}
+.fbm-n{color:var(--accent2);font-weight:600;}
+.fbm-caret{width:10px;height:6px;flex-shrink:0;transition:transform .2s;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23107fb0' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center;}
+.fbm-bar.open .fbm-caret{transform:rotate(180deg);}
+
+/* expanded filter panel: slides over the page, page behind is dimmed + blurred */
+.fbm-backdrop{position:fixed;left:0;right:0;bottom:0;z-index:9000;touch-action:none;overscroll-behavior:none;background:rgba(31,55,65,.5);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);animation:fbmFade .18s ease-out;}
+.fbm-panel{position:fixed;left:8px;right:8px;z-index:9001;background:var(--surface);border:1px solid var(--border);border-top:0;border-radius:0 0 14px 14px;
+  box-shadow:0 18px 40px rgba(15,30,40,.3);display:flex;flex-direction:column;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;animation:fbmDown .2s ease-out;}
+.fbm-inner{position:static !important;display:block !important;padding:12px 14px 4px !important;margin:0 !important;border:0 !important;box-shadow:none !important;background:transparent !important;min-height:0 !important;}
+.fbm-inner .fb-row{display:grid !important;grid-template-columns:repeat(2,minmax(0,1fr)) !important;justify-content:stretch !important;gap:10px !important;align-items:end !important;width:100%;padding-right:0 !important;}
+.fbm-inner .fb-row>*{min-width:0;}
+.fbm-inner .fb-row>.filter-divider{display:none !important;}
+.fbm-inner .fb-row>:nth-child(1),.fbm-inner .fb-row>:nth-child(4),.fbm-inner .fb-row>:nth-child(6),.fbm-inner .fb-row>:nth-child(10),.fbm-inner .fb-row>:nth-child(11){grid-column:1/-1;}
+.fbm-inner .filter-label{font-size:10.5px !important;}
+.fbm-inner .panel-select,.fbm-inner .fb-multi{width:100% !important;max-width:none !important;min-height:40px;font-size:14px !important;}
+.fbm-inner .fb-seg{display:grid !important;grid-template-columns:repeat(4,minmax(0,1fr)) !important;gap:6px;width:100%;}
+.fbm-inner .fb-seg .filter-chip{justify-content:center;min-height:36px;font-size:13px !important;}
+.fbm-inner .fb-reset{width:100%;min-height:38px;margin:2px 0 0 !important;font-size:13px !important;}
+.fbm-inner .fb-meta{margin-top:12px;font-size:11.5px !important;gap:4px 10px;}
+.fbm-foot{position:sticky;bottom:0;padding:10px 14px 12px;background:var(--surface);border-top:1px solid var(--border);margin-top:10px;}
+.fbm-done{width:100%;min-height:42px;border:0;border-radius:10px;background:var(--accent);color:#fff;font:700 14px Inter,system-ui,sans-serif;cursor:pointer;}
+.fb-pop{max-width:calc(100vw - 20px);}
+@keyframes fbmFade{from{opacity:0}to{opacity:1}}
+@keyframes fbmDown{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+
+/* ── page, KPI cards: compact 2-column grid ── */
+.page-area,.page-area.fin-scroll,.sidebar.collapsed ~ .main .page-area{padding:10px 10px 100px !important;gap:10px !important;height:auto !important;overflow:visible !important;}
+.page-area .kpi-strip,.kpi-strip{display:grid !important;grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:8px !important;flex:none !important;}
+.page-area .kpi-strip>.kpi-card,.kpi-strip>.kpi-card{min-width:0 !important;width:auto !important;max-width:none !important;flex:none !important;padding:9px 10px !important;min-height:0 !important;height:auto !important;}
+.kpi-strip>*:last-child:nth-child(odd){grid-column:1/-1;}
+.kpi-card .kpi-lbl,.ov-kpis .kpi-lbl{font-size:9.5px !important;letter-spacing:.05em !important;line-height:1.25;}
+.kpi-card .kpi-val{font-size:18px !important;line-height:1.2;}
+.kpi-card .kpi-val.sm{font-size:16px !important;}
+.kpi-card .kpi-chg{font-size:10.5px !important;line-height:1.35;}
+
+/* ── charts: one per row, full width, taller ── */
+.charts-row,.page-area .charts-row{display:flex !important;flex-direction:column !important;flex:none !important;gap:10px !important;min-height:0 !important;height:auto !important;width:100% !important;}
+.charts-col,.page-area .charts-col{display:flex !important;flex-direction:column !important;flex:none !important;gap:10px !important;width:100% !important;max-width:100% !important;min-height:0 !important;height:auto !important;}
+.chart-panel,.page-area.fin-scroll .chart-panel.fin-fixed,.page-area.fin-scroll .charts-row > .chart-panel.hug{flex:none !important;width:100% !important;max-width:100% !important;min-width:0 !important;height:auto !important;min-height:0 !important;padding:12px 12px 10px !important;}
+.chart-panel .cp-body{flex:none !important;height:400px !important;min-height:400px !important;max-height:none !important;}
+.chart-panel.hug .cp-body,.page-area.fin-scroll .chart-panel.hug .cp-body{height:auto !important;min-height:0 !important;}
+.chart-panel.ledger-fixed .cp-body{height:560px !important;min-height:560px !important;}
+.chart-panel .cp-head{flex-direction:column !important;align-items:stretch !important;gap:8px !important;}
+.chart-panel .cp-head>div:first-child{flex:none !important;}
+.chart-panel .cp-head>div:last-child{justify-content:flex-start !important;margin-left:0 !important;flex-wrap:wrap !important;gap:6px !important;}
+.chart-panel .cp-head>div:last-child div{flex-wrap:wrap;max-width:100%;}
+.chart-panel .cp-title{font-size:13.5px !important;}
+.chart-panel .cp-sub{font-size:11.5px !important;line-height:1.4;}
+.cp-insight{font-size:11.5px !important;}
+.kpi-note{flex-shrink:1 !important;min-width:0;max-width:100%;}
+.kpi-note>span{min-width:0;}
+.rc-strip .rc-box{min-width:calc(50% - 4px) !important;flex:1 1 calc(50% - 4px) !important;}
+
+/* ── tables: scroll sideways, first column stays put ── */
+.tbl-wrap>div{overflow:auto !important;-webkit-overflow-scrolling:touch;}
+.itbl th:first-child,.itbl td:first-child{position:sticky;left:0;z-index:2;box-shadow:1px 0 0 var(--border);}
+.itbl thead th:first-child{z-index:4;}
+.itbl td:first-child{background:var(--surface);max-width:170px;overflow:hidden;text-overflow:ellipsis;}
+.itbl tfoot td:first-child,.itbl tr.tot td:first-child{background:var(--surface3,#F4F8F9);}
+.itbl tr:hover td:first-child{background:#F4FBFE;}
+.itbl:has(td:first-child .rank) th:first-child,.itbl:has(td:first-child .rank) td:first-child{width:36px;min-width:36px;max-width:36px;box-shadow:none;padding-left:6px;padding-right:4px;}
+.itbl:has(td:first-child .rank) th:nth-child(2),.itbl:has(td:first-child .rank) td:nth-child(2){position:sticky;left:36px;z-index:2;box-shadow:1px 0 0 var(--border);max-width:150px;overflow:hidden;text-overflow:ellipsis;}
+.itbl:has(td:first-child .rank) td:nth-child(2){background:var(--surface);}
+.itbl:has(td:first-child .rank) thead th:nth-child(2){z-index:4;}
+.compact-tbl .itbl td:nth-child(1),.compact-tbl .itbl td:nth-child(2){min-width:0 !important;}
+.compact-tbl .itbl td{white-space:nowrap !important;}
+
+/* ── side drawers and enlarged charts use the whole screen ── */
+.pf-drawer,.pf-drawer.pf-wide{width:100vw !important;max-width:100vw !important;padding:12px !important;}
+.pf-kpis{flex-wrap:wrap;}
+.pf-kpis>div{min-width:calc(50% - 4px);}
+}
+`;
+
+/* ══════════════════════════════════════════════════════════════════════
    extra.css.js
    ══════════════════════════════════════════════════════════════════════ */
 /* Styles for the v2 additions (filter bar, zoom, proof drawer, tie-out strip). */
@@ -2284,6 +2665,14 @@ const EXTRA_CSS = `
 /* "how this number is built" drawer */
 .pf-shade{position:fixed;inset:0;background:rgba(15,35,45,.35);z-index:9990;}
 .pf-drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,96vw);background:var(--surface);z-index:9991;box-shadow:-12px 0 40px rgba(0,0,0,.2);display:flex;flex-direction:column;padding:16px 18px;gap:10px;font-family:Inter,system-ui,sans-serif;animation:pfIn .22s cubic-bezier(.4,0,.2,1);}
+.ov-kpis .kpi-lbl{overflow-wrap:anywhere;hyphens:manual;}
+@media (max-width:1500px){.ov-kpis .kpi-lbl{letter-spacing:.02em;font-size:.88em;}.ov-kpis .kpi-card{padding-left:11px;padding-right:9px;}}
+.lang-sw{display:inline-flex;border:1px solid var(--border);border-radius:20px;overflow:hidden;background:var(--surface);flex-shrink:0;}
+.lang-sw button{border:0;background:transparent;padding:4px 9px;font:600 10.5px Inter,system-ui,sans-serif;color:var(--muted);cursor:pointer;letter-spacing:.04em;}
+.lang-sw button.on{background:var(--accent);color:#fff;}
+.lang-sw button:not(.on):hover{background:var(--surface2);color:var(--text);}
+.login-lang{position:absolute;top:14px;right:14px;z-index:2;}
+.pf-drawer.pf-wide{width:min(1280px,96vw);}
 @keyframes pfIn{from{transform:translateX(30px);opacity:0;}to{transform:none;opacity:1;}}
 .pf-top{display:flex;gap:10px;align-items:flex-start;}
 .pf-dims{display:flex;flex-wrap:wrap;gap:5px;align-items:center;}
@@ -2390,16 +2779,39 @@ function MultiSelect({ label, allLabel, options, value, onChange, width = 170 })
 
 const GRAINS = [['year', 'Year'], ['month', 'Month'], ['week', 'Week'], ['day', 'Day']];
 
+/* Phone layout switch — matches the existing ≤900px mobile breakpoint; laptops never match */
+const MOBILE_MQ = '(max-width: 900px)';
+function useIsMobile() {
+  const [m, setM] = useState(() => typeof window !== 'undefined' && window.matchMedia(MOBILE_MQ).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_MQ), on = () => setM(mq.matches);
+    mq.addEventListener('change', on); on();
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return m;
+}
+const ICON_FILTER = <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 3h12l-4.6 5.4v4.1L6.6 14V8.4z" /></svg>;
+
 function FilterBar({ f, setF, resetAll, ignores, grainUsed = true, corner }) {
+  const isMob = useIsMobile();
+  const [mOpen, setMOpen] = useState(false);
+  const [mTop, setMTop] = useState(0);
+  const mBar = useRef(null);
+  useEffect(() => {
+    if (!mOpen) return;
+    const k = e => { if (e.key === 'Escape') setMOpen(false); };
+    document.addEventListener('keydown', k);
+    document.documentElement.classList.add('fbm-lock');
+    return () => { document.removeEventListener('keydown', k); document.documentElement.classList.remove('fbm-lock'); };
+  }, [mOpen]);
+  const openM = () => { if (mOpen) { setMOpen(false); return; } const r = mBar.current?.getBoundingClientRect(); setMTop(r ? Math.round(r.bottom) : 0); setMOpen(true); };
   const P = period(f);
   const months = X.months.map((m, i) => [i, mLong(m) + (i === X.partial.m ? ` (to ${X.partial.day})` : '')]);
   const daily0 = X.months[X.firstDaily], drillTxt = `Week & day drill-down: ${mLong(daily0)} – ${X.ledgerLabel}`;
   const portalInRange = f.from < X.firstDaily;
   const set = patch => setF(p => ({ ...p, ...patch }));
   const dimsActive = f.reps.length + f.grps.length + f.mkts.length;
-  return (
-    <div className="filter-bar fb">
-      {corner && <div className="fb-corner">{corner}</div>}
+  const row = (
       <div className="fb-row">
         <label className="fb-field"><span className="filter-label">Period</span>
           <select className="panel-select" value={f.preset} onChange={e => setF(p => applyPreset(p, e.target.value))}>
@@ -2436,6 +2848,8 @@ function FilterBar({ f, setF, resetAll, ignores, grainUsed = true, corner }) {
         </div>
         <button type="button" className="filter-clear fb-reset" onClick={resetAll}>Reset filters</button>
       </div>
+  );
+  const meta = (
       <div className="fb-meta">
         <span><b>Showing</b> {P.label}{P.cmp ? <> vs {P.cmpLabel}</> : null}</span>
         {P.note && <span className="fb-warn">{P.note}</span>}
@@ -2444,6 +2858,33 @@ function FilterBar({ f, setF, resetAll, ignores, grainUsed = true, corner }) {
         {(f.grain === 'week' || f.grain === 'day') && grainUsed && <span className={portalInRange ? 'fb-warn' : ''}>{drillTxt}{portalInRange ? ' · earlier months have monthly totals only' : ''}</span>}
         <span className="fb-asof">All amounts excl. VAT · Last Invoice <b>{X.ledgerLabel}</b></span>
       </div>
+  );
+  if (isMob) {
+    const cmpTxt = P.cmp ? `vs ${P.cmpLabel}` : 'No comparison';
+    return (
+      <div className="filter-bar fb fb-m">
+        <button ref={mBar} type="button" className={`fbm-bar${mOpen ? ' open' : ''}`} onClick={openM} aria-expanded={mOpen}>
+          <span className="fbm-ico">{ICON_FILTER}</span>
+          <span className="fbm-lbl">Filters</span>
+          <span className="fbm-sum"><span>{P.label}</span><span className="fbm-dot">·</span><span>{cmpTxt}</span>{dimsActive > 0 && <><span className="fbm-dot">·</span><span className="fbm-n">{dimsActive} active</span></>}</span>
+          <span className="fbm-caret" aria-hidden="true" />
+        </button>
+        {mOpen && createPortal(
+          <>
+            <div className="fbm-backdrop" style={{ top: mTop }} onClick={() => setMOpen(false)} />
+            <div className="fbm-panel" style={{ top: mTop, maxHeight: `calc(100dvh - ${mTop}px - 12px)` }} role="dialog" aria-label="Filters">
+              <div className="filter-bar fb fbm-inner">{row}{meta}</div>
+              <div className="fbm-foot"><button type="button" className="fbm-done" onClick={() => setMOpen(false)}>Done</button></div>
+            </div>
+          </>, document.body)}
+      </div>
+    );
+  }
+  return (
+    <div className="filter-bar fb">
+      {corner && <div className="fb-corner">{corner}</div>}
+      {row}
+      {meta}
     </div>
   );
 }
@@ -2581,12 +3022,12 @@ function ProofDrawer({ cfg, close }) {
   const check = isList ? cfg.list.check : `✓ ${rows.list.length} rows add up to ${fmtC(rows.tot)}`;
   const parseNum = v => { const t = String(v).trim(); if (!/^-?(€\s?)?-?[\d.]+(,\d+)?( t| d| pcs)?$/.test(t)) return null; return parseFloat(t.replace(/[€\s]|t$|d$|pcs$/g, '').replace(/\./g, '').replace(',', '.')); };
   const listFooter = () => {
-    const skip = /date|invoice|due|status|month|last|gap|days|since|late|orders|bank|%|€\/kg|share/i;
+    const skip = /date|invoice|due|status|month|last|gap|days|since|late|orders|order no|bank|%|€\/kg|share/i;
     return head.map((h, ci) => {
       if (ci === 0) return 'Total';
       if (skip.test(h)) return '';
-      const vals = body.map(r => parseNum(r[ci])); if (!vals.length || vals.some(v => v == null)) return '';
-      const sum = vals.reduce((x, v) => x + v, 0), ex = String(body[0][ci]);
+      const vals = body.map(r => r[ci]).filter(v => v !== 'no price').map(parseNum); if (!vals.length || vals.some(v => v == null)) return '';
+      const sum = vals.reduce((x, v) => x + v, 0), ex = String(body.find(r => r[ci] !== 'no price')?.[ci] ?? '');
       return ex.includes('€') ? fmtEur2(sum) : ex.endsWith(' t') ? sum.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' t' : fmtN(sum);
     });
   };
@@ -2596,7 +3037,7 @@ function ProofDrawer({ cfg, close }) {
   return (
     <>
       <div className="pf-shade" onClick={close} />
-      <aside className="pf-drawer" aria-label="How this number is built">
+      <aside className={`pf-drawer${cfg.wide ? ' pf-wide' : ''}`} aria-label="How this number is built">
         <div className="pf-top">
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="cp-title" style={{ fontSize: 15 }}>{cfg.title}</div>
@@ -2620,7 +3061,7 @@ function ProofDrawer({ cfg, close }) {
         )}
         <div className="pf-check" dangerouslySetInnerHTML={{ __html: check }} />
         {weekNote && <div className="pf-note">{weekNote}</div>}
-        <div className="pf-table"><InlineTable headers={head} rows={body} height="100%" searchable footer={footer} /></div>
+        <div className="pf-table"><InlineTable headers={head} rows={body} height="100%" searchable footer={footer} wrapCols={isList ? cfg.list.wrap : undefined} /></div>
         <div className="pf-foot"><button className="panel-btn" onClick={copy}>Copy table</button><span>Source: dash.json · excl. VAT</span></div>
       </aside>
     </>
@@ -2640,35 +3081,62 @@ const fmtTonT = v => (v === null || v === undefined || isNaN(v)) ? '—' : v.toL
 const fmtRev = v => (v === null || v === undefined || isNaN(v)) ? '—' : '€' + v.toLocaleString('de-DE', { maximumFractionDigits: 0 });
 const MP = 0; // Milk powder group
 
-function Overview() {
+function Overview({ go }) {
   const L = useMemo(() => legacy(ALL), []);
   const monthly = L.monthly;
   const live = liveMonth();
-  const currentMonth = live.label + (live.day ? ` (to ${live.day})` : '');
 
-  /* Last 3 complete months, this year vs last year */
-  const last3 = monthly.slice(X.lastFull - 2, X.lastFull + 1);
-  const last3WithPY = last3.map(cur => { const py = monthly[cur.mi - 12]; return { name: cur.m.split(' ')[0], cyLabel: cur.m, cy: cur.rev, py: py ? py.rev : null, pyLabel: py ? py.m : null }; });
-  const last3Idx = new Set(last3.map(m => m.mi));
-  const cats = useMemo(() => {
-    const ix = pick([...last3Idx].map(m => ({ m, cap: 99 })));
-    const g = by(ix, i => X.facts.G[i]);
-    return [...g].map(([k, v]) => ({ n: GROUPS[k], rev: v / 100 })).sort((a, b) => b.rev - a.rev);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const catsTotalRev = cats.reduce((s, c) => s + c.rev, 0);
-
-  /* Open orders: value of open order lines (delivered-not-billed + still to deliver), excl. VAT */
+  /* Open orders: open order lines (delivered-not-invoiced + still to deliver), excl. VAT.
+     "Due by month end" = due today or earlier (backlog) plus due until the last day of this month. */
+  const proof = useProof();
   const tiles = useMemo(() => {
-    const O = X.orders.filter(o => o[5]);
-    const OV = orderValue(O), curM = X.months[X.nM - 1], snap = X.meta.snapshot;
-    const sum = pred => OV.rows.filter(r => pred(r.l)).reduce((s, r) => s + r.vd + r.vr, 0);
-    const fut = sum(l => (l[8] || '') > snap && groupOfProduct(l[3]) === 2);
-    const mtd = sum(l => (l[8] || '').startsWith(curM));
-    const full = sum(l => (l[8] || '') <= snap);
-    const cnt = pred => new Set(OV.rows.filter(r => pred(r.l)).map(r => r.l[0])).size;
-    return { fut, mtd, full, nFut: cnt(l => (l[8] || '') > snap && groupOfProduct(l[3]) === 2), nMtd: cnt(l => (l[8] || '').startsWith(curM)), nFull: cnt(l => (l[8] || '') <= snap), unp: OV.unp };
+    const curM = X.months[X.nM - 1], eom = curM + '-31';
+    const OL = openOrderLines();
+    const pick2 = pred => { const R = OL.filter(r => pred(r.l)); return { R, v: R.reduce((s, r) => s + r.v, 0), n: new Set(R.map(r => r.l[0])).size, unp: R.filter(r => !r.priced).length }; };
+    const dueEom = l => (l[8] || '') <= eom;
+    return {
+      curM, eom,
+      eomAll: pick2(dueEom),
+      kvh: pick2(l => dueEom(l) && groupOfProduct(l[3]) === 2),
+      mtd: pick2(l => (l[8] || '').startsWith(curM)),
+    };
   }, []);
+  const eomLab = (() => { const d = new Date(tiles.eom.slice(0, 8) + '01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(0); return d.getUTCDate() + ' ' + MN[d.getUTCMonth()]; })();
+  const orderList = (title, def, P2) => { const multiG = new Set(P2.R.map(r => groupOfProduct(r.l[3]))).size > 1; return proof({
+    title, def, wide: true,
+    list: {
+      head: ['Order no.', 'Customer', 'Verkoper', 'Product', ...(multiG ? ['Product group'] : []), 'Due', 'Status', 'Delivered, not billed', 'To deliver', 'Open value'],
+      rows: [...P2.R].sort((x, y) => (x.l[8] || '').localeCompare(y.l[8] || '') || x.l[0].localeCompare(y.l[0])).map(r => [r.l[0], X.customers[r.l[1]]?.[0] ?? '—', r.l[2], X.products[r.l[3]][0], ...(multiG ? [GROUPS[groupOfProduct(r.l[3])]] : []), r.l[8] || '—', r.stage, r.priced ? fmtEur2(r.vd) : 'no price', r.priced ? fmtEur2(r.vr) : 'no price', r.priced ? fmtEur2(r.v) : 'no price']),
+      wrap: [1, 3],
+      check: `✓ ${fmtN(P2.n)} orders, ${fmtN(P2.R.length)} lines add up to <b>${fmtEur2(P2.v)}</b>${P2.unp ? ` · ${fmtN(P2.unp)} line${P2.unp > 1 ? 's have' : ' has'} no price in Microfas (value unknown)` : ''}`,
+    },
+  }); };
+  const AR = useMemo(() => arKPI(ALL), []);
+  const ytd = useMemo(() => sales(applyPreset({ ...defaultFilter(), cmp: 'py' }, 'ytdNow')), []);
+
+  /* Turnover per week — last 13 Monday–Sunday weeks (weekly detail exists from Apr 2026) */
+  const wk13 = useMemo(() => {
+    const W = X.weeks.slice(-13), wi = new Map(W.map((w, i) => [w, i])), v = W.map(() => 0), F = X.facts;
+    for (let i = 0; i < X.n; i++) { const k = wi.get(F.W[i]); if (k != null) v[k] += F.r[i] / 100; }
+    const meta = W.map(w => { const a = X.weekMon.get(w), e = Math.min(a + 6, X.ltT); return { w, a, e, full: a + 6 <= X.ltT }; });
+    return { W, v, meta };
+  }, []);
+  const wkLbl = m => `${m.w.split(' ')[0]} · ${sd(m.a)}–${sd(m.e)}${m.full ? '' : ' (so far)'}`;
+  const wkOpen = j => { const m = wk13.meta[j], mi = X.months.indexOf(isoOfT(m.a).slice(0, 7)), mj = X.months.indexOf(isoOfT(m.e).slice(0, 7));
+    proof({ title: 'Turnover · ' + wkLbl(m), def: 'Revenue invoiced in this Monday–Sunday week, excl. VAT.', f: { ...defaultFilter(), from: mi, to: mj, cmp: 'none' }, extra: i => X.facts.W[i] === m.w, dims: ['group', 'customer', 'verkoper', 'product', 'market'] }); };
+  const wkOpt = withDataZoom({
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => { const m = wk13.meta[p[0].dataIndex]; return `<strong>${wkLbl(m)}</strong><br/>${p[0].marker} Turnover: ${fmtFull(p[0].value)}`; } },
+    legend: { bottom: 2, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false, padding: [0, 8] },
+    grid: { left: '3%', right: '4%', bottom: '22%', top: '5%', containLabel: true },
+    xAxis: { type: 'category', data: wk13.meta.map(m => m.w.split(' ')[0]), axisLabel: catAxisLabel(wk13.W.length, 9) },
+    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
+    series: [{ name: `This Year (${X.months[X.nM - 1].slice(0, 4)})`, type: 'bar', data: wk13.v.map((v, j) => ({ value: Math.round(v), itemStyle: { color: wk13.meta[j].full ? '#73D4F2' : '#B9E8F8', borderRadius: [3, 3, 0, 0] } })), itemStyle: { color: '#73D4F2' }, barCategoryGap: '30%' }],
+  });
+  const wkTable = { headers: ['Week', 'Dates', 'Turnover'], rows: wk13.meta.map((m, j) => [m.w, `${sd(m.a)}–${sd(m.e)}${m.full ? '' : ' (so far)'}`, fmtFull(wk13.v[j])]) };
+  const L13 = wk13.W.length - 1, lastFullJ = wk13.meta[L13]?.full ? L13 : L13 - 1;
+  const wkDelta = lastFullJ >= 1 && wk13.v[lastFullJ - 1] ? (wk13.v[lastFullJ] - wk13.v[lastFullJ - 1]) / wk13.v[lastFullJ - 1] * 100 : null;
+  const wkAvg = wk13.v.slice(0, lastFullJ + 1).reduce((x, y) => x + y, 0) / Math.max(1, lastFullJ + 1);
+  const weekInsight = wkDelta != null ? `Last full week (${wk13.meta[lastFullJ].w.split(' ')[0]}) ${fmtFull(wk13.v[lastFullJ])} · ${wkDelta >= 0 ? 'up' : 'down'} ${fmtShare(Math.abs(wkDelta))} vs the week before · average full week ${fmtFull(wkAvg)}` : null;
 
   /* Melkpoeder tonnage — this year vs last year, per verkoper */
   const melkSalesmen = useMemo(() => {
@@ -2719,22 +3187,7 @@ function Overview() {
   const melkTotCY = melkTonChartData.reduce((s, d) => s + (d.cy || 0), 0);
   const melkTotPY = melkTonChartData.some(d => d.py != null) ? melkTonChartData.reduce((s, d) => s + (d.py || 0), 0) : null;
   const melkDeltaPct = melkTotPY ? ((melkTotCY - melkTotPY) / melkTotPY * 100) : null;
-  const melkTonInsight = `Melkpoeder${melkSalesman !== 'All' ? ` · ${melkSalesman.split(' ')[0]}` : ''}  — ${melkPeriod}: ${fmtTonT(melkTotCY)}${melkDeltaPct != null ? ` · ${melkDeltaPct >= 0 ? '▲' : '▼'} ${Math.abs(melkDeltaPct).toFixed(1)}% vs last year` : ''}`;
-
-  const cmpOpt = withDataZoom({
-    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: params => { let h = `<strong>${params[0].name}</strong><br/>`; params.forEach(p => { h += `${p.marker} ${p.seriesName}: ${p.value != null ? fmtFull(p.value) : '—'}<br/>`; }); return h; } },
-    legend: { bottom: 2, textStyle: { color: '#5F7078', fontSize: 10 }, icon: 'roundRect', selectedMode: false, padding: [0, 8] },
-    grid: { left: '3%', right: '4%', bottom: '22%', top: '5%', containLabel: true },
-    xAxis: { type: 'category', data: last3WithPY.map(d => d.name), axisLabel: catAxisLabel(last3WithPY.length, 9) },
-    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: '#5F7078', fontSize: 9, formatter: v => fmt(v) }, splitLine: { lineStyle: { color: '#F0F3F4' } } },
-    series: [
-      { name: 'Last Year', type: 'bar', data: last3WithPY.map(d => d.py), itemStyle: { color: '#0891B2', borderRadius: [3, 3, 0, 0] }, barGap: '0%', barCategoryGap: '30%' },
-      { name: 'This Year', type: 'bar', data: last3WithPY.map(d => d.cy), itemStyle: { color: '#73D4F2', borderRadius: [3, 3, 0, 0] }, barGap: '0%', barCategoryGap: '30%' },
-    ],
-  });
-  const cmpTable = { headers: ['Month', 'This Year', 'Last Year'], rows: last3WithPY.map(d => [d.cyLabel, fmtFull(d.cy), d.py != null ? fmtFull(d.py) : '—']) };
-  const momDelta = last3.length >= 2 && last3[1].rev ? ((last3[2].rev - last3[1].rev) / last3[1].rev) * 100 : null;
-  const turnoverInsight = momDelta != null ? `Revenue ${momDelta >= 0 ? 'up' : 'down'} ${Math.abs(momDelta).toFixed(1)}% vs last month${cats[0] ? ` · Top category: ${cats[0].n} (${catsTotalRev > 0 ? (cats[0].rev / catsTotalRev * 100).toFixed(0) : 0}% of last 3 complete months)` : ''}` : null;
+  const melkTonInsight = `Melkpoeder${melkSalesman !== 'All' ? ` · ${melkSalesman.split(' ')[0]}` : ''}  — ${melkPeriod}: ${fmtTonT(melkTotCY)}${melkDeltaPct != null ? ` · ${melkDeltaPct >= 0 ? '▲' : '▼'} ${fmtShare(Math.abs(melkDeltaPct))} vs last year` : ''}`;
 
   /* Category trends: weekly (last 12 weeks) or monthly CY vs PY */
   const [catGrain, setCatGrain] = useState('weekly');
@@ -2783,19 +3236,21 @@ function Overview() {
     ? `${nG} groups · last 12 weeks · weeks start ${X.months[X.firstDaily] ? MN[+X.months[X.firstDaily].slice(5) - 1] + ' ' + X.months[X.firstDaily].slice(0, 4) : ''} — click Monthly for CY vs PY`
     : `${nG} groups · solid = ${cyYear}, dashed = ${+cyYear - 1} · same month comparison`;
 
-  const T = tiles, nv = !hasOrderValues;
+  const T = tiles, nv = !hasOrderValues, yr = X.months[X.nM - 1].slice(0, 4);
   return (
     <div className="page-area" key="overview">
-      <div className="kpi-strip">
+      <div className="kpi-strip ov-kpis">
         <div className="kpi-card green"><div className="kpi-lbl">Turnover MTD</div><div className="kpi-val sm">{fmtFull(live.rev)}</div><div className="kpi-chg">Revenue this month, to date{live.day ? ` (1–${live.day} ${live.label.split(' ')[0]})` : ''}</div></div>
-        <div className="kpi-card amber"><div className="kpi-lbl">Projected MTD</div><div className="kpi-val sm">{nv ? '—' : fmtFull(live.rev + T.mtd)}</div><div className="kpi-chg">{nv ? 'Needs order-line € values (dash.json ≥ 5.0.0)' : 'Open MTD + Revenue MTD'}</div></div>
-        <div className="kpi-card blue"><div className="kpi-lbl">Open Orders (Future) – Kalverhuisvesting</div><div className="kpi-val sm">{nv ? '—' : fmtFull(T.fut)}</div><div className="kpi-chg">Due after today · {fmtN(T.nFut)} orders</div></div>
-        <div className="kpi-card sky"><div className="kpi-lbl">Open Value MTD</div><div className="kpi-val sm">{nv ? '—' : fmtFull(T.mtd)}</div><div className="kpi-chg">Open orders due this month · {fmtN(T.nMtd)} orders</div></div>
-        <div className="kpi-card teal"><div className="kpi-lbl">Open Value (Full)</div><div className="kpi-val sm">{nv ? '—' : fmtFull(T.full)}</div><div className="kpi-chg">All open orders due today or earlier · {fmtN(T.nFull)} orders</div></div>
+        <div className="kpi-card amber clickable" role="button" tabIndex={0} title="Show the open orders included" onClick={() => !nv && orderList(`Projected turnover ${live.label} · open orders due by ${eomLab}`, `Turnover MTD ${fmtFull(live.rev)} plus these open order lines (due today or earlier, or later this month), excl. VAT.`, T.eomAll)}><div className="kpi-lbl">Projected Turnover this month</div><div className="kpi-val sm">{nv ? '—' : fmtFull(live.rev + T.eomAll.v)}</div><div className="kpi-chg">{nv ? 'Needs order-line € values (dash.json ≥ 5.0.0)' : `MTD + open orders due by ${eomLab} (${fmtFull(T.eomAll.v)})`}</div></div>
+        <div className="kpi-card blue clickable" role="button" tabIndex={0} title="Show these orders" onClick={() => !nv && orderList(`Open orders · Kalverhuisvesting · due by ${eomLab}`, 'Open order lines of the calf housing group (Kalverhuisvesting, CalfOtel): due today or earlier, plus due until the end of this month.', T.kvh)}><div className="kpi-lbl">Open Orders – Kalverhuis­vesting</div><div className="kpi-val sm">{nv ? '—' : fmtFull(T.kvh.v)}</div><div className="kpi-chg">Due till today + until {eomLab} · {fmtN(T.kvh.n)} orders</div></div>
+        <div className="kpi-card sky clickable" role="button" tabIndex={0} title="Show these orders" onClick={() => !nv && orderList(`Open orders due in ${live.label}`, 'Open order lines with a due date in this month, excl. VAT.', T.mtd)}><div className="kpi-lbl">Open Value MTD</div><div className="kpi-val sm">{nv ? '—' : fmtFull(T.mtd.v)}</div><div className="kpi-chg">Open orders due this month · {fmtN(T.mtd.n)} orders</div></div>
+        <div className="kpi-card teal clickable" role="button" tabIndex={0} title="Open the Receivables page" onClick={() => go && go('ck-receivables')}><div className="kpi-lbl">Total Receivables</div><div className="kpi-val sm">{fmtFull(AR.net)}</div><div className="kpi-chg">Open invoices − credits, {X.ledgerLabel} →</div></div>
+        <div className="kpi-card green"><div className="kpi-lbl">Annual Turnover YTD</div><div className="kpi-val sm">{fmtFull(ytd.rev)}</div><div className="kpi-chg"><Trend g={growth(ytd.revCur4Cmp, ytd.revC)} /><span title={ytd.P.note}>{ytd.P.cmp ? `vs ${ytd.P.cmpLabel}` : `Jan ${yr} to date`}</span></div></div>
+        <div className="kpi-card navy"><div className="kpi-lbl">Voorraad (Stock level)</div><div className="kpi-val sm">—</div><div className="kpi-chg">Awaiting stock data from Microfas</div></div>
       </div>
       <div className="charts-row">
         <div className="charts-col" style={{ flex: 1.4 }}>
-          <Panel title="Turnover — Last 3 Complete Months" subtitle={`This year vs last year · ${last3[0]?.m} – ${last3[2]?.m} · current month ${currentMonth} not included`} flex={1} tableHeaders={cmpTable.headers} tableRows={cmpTable.rows} insight={turnoverInsight}><EC option={cmpOpt} /></Panel>
+          <Panel title="Turnover per Week — Last 13 Weeks" subtitle={`This year · Mon–Sun weeks to ${X.ledgerLabel} (light bar = week still running) · click a bar for its breakdown. Weekly and detailed breakdowns exist only from April 2026; 2025 has monthly totals only, so there is no last-year comparison per week.`} flex={1} tableHeaders={wkTable.headers} tableRows={wkTable.rows} insight={weekInsight}><EC option={wkOpt} onEvents={{ click: p => wkOpen(p.dataIndex) }} /></Panel>
         </div>
         <div className="charts-col" style={{ flex: 1 }}>
           <Panel title="Melkpoeder Tonnage" subtitle={melkSalesman === 'All' ? 'Per month · this year vs last year' : `${melkSalesman.split(' ')[0]} · this year vs last year`} flex={1} controls={melkTonControls} tableHeaders={melkTonTable.headers} tableRows={melkTonTable.rows} insight={melkTonInsight}><EC option={melkTonOpt} /></Panel>
@@ -3337,12 +3792,23 @@ function Volumes({ f, setF }) {
     const all = new Set(X.products.map((_, i) => i).filter(inG));
     return [['all', gset ? `All ${f.grps.join(' + ')}` : 'All products', gset ? all : null], ...X.lines.map(l => [l.key, l.label, new Set(l.products.filter(inG))]).filter(l => l[2].size && (!gset || l[2].size !== all.size))];
   }, [grpKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [presetPick, setPreset] = useState('milkPowder');
-  const preset = lines.some(l => l[0] === presetPick) ? presetPick : lines[1]?.[0] || 'all';
+  /* Product lines are multi-select: the selection is the union of the picked lines */
+  const [presetPicks, setPresets] = useState(['milkPowder']);
+  const valid = presetPicks.filter(k => lines.some(l => l[0] === k));
+  const picks = valid.length ? valid : [lines[1]?.[0] || 'all'];
+  const preset = picks.join('+');
+  const togglePick = k => { setUnitPick(null); setPresets(() => { if (k === 'all') return ['all']; const cur = picks.filter(x => x !== 'all'); const nx = cur.includes(k) ? cur.filter(x => x !== k) : [...cur, k]; return nx.length ? nx : ['all']; }); };
   const [unitPick, setUnitPick] = useState(null);
   const [wk, setWk] = useState(8);
   const [cq, setCq] = useState('');
-  const line = lines.find(l => l[0] === preset) || lines[0];
+  const line = useMemo(() => {
+    const L = picks.map(k => lines.find(l => l[0] === k)).filter(Boolean);
+    if (!L.length) return lines[0];
+    if (L.length === 1) return L[0];
+    if (L.some(l => !l[2])) return lines[0];
+    const u = new Set(); L.forEach(l => l[2].forEach(p => u.add(p)));
+    return ['multi', L.map(l => l[1]).join(' + '), u];
+  }, [preset, lines]); // eslint-disable-line react-hooks/exhaustive-deps
   const sel = line[2];
   const extra = sel ? i => sel.has(X.facts.p[i]) : null;
   const K = useSales(f, extra, [preset, f.grps.join('|')]);
@@ -3371,6 +3837,8 @@ function Volumes({ f, setF }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [K, unit]);
   const allBuyers = useMemo(() => { const s = new Set(); for (const i of K.cur) if (uv(i) > 0) s.add(X.facts.c[i]); return s; }, [K, unit]); // eslint-disable-line react-hooks/exhaustive-deps
+  const nBuy = ix => { const m = new Map(); for (const i of ix) m.set(X.facts.c[i], (m.get(X.facts.c[i]) || 0) + uv(i)); return [...m.values()].filter(v => v > 0).length; };
+  const cmpBuyers = useMemo(() => K.cmp ? [nBuy(K.cmp), nBuy(K.curC)] : null, [K, unit]); // eslint-disable-line react-hooks/exhaustive-deps
   const top = reps[0];
 
   /* over time: top 5 verkopers + others */
@@ -3381,12 +3849,34 @@ function Volumes({ f, setF }) {
     const keys = weekly ? [...new Set(K.cur.map(i => X.facts.W[i]).filter(Boolean))].sort((a, b) => X.weekMon.get(a) - X.weekMon.get(b)) : P.months;
     const m = new Map();
     for (const i of K.cur) { const k = key(i); if (k == null) continue; const r = top5.includes(X.facts.v[i]) ? X.facts.v[i] : -1; const kk = r + '|' + k; m.set(kk, (m.get(kk) || 0) + uv(i)); }
-    const ser = [...top5, -1].map((r, j) => ({ name: r < 0 ? 'Others' : X.verkopers[r], type: 'bar', stack: 'v', itemStyle: { color: r < 0 ? '#C8D8DE' : ['#40BCF3', '#1F3741', '#2E9B62', '#E5A93D', '#5B8FA3'][j] }, data: keys.map(k => +((m.get(r + '|' + k) || 0) / (unit === 'k' ? 1000 : 1)).toFixed(2)) }));
-    return { labels: keys.map(k => weekly ? k : X.mLabel[k]), ser };
+    const dv = unit === 'k' ? 1000 : 1;
+    const ser = [...top5, -1].map((r, j) => ({ name: r < 0 ? 'Others' : X.verkopers[r], type: 'bar', stack: 'v', itemStyle: { color: r < 0 ? '#C8D8DE' : ['#40BCF3', '#1F3741', '#2E9B62', '#E5A93D', '#5B8FA3'][j] }, data: keys.map(k => +((m.get(r + '|' + k) || 0) / dv).toFixed(2)) }));
+    /* comparison total, aligned by position: month i of the period vs month i of the comparison */
+    let cmpNote = '';
+    if (K.cmp && K.cmp.length) {
+      const cm = new Map();
+      if (!weekly) {
+        const pair = new Map(P.curCmp.map((c, i) => [c.m, P.cmp[i]?.m]));
+        for (const i of K.cmp) cm.set(X.facts.m[i], (cm.get(X.facts.m[i]) || 0) + uv(i));
+        const data = keys.map(k => pair.has(k) ? +((cm.get(pair.get(k)) || 0) / dv).toFixed(2) : null);
+        ser.push({ name: 'Comparison · total', type: 'line', data, z: 5, symbol: 'circle', symbolSize: 6, itemStyle: { color: '#D9534F' }, lineStyle: { width: 2, type: 'dashed', color: '#D9534F' } });
+        cmpNote = `red line = all verkopers in ${P.cmpLabel}, month by month`;
+      } else {
+        const ck = [...new Set(K.cmp.map(i => X.facts.W[i]).filter(Boolean))].sort((a, b) => X.weekMon.get(a) - X.weekMon.get(b));
+        if (ck.length) {
+          for (const i of K.cmp) { const w = X.facts.W[i]; if (w) cm.set(w, (cm.get(w) || 0) + uv(i)); }
+          const off = keys.length - ck.length;
+          const data = keys.map((k, j) => { const c = ck[j - Math.max(0, off)]; return c && j - Math.max(0, off) >= 0 ? +((cm.get(c) || 0) / dv).toFixed(2) : null; });
+          ser.push({ name: 'Comparison · total', type: 'line', data, z: 5, symbol: 'circle', symbolSize: 6, itemStyle: { color: '#D9534F' }, lineStyle: { width: 2, type: 'dashed', color: '#D9534F' } });
+          cmpNote = `red line = all verkopers in ${P.cmpLabel}, week by week`;
+        } else cmpNote = `${P.cmpLabel} has monthly totals only, so no weekly comparison line`;
+      }
+    }
+    return { labels: keys.map(k => weekly ? k : X.mLabel[k]), ser, cmpNote };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [K, reps, unit, weekly, P]);
   const tsOpt = withDataZoom(withCrosshair({
-    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => `<strong>${p[0].name}</strong><br/>` + p.filter(s => s.value).map(s => `${s.marker} ${s.seriesName}: ${fmtNum(s.value)}${unit === 'k' ? ' t' : ' pcs'}`).join('<br/>') },
+    tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', formatter: p => `<strong>${p[0].name}</strong><br/>` + p.filter(s => s.value != null && s.value !== 0).map(s => `${s.marker} ${s.seriesName}: ${fmtNum(s.value)}${unit === 'k' ? ' t' : ' pcs'}`).join('<br/>') },
     legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 9 }, type: 'scroll', itemWidth: 10, itemHeight: 10 },
     grid: { left: '3%', right: '3%', bottom: '16%', top: '6%', containLabel: true },
     xAxis: { type: 'category', data: ts.labels, axisLabel: catAxisLabel(ts.labels.length, 9) },
@@ -3436,7 +3926,8 @@ function Volumes({ f, setF }) {
     <div className="page-area fin-scroll" key="volumes">
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}>
         <span className="filter-label">Product line</span>
-        {lines.map(l => <button key={l[0]} className={`filter-chip${l[0] === preset ? ' active' : ''}`} onClick={() => { setPreset(l[0]); setUnitPick(null); }}>{l[1]}{l[2] ? <span style={{ opacity: .6 }}> ({l[2].size})</span> : null}</button>)}
+        <span className="cp-sub" style={{ margin: 0 }}>(pick one or more)</span>
+        {lines.map(l => <button key={l[0]} className={`filter-chip${picks.includes(l[0]) ? ' active' : ''}`} onClick={() => togglePick(l[0])}>{l[1]}{l[2] ? <span style={{ opacity: .6 }}> ({l[2].size})</span> : null}</button>)}
         {!!(kgP && qP) && <><div className="filter-divider" /><span className="filter-label">Show in</span>
           <button className={`filter-chip${unit === 'k' ? ' active' : ''}`} onClick={() => setUnitPick('k')}>Tonnes</button>
           <button className={`filter-chip${unit === 'q' ? ' active' : ''}`} onClick={() => setUnitPick('q')}>Pieces</button></>}
@@ -3446,11 +3937,11 @@ function Volumes({ f, setF }) {
         {kgP ? <Kpi color="blue" label="Tonnes" value={tonD(K.kg)} sub={<><Trend g={growth(K.kgCur4Cmp, K.kgC)} /><span>Net of returns</span></>} onClick={() => vp('Tonnes · ' + line[1], null, 'k')} /> : null}
         {qP ? <Kpi color="sky" label="Pieces" value={fmtN(K.q)} sub={<><Trend g={growth(K.qCur4Cmp, K.qC)} /><span>Units sold per piece</span></>} onClick={() => vp('Pieces · ' + line[1], null, 'q')} /> : null}
         <Kpi color="green" label="Revenue" value={fmtFull(K.rev)} sub={<><Trend g={growth(K.revCur4Cmp, K.revC)} /><span>{unit === 'k' && K.kg ? `avg ${fmtEur2(revKg[0] / 100 / K.kg)}/kg` : ''}</span></>} onClick={() => vp('Revenue · ' + line[1], null, 'r')} />
-        <Kpi color="teal" label="Buyers" value={fmtN(allBuyers.size)} sub="Customers with positive quantity" />
-        {top && <Kpi color="amber" label="Top verkoper" value={top.n.split(' ')[0]} sub={`${qf(top.q)} · ${tot ? fmtShare(top.q / tot * 100) : '—'} of the volume`} onClick={() => vp(`${top.n} · ${line[1]}`, i => X.facts.v[i] === top.v, unit)} />}
+        <Kpi color="teal" label="Buyers" value={fmtN(allBuyers.size)} sub={cmpBuyers != null ? <><Trend g={growth(cmpBuyers[1], cmpBuyers[0])} /><span>{fmtN(cmpBuyers[0])} in {P.cmpLabel}</span></> : 'Customers with positive quantity'} />
+        {top && <Kpi color="amber" label="Top verkoper" value={top.n.split(' ')[0]} sub={<>{K.cmp ? <Trend g={top.g} /> : null}<span>{`${qf(top.q)} · ${tot ? fmtShare(top.q / tot * 100) : '—'} of the volume`}</span></>} onClick={() => vp(`${top.n} · ${line[1]}`, i => X.facts.v[i] === top.v, unit)} />}
       </div>
       <div className="charts-row">
-        <Panel title={`${unit === 'k' ? 'Tonnes' : 'Pieces'} per Verkoper over Time`} subtitle={`Top five verkopers, others combined · per ${weekly ? 'week (from Apr 2026)' : 'month'} · Drill-down Week/Day in the filter bar for weekly`} height={360} className="fin-fixed" style={{ flex: 2 }}
+        <Panel title={`${unit === 'k' ? 'Tonnes' : 'Pieces'} per Verkoper over Time`} subtitle={`Top five verkopers, others combined · per ${weekly ? 'week (from Apr 2026)' : 'month'}${ts.cmpNote ? ' · ' + ts.cmpNote : ''} · Drill-down Week/Day in the filter bar for weekly`} height={360} className="fin-fixed" style={{ flex: 2 }}
           tableHeaders={['Period', ...ts.ser.map(s => s.name)]} tableRows={ts.labels.map((l, i) => [l, ...ts.ser.map(s => fmtNum(s.data[i]))])}><EC option={tsOpt} /></Panel>
         <Panel title={`${unit === 'k' ? 'Tonnes' : 'Pieces'} per Market`} subtitle="Click a market to filter this page's market" height={360} className="fin-fixed" style={{ flex: 1 }}
           tableHeaders={['Market', 'Quantity', ...(K.cmp ? ['Comparison'] : [])]} tableRows={mk.map(r => [r.n, qf(r.v), ...(K.cmp ? [qf(r.c)] : [])])}>
@@ -3504,8 +3995,12 @@ function Receivables({ f }) {
   const RD = X.ledgerLabel, S0 = dLab(X.meta.arStart);
   const RC = reconSteps();
   const cust = useMemo(() => { const m = new Map(); for (const a of A.R) if (a[6] > 0) m.set(a[0], (m.get(a[0]) || 0) + a[6] / 100); return [...m].sort((a, b) => b[1] - a[1]); }, [A]);
-  const list = (title, def, R2) => proof({ title, def, list: { head: ['Customer', 'Invoice', 'Date', 'Due', 'Status', 'Open'], rows: R2.sort((a, b) => b[6] - a[6]).map(a => [X.customers[a[0]][0], a[1], a[2], a[3] || '—', a[7], fmtEur2(a[6] / 100)]), check: `✓ ${R2.length} items add up to <b>${fmtEur2(R2.reduce((s, a) => s + a[6], 0) / 100)}</b>` } });
+  const list = (title, def, R2, byDays) => proof({ title, def, wide: true, list: { wrap: [0], head: ['Customer', 'Verkoper', 'Invoice', 'Date', 'Due', 'Status', 'Days open', 'Open'], rows: R2.sort(byDays ? (a, b) => daysOpen(b) - daysOpen(a) : (a, b) => b[6] - a[6]).map(a => [X.customers[a[0]][0], X.customers[a[0]][2], a[1], a[2], a[3] || '—', a[7], fmtN(daysOpen(a)), fmtEur2(a[6] / 100)]), check: `✓ ${R2.length} items add up to <b>${fmtEur2(R2.reduce((s, a) => s + a[6], 0) / 100)}</b>` } });
   const open = A.R.filter(a => a[6] > 0);
+  /* Average days open: days from invoice date to the last ledger day, over the open invoices */
+  const daysOpen = a => Math.max(0, X.ltT - tOf(a[2]));
+  const dOpen = open.length ? open.reduce((s, a) => s + daysOpen(a), 0) / open.length : null;
+  const dOpenW = A.open ? open.reduce((s, a) => s + daysOpen(a) * a[6], 0) / open.reduce((s, a) => s + a[6], 0) : null;
   const kp = { over: open.filter(a => a[7] !== 'Current'), over30: open.filter(a => a[7] !== 'Current' && a[7] !== '1–30'), credit: A.R.filter(a => a[6] < 0) };
   const ageRows = AGE.map(a => ({ n: a === 'Current' ? 'Not yet due' : a + ' days late', v: A.byAge.get(a) || 0, k: a }));
   const ageOpt = hbarOpt(ageRows.map(r => ({ n: r.n, v: r.v, extra: A.open ? fmtShare(r.v / A.open * 100) + ' of open' : '' })), { colors: AGE_COLORS, labelW: 18 });
@@ -3527,6 +4022,7 @@ function Receivables({ f }) {
         <Kpi color="amber" label="More than 30 days late" value={fmtFull(A.over30)} sub={`${fmtShare(A.open ? A.over30 / A.open * 100 : 0)} of open`} onClick={() => list('More than 30 days late', 'Overdue by more than 30 days.', kp.over30)} />
         <Kpi color="sky" label="Open credits" value={fmtFull(-A.credit)} sub={`${fmtN(kp.credit.length)} items`} onClick={() => list('Open credits', 'Credit notes and overpayments still open.', kp.credit)} />
         <Kpi color="navy" label="Owed after credits" value={fmtFull(A.net)} sub="Open invoices − open credits" />
+        <Kpi color="teal" label="Average days open" value={dOpen == null ? '—' : fmtN(Math.round(dOpen)) + ' days'} sub={dOpenW == null ? 'No open invoices' : `Since invoice date · ${fmtN(Math.round(dOpenW))} days weighted by amount`} onClick={() => list('Average days open', `Open invoices by days since the invoice date (to ${RD}). Simple average ${fmtN(Math.round(dOpen || 0))} days; weighted by open amount ${fmtN(Math.round(dOpenW || 0))} days.`, open, true)} />
       </div>
       <div className="charts-row">
         <Panel title="Ageing of Open Invoices" subtitle={`Days past due on ${RD} · click a bucket for its invoices`} height={320} className="fin-fixed" style={{ flex: 1 }}
@@ -3560,36 +4056,6 @@ function Receivables({ f }) {
             {RC.steps.map(([l, v, op, eq], i) => <span key={i} style={{ display: 'contents' }}><div className={`rc-box${eq ? ' eq' : ''}`}><span>{l}</span><b>{fmtEur2(v / 100)}</b></div>{op && <span className="rc-op">{op}</span>}</span>)}
             <div className={`rc-ok${RC.ok ? '' : ' bad'}`}>{RC.ok ? '✓ exact' : '✗ off by ' + fmtEur2(RC.diff / 100)}</div>
           </div>
-        </Panel>
-      </div>
-    </div>
-  );
-}
-
-/* ══ Reorder radar ════════════════════════════════════════════════════ */
-function Reorder({ f }) {
-  const proof = useProof();
-  const Rr = useMemo(() => reorder(f, true), [f]);
-  const R = Rr.rows, tot = R.reduce((s, r) => s + r.mrev, 0);
-  const custs = new Set(R.map(r => r.c));
-  const byRep = useMemo(() => { const m = new Map(); for (const r of R) { const k = X.customers[r.c][2]; m.set(k, (m.get(k) || 0) + r.mrev); } return [...m].sort((a, b) => b[1] - a[1]); }, [R]);
-  const head = ['Customer', 'Product', 'Verkoper', 'Orders', 'Gap', 'Last order', 'Expected Reorder Date', 'Since', 'Late', '€ / Month'];
-  const rows = R.map(r => [X.customers[r.c][0], X.products[r.p][0], X.customers[r.c][2], r.n, fmtN(r.gap) + ' d', r.last, r.fell, r.since, r.due, fmtFull(r.mrev)]);
-  const win = Rr.window ? (Rr.window[0] === Rr.window[1] ? dLab(Rr.window[0]) : `${dLab(Rr.window[0])} – ${dLab(Rr.window[1])}`) : '';
-  const card = r => proof({ title: X.customers[r.c][0], def: `Customer card · ${X.products[r.p][0]} usually every ${fmtN(r.gap)} days, last ordered ${r.last}`, f: { ...f, from: 0, to: X.nM - 1, preset: 'all' }, extra: i => X.facts.c[i] === r.c, dims: ['product', 'month'] });
-  return (
-    <div className="page-area fin-scroll" key="reorder">
-      <KpiNote text={`Pairs that became late ${win} and are still not reordered on ${X.ledgerLabel}`} extra="Regular = 3+ order days since Apr 2026 · late = more than 1,5× the usual gap, up to 120 days" />
-      <div className="kpi-strip">
-        <Kpi color="blue" label="Customers to call" value={fmtN(custs.size)} sub={`${fmtN(byRep.length)} verkopers involved`} />
-        <Kpi color="teal" label="Avg days late" value={R.length ? fmtN(R.reduce((s, r) => s + r.due, 0) / R.length) : '—'} sub="beyond the usual gap" />
-        <Kpi color="red" label="Late reorders" value={fmtN(R.length)} sub="customer-product pairs" />
-        <Kpi color="amber" label="Value at risk / month" value={fmtFull(tot)} sub="average monthly revenue, last 6 complete months" />
-      </div>
-      <div className="charts-row">
-        <Panel title={<>Call List <span className="cp-title-desc">(Customers to be called who were past the expected reorder date)</span></>} subtitle="Sorted by monthly value · Gap = usual days between orders · Since / Late in days · click a row for the customer card" height={560} className="fin-fixed" style={{ flex: 1 }} hideToggle
-          controls={<ExportExcelButton filename="reorder_call_list.xlsx" headers={head} rows={rows} />}>
-          {R.length ? <div className="compact-tbl" style={{ height: '100%' }}><InlineTable headers={head} rows={rows} height="100%" searchable onRowClick={i => card(R[i])} /></div> : <div className="watch-empty">Nothing overdue for this selection.</div>}
         </Panel>
       </div>
     </div>
@@ -3950,16 +4416,16 @@ const ICONS = Object.fromEntries(Object.entries(import.meta.glob('./assets/icons
 
 const NAV = [
   { section: 'Overview', items: [{ id: 'overview', icon: '▦', label: 'Dashboard', desc: 'Live KPIs & monthly trend' }, { id: 'revenue', icon: '↗', label: 'Revenue Trends', desc: 'Revenue over time & period comparison' }] },
-  { section: 'Performance', items: [{ id: 'salesreps', icon: '◈', label: 'Verkoper', desc: 'Verkoper leaderboard & rankings' }, { id: 'ck-volumes', icon: '▤', label: 'Sales per Verkoper', desc: 'Tonnes and pieces per verkoper and product line' }, { id: 'ck-reorder', icon: '↻', label: 'Reorder Radar', desc: 'Regular buyers who are late to reorder' }, { id: 'customers', icon: '⬡', label: 'Customers', desc: 'Customers by revenue' }] },
+  { section: 'Performance', items: [{ id: 'salesreps', icon: '◈', label: 'Verkoper', desc: 'Verkoper leaderboard & rankings' }, { id: 'ck-volumes', icon: '▤', label: 'Sales per Verkoper', desc: 'Tonnes and pieces per verkoper and product line' }, { id: 'customers', icon: '⬡', label: 'Customers', desc: 'Customers by revenue' }] },
   { section: 'Catalogue', items: [{ id: 'products', icon: '◻', label: 'Products', desc: 'Product-level revenue breakdown' }, { id: 'ck-products', icon: '◫', label: 'Products & Prices', desc: 'Product groups, price per kg and mix' }, { id: 'categories', icon: '⊞', label: 'Categories', desc: 'Categories & product groups' }, { id: 'ck-markets', icon: '◎', label: 'Markets', desc: 'Revenue by country' }] },
   { section: 'Channels', items: [{ id: 'channels', icon: '⇌', label: 'Channel Mix', desc: 'Direct sales vs webshop split' }] },
   { section: 'Debtors', items: [{ id: 'ck-receivables', icon: '€', label: 'Receivables', desc: 'Open invoices, ageing and the debtors tie-out' }] },
   { section: 'Finance', items: [{ id: 'plsummary', icon: '⟡', label: 'P&L Summary', desc: 'Margins & result from the books' }, { id: 'finrevcosts', icon: '↕', label: 'Revenue & Costs', desc: 'Revenue vs cost accounts' }, { id: 'finledger', icon: '≣', label: 'Ledger', desc: 'Every account in the books' }] },
 ];
-const PAGE_NAMES = { 'ck-volumes': 'Sales per Verkoper', 'ck-receivables': 'Receivables', 'ck-reorder': 'Reorder Radar', 'ck-products': 'Products & Prices', 'ck-markets': 'Markets', overview: 'Overview Dashboard', revenue: 'Revenue Trends', salesreps: 'Verkoper', customers: 'Customers', products: 'Product Analysis', categories: 'Category Breakdown', channels: 'Channel Mix', plsummary: 'P&L Summary', finrevcosts: 'Revenue & Costs', finledger: 'Ledger' };
+const PAGE_NAMES = { 'ck-volumes': 'Sales per Verkoper', 'ck-receivables': 'Receivables', 'ck-products': 'Products & Prices', 'ck-markets': 'Markets', overview: 'Overview Dashboard', revenue: 'Revenue Trends', salesreps: 'Verkoper', customers: 'Customers', products: 'Product Analysis', categories: 'Category Breakdown', channels: 'Channel Mix', plsummary: 'P&L Summary', finrevcosts: 'Revenue & Costs', finledger: 'Ledger' };
 
 const SUGGESTED_QUESTIONS = {
-  overview: ['How much have we sold this month so far?', 'What is our open order value?', 'How did the last 3 complete months compare with last year?', 'How much milk powder did we sell this year?'],
+  overview: ['How much have we sold this month so far?', 'What is the projected turnover this month?', 'What are the open orders for Kalverhuisvesting?', 'How much milk powder did we sell this year?'],
   revenue: ['What was our best month?', 'How does this year compare with last year?', 'What is the average monthly revenue?'],
   salesreps: ['Who is the top verkoper?', 'How concentrated is revenue in the top 3 verkopers?', 'Which verkoper sells the most milk powder?'],
   customers: ['Who are our top 5 customers?', 'How many customers bought this year?', 'What share of revenue comes from the top 15 customers?'],
@@ -3967,8 +4433,7 @@ const SUGGESTED_QUESTIONS = {
   categories: ['Which category has the biggest share of revenue?', 'How does each product group compare?'],
   channels: ['How is revenue split between webshop and direct?', 'What is the webshop average order value?'],
   'ck-volumes': ['How many tonnes of milk powder did we sell?', 'Who sells the most tonnes?'],
-  'ck-receivables': ['How much is still open?', 'How much is overdue more than 30 days?', 'Which customers owe us the most?'],
-  'ck-reorder': ['Which customers are late to reorder?', 'How much monthly revenue is at risk?'],
+  'ck-receivables': ['How much is still open?', 'What is the average days open?', 'How much is overdue more than 30 days?', 'Which customers owe us the most?'],
   'ck-products': ['What is the milk powder price per kg?', 'What is the feed price per kg?'],
   'ck-markets': ['Which market is the biggest?', 'What share of revenue is export?'],
   plsummary: ['What is the result in the books?', 'What is the gross margin?'],
@@ -3982,7 +4447,6 @@ const ZOOM_KEY = 'dairytop_zoom', ZMIN = 0.7, ZMAX = 1.5;
 const FINANCE = new Set(['plsummary', 'finrevcosts', 'finledger']);
 const IGNORES = {
   'ck-receivables': 'Product group does not apply to receivables',
-  'ck-reorder': 'Compare with does not apply to the reorder radar',
   plsummary: 'Books are company-wide: verkoper, group and market filters do not apply',
   finrevcosts: 'Books are company-wide: verkoper, group and market filters do not apply',
   finledger: 'Books are company-wide: verkoper, group and market filters do not apply',
@@ -4050,7 +4514,8 @@ function PageZoom({ z, setZ }) {
 }
 
 function Shell({ userName, handleLogout }) {
-  const [page, setPage] = useState(() => sessionStorage.getItem('dairytop_last_page') || 'overview');
+  const { lang: uiLang } = useLang();
+  const [page, setPage] = useState(() => { const p = sessionStorage.getItem('dairytop_last_page'); return p && PAGE_NAMES[p] ? p : 'overview'; });
   const PF = usePageFilter(page);
   const { f, setF } = PF;
   const [sideOpen, setSideOpen] = useState(false);
@@ -4085,10 +4550,20 @@ function Shell({ userName, handleLogout }) {
       .map(([t, l, p]) => { const m = index.filter(i => i.type === t && i.name.toLowerCase().includes(s)); return { type: t, label: l, page: p, items: m.slice(0, 6), total: m.length }; }).filter(g => g.items.length);
   }, [q, index]);
   const sRef = useRef(null), rRef = useRef(null);
+  const isMob = useIsMobile();
+  const [mSearch, setMSearch] = useState(false);
+  const tbRef = useRef(null);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!isMob || !tbRef.current) { root.style.removeProperty('--mtb-h'); return; }
+    const el = tbRef.current, upd = () => root.style.setProperty('--mtb-h', Math.round(el.getBoundingClientRect().height) + 'px');
+    upd(); const ro = new ResizeObserver(upd); ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMob, page]);
   const [pos, setPos] = useState(null);
   useLayoutEffect(() => { if (open && q.trim() && sRef.current) { const r = sRef.current.getBoundingClientRect(); setPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right), width: Math.max(r.width, 300) }); } }, [open, q, groups.length]);
   useEffect(() => { const h = e => { if (sRef.current?.contains(e.target) || rRef.current?.contains(e.target)) return; setOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, []);
-  const goResult = r => { setPage(r.page); setHl(r.name); setQ(r.name); setOpen(false); };
+  const goResult = r => { setPage(r.page); setHl(r.name); setQ(r.name); setOpen(false); setMSearch(false); };
 
   const P = period(f);
   const stats = useMemo(() => ({ period: `${X.mLabel[f.from]} – ${X.mLabel[f.to]}`, invoices: invoices(f, P.months.filter(m => !X.isPortalM[m])).length.toLocaleString('de-DE'), customers: (f.reps.length || f.mkts.length ? X.customers.filter(c => (!f.reps.length || f.reps.includes(c[2])) && (!f.mkts.length || f.mkts.includes(c[1]))).length : totals.customers).toLocaleString('de-DE') }), [f, P]);
@@ -4097,7 +4572,7 @@ function Shell({ userName, handleLogout }) {
   const props = { f, setF, highlightQuery: hl, page };
   const render = () => {
     switch (page) {
-      case 'overview': return <Overview />;
+      case 'overview': return <Overview go={setPage} />;
       case 'revenue': return <Revenue {...props} />;
       case 'salesreps': return <SalesReps {...props} />;
       case 'customers': return <Customers {...props} />;
@@ -4106,13 +4581,12 @@ function Shell({ userName, handleLogout }) {
       case 'channels': return <Channels {...props} />;
       case 'ck-volumes': return <Volumes {...props} />;
       case 'ck-receivables': return <Receivables {...props} />;
-      case 'ck-reorder': return <Reorder {...props} />;
       case 'ck-products': return <ProductsPrice {...props} />;
       case 'ck-markets': return <Markets {...props} />;
       case 'plsummary': return <PLSummary {...props} />;
       case 'finrevcosts': return <FinRevCosts {...props} />;
       case 'finledger': return <FinLedger {...props} />;
-      default: return <Overview />;
+      default: return <Overview go={setPage} />;
     }
   };
 
@@ -4124,7 +4598,7 @@ function Shell({ userName, handleLogout }) {
           <div className={`mob-overlay${sideOpen ? ' open' : ''}`} onClick={() => setSideOpen(false)} />
           <Sidebar page={page} setPage={setPage} sideOpen={sideOpen} setSideOpen={setSideOpen} setHighlightQuery={setHl} stats={stats} handleLogout={handleLogout} localPages={PF.localPages} />
           <div className="main">
-            <div className={`topbar${isOv ? ' topbar-overview' : ''}`}>
+            <div ref={tbRef} className={`topbar${isOv ? ' topbar-overview' : ''}${isMob && mSearch && !isOv ? ' m-search' : ''}`}>
               <div className="tb-row1">
                 <div className="tb-titlewrap">
                   <div className="tb-title">{PAGE_NAMES[page]}</div>
@@ -4135,6 +4609,8 @@ function Shell({ userName, handleLogout }) {
                 </div>
                 <div className="tb-right">
                   {isOv && <PageZoom z={z} setZ={setZ} />}
+                  {isMob && !isOv && <button type="button" className="tb-search-btn" aria-label="Search" aria-expanded={mSearch} onClick={() => { setMSearch(v => !v); setTimeout(() => sRef.current?.querySelector('input')?.focus(), 30); }}>{mSearch ? '✕' : '🔍'}</button>}
+                  <LangSwitch />
                   <button className="tb-print-btn" onClick={() => window.print()} title="Export this page as a PDF via your browser's print dialog">⬇ Export</button>
                   <div className="live-badge" title={`Data snapshot ${X.snapshotLabel} · last invoice ${X.ledgerLabel}`}><span className="blink-dot" /><span className="tb-time-in">{time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span><span className="tb-snap">Last Update · {X.snapshotLabel}</span></div>
                 </div>
@@ -4161,7 +4637,7 @@ function Shell({ userName, handleLogout }) {
           <ScrollHint watchKey={page} disabled={sideOpen} />
         </div>
       </div>
-      <ChatBot liveData={DASH} context={{ page, pageName: PAGE_NAMES[page], filterLabel: P.label, dateRange: P.label }} suggestedQuestions={SUGGESTED_QUESTIONS[page] || SUGGESTED_QUESTIONS.default} userName={formatDisplayName(userName)} />
+      <ChatBot uiLang={uiLang} liveData={DASH} context={{ page, pageName: PAGE_NAMES[page], filterLabel: P.label, dateRange: P.label }} suggestedQuestions={SUGGESTED_QUESTIONS[page] || SUGGESTED_QUESTIONS.default} userName={formatDisplayName(userName)} />
     </>
   );
 }
@@ -4187,13 +4663,13 @@ export default function App() {
   }, [authed]);
   const handleLogin = u => { setShowWelcome(true); setAuthed(true); localStorage.setItem(AUTH_KEY, 'true'); localStorage.setItem(AUTH_ACTIVITY_KEY, String(Date.now())); setUserName(u || ''); try { localStorage.setItem(AUTH_USER_KEY, u || ''); } catch { /* ignore */ } };
   const handleLogout = () => { setAuthed(false); localStorage.removeItem(AUTH_KEY); localStorage.removeItem(AUTH_ACTIVITY_KEY); localStorage.removeItem(AUTH_USER_KEY); setUserName(''); };
-  const style = <style>{css + TYPO_CSS + EXTRA_CSS}</style>;
-  if (!authed) return <>{style}<Login onLogin={handleLogin} /></>;
-  if (showWelcome) return <>{style}<DashboardWelcome userName={userName} onComplete={finishWelcome} /></>;
+  const style = <style>{css + TYPO_CSS + EXTRA_CSS + MOBILE_CSS}</style>;
+  if (!authed) return <LangProvider>{style}<Login onLogin={handleLogin} /></LangProvider>;
+  if (showWelcome) return <LangProvider>{style}<DashboardWelcome userName={userName} onComplete={finishWelcome} /></LangProvider>;
   return (
-    <>
+    <LangProvider>
       {style}
       <FilterProvider><ProofProvider><Shell userName={userName} handleLogout={handleLogout} /></ProofProvider></FilterProvider>
-    </>
+    </LangProvider>
   );
 }

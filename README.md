@@ -18,7 +18,7 @@ Sign in with the same accounts as before.
 
 | Path | What it is |
 |---|---|
-| `src/App.jsx` | The whole dashboard: data model on dash.json, filters, all 15 pages, charts, login, sidebar, styles |
+| `src/App.jsx` | The whole dashboard: data model on dash.json, filters, all 14 pages, charts, login, sidebar, styles |
 | `src/dash.json` | The data. Replace this file with a newer extract to update every page |
 | `src/ChatBot.jsx` | Chat window (UI) |
 | `src/utils/chatContext.js` | Chat answers from dash.json; builds the data context sent to Gemini |
@@ -40,3 +40,6 @@ Sign in with the same accounts as before.
 - Jan 2025 – Mar 2026 come from the former portal: monthly totals only (no weeks, days or invoices). Week/day drill-down, orders and average order value start Apr 2026.
 - Receivables start with invoices of 7 Apr 2026; the books (P&L) start 1 Apr 2026.
 - Filters are per page; Compare with starts on "No comparison".
+- Language: EN / NL switch in the top bar (and on the login screen). English is the default; the choice is remembered in the browser. Data names (customers, products, ledger accounts) are never translated.
+- Overview open-order cards count open order lines with stage "delivered, not invoiced" or "to deliver"; "due by month end" = due today or earlier plus due until the last day of the month. Lines without a price in Microfas are listed but have no value.
+- Voorraad (stock level) and gross margin wait for the Microfas export: stock is not in dash.json yet, and purchase prices are only present for a few products.

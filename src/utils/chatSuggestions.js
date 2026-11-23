@@ -25,8 +25,6 @@ export const QUESTION_NL = {
  "How much is still open?": "Hoeveel staat er nog open?",
  "How much is overdue more than 30 days?": "Hoeveel is meer dan 30 dagen te laat?",
  "Which customers owe us the most?": "Welke klanten zijn ons het meeste schuldig?",
- "Which customers are late to reorder?": "Welke klanten zijn laat met nabestellen?",
- "How much monthly revenue is at risk?": "Hoeveel maandomzet loopt risico?",
  "What is the milk powder price per kg?": "Wat is de melkpoederprijs per kg?",
  "What is the feed price per kg?": "Wat is de voerprijs per kg?",
  "Which market is the biggest?": "Wat is de grootste markt?",
@@ -38,15 +36,18 @@ export const QUESTION_NL = {
  "How big are purchases compared with revenue?": "Hoe groot zijn de inkopen ten opzichte van de omzet?",
  "How many accounts are in the books?": "Hoeveel rekeningen staan er in de boekhouding?",
  "What can you tell me about this page?": "Wat kun je me over deze pagina vertellen?",
- "Summarize the key numbers": "Vat de belangrijkste cijfers samen"
+ "Summarize the key numbers": "Vat de belangrijkste cijfers samen",
+ "What is the projected turnover this month?": "Wat is de verwachte omzet deze maand?",
+ "What are the open orders for Kalverhuisvesting?": "Wat zijn de open orders voor Kalverhuisvesting?",
+ "What is the average days open?": "Hoeveel dagen staan facturen gemiddeld open?"
 };
 const nl = en => QUESTION_NL[en] || en;
 const q = (icon, label, prompt) => ({ icon, label: { en: label, nl: label }, prompt: { en: prompt, nl: nl(prompt) } });
 export const CONTEXT_SUGGESTIONS = {
-  overview: [q('trend', 'This month', 'How much have we sold this month so far?'), q('people', 'Top customers', 'Who are our top 5 customers?'), q('grid', 'By category', 'Which category has the biggest share of revenue?'), q('box', 'Key numbers', 'Summarize the key numbers')],
+  overview: [q('trend', 'This month', 'How much have we sold this month so far?'), q('box', 'Projected', 'What is the projected turnover this month?'), q('box', 'Kalverhuisvesting', 'What are the open orders for Kalverhuisvesting?'), q('people', 'Top customers', 'Who are our top 5 customers?'), q('grid', 'By category', 'Which category has the biggest share of revenue?'), q('box', 'Key numbers', 'Summarize the key numbers')],
   sales: [q('trend', 'This year vs last', 'How does this year compare with last year?'), q('box', 'Best month', 'What was our best month?'), q('grid', 'Group growth', 'Which product groups grow fastest?'), q('people', 'Markets', 'Which market is the biggest?')],
   finance: [q('trend', 'Result', 'What is the result in the books?'), q('box', 'Gross margin', 'What is the gross margin?'), q('people', 'Cost accounts', 'What are our biggest cost accounts?'), q('grid', 'Receivables', 'How much is still open?')],
-  orders: [q('box', 'Open order value', 'What is our open order value?'), q('box', 'Late reorders', 'Which customers are late to reorder?'), q('trend', 'Revenue at risk', 'How much monthly revenue is at risk?'), q('grid', 'Overdue', 'How much is overdue more than 30 days?'), q('people', 'Biggest debtors', 'Which customers owe us the most?')],
+  orders: [q('box', 'Open order value', 'What is our open order value?'), q('box', 'Kalverhuisvesting', 'What are the open orders for Kalverhuisvesting?'), q('trend', 'Days open', 'What is the average days open?'), q('grid', 'Overdue', 'How much is overdue more than 30 days?'), q('people', 'Biggest debtors', 'Which customers owe us the most?')],
   reps: [q('people', 'Top verkopers', 'Who is the top verkoper?'), q('trend', 'Top 3 share', 'How concentrated is revenue in the top 3 verkopers?'), q('grid', 'Milk powder', 'Which verkoper sells the most milk powder?'), q('box', 'Tonnes', 'Who sells the most tonnes?')],
 };
 const FU = {
@@ -57,8 +58,8 @@ const FU = {
   products: ['What is our best-selling product?', 'Which product groups grow fastest?', 'What is the feed price per kg?'],
   categories: ['How does each product group compare?', 'Which category has the biggest share of revenue?'],
   channels: ['What is the webshop average order value?', 'How is revenue split between webshop and direct?'],
-  debtor: ['How much is overdue more than 30 days?', 'Which customers owe us the most?', 'How much is still open?'],
-  orders: ['How much monthly revenue is at risk?', 'Which customers are late to reorder?'],
+  debtor: ['What is the average days open?', 'How much is overdue more than 30 days?', 'Which customers owe us the most?', 'How much is still open?'],
+  orders: ['What is the projected turnover this month?', 'What are the open orders for Kalverhuisvesting?', 'What is our open order value?'],
   finance: ['What is the gross margin?', 'What are our biggest cost accounts?', 'How big are purchases compared with revenue?'],
   general: ['Summarize the key numbers', 'How much have we sold this month so far?', 'Who are our top 5 customers?'],
 };

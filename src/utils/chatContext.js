@@ -8,7 +8,10 @@ import { QUESTION_NL } from './chatSuggestions.js';
 let _cache = null, _cacheFor = null;
 function engine(M) {
   if (_cacheFor === M && _cache) return _cache;
-  const { X, GROUPS, sales, applyPreset, defaultFilter, aggregate, arKPI, reorder, liveMonth, mLong, invoices, legacy, orderValue, hasOrderValues, fmtFull, fmtN, fmtShare, growth } = M;
+  const { X, GROUPS, sales, applyPreset, defaultFilter, aggregate, arKPI, liveMonth, mLong, invoices, legacy, orderValue, hasOrderValues, openOrderLines, groupOfProduct, fmtFull, fmtN, fmtShare, growth } = M;
+  const eom = X.months[X.nM - 1] + '-31';
+  const openBy = pred => { const R = (openOrderLines ? openOrderLines() : []).filter(r => pred(r.l)); return { v: R.reduce((s, r) => s + r.v, 0), n: new Set(R.map(r => r.l[0])).size, unp: R.filter(r => !r.priced).length }; };
+  const daysOpenOf = a => Math.max(0, X.ltT - Math.round(Date.UTC(+a[2].slice(0, 4), +a[2].slice(5, 7) - 1, +a[2].slice(8, 10)) / 864e5));
   const ALL = { reps: [], grps: [], mkts: [] };
   const F = (preset, extra = {}) => applyPreset({ ...defaultFilter(), ...extra }, preset);
   const pc = g => g == null ? '—' : (g >= 0 ? '+' : '') + g.toFixed(1).replace('.', ',') + '%';
@@ -23,6 +26,9 @@ function engine(M) {
   
   
   const A = {
+    projTurn: () => { const L = liveMonth(), o = openBy(l => (l[8] || '') <= eom); return `Projected turnover for ${mLong(L.iso)}: **${fmtFull(L.rev + o.v)}** — ${fmtFull(L.rev)} invoiced so far (1–${L.day}) plus ${fmtFull(o.v)} in open orders due by the end of the month (${fmtN(o.n)} orders, excl. VAT).${o.unp ? `\n${fmtN(o.unp)} open lines have no price in Microfas and are not counted.` : ''}`; },
+    kvhOpen: () => { const o = openBy(l => (l[8] || '') <= eom && groupOfProduct(l[3]) === 2); return `Open orders for Kalverhuisvesting (calf housing), due today or earlier plus due until the end of this month: **${fmtFull(o.v)}** in ${fmtN(o.n)} orders (excl. VAT).${o.unp ? `\n${fmtN(o.unp)} lines have no price in Microfas (value unknown).` : ''}`; },
+    arDays: () => { const a = arKPI(ALL), op = a.R.filter(r => r[6] > 0); if (!op.length) return 'There are no open invoices.'; const d = op.reduce((s, r) => s + daysOpenOf(r), 0) / op.length, w = op.reduce((s, r) => s + daysOpenOf(r) * r[6], 0) / op.reduce((s, r) => s + r[6], 0); return `Open invoices have been open for **${fmtN(Math.round(d))} days** on average since the invoice date (${fmtN(op.length)} invoices, to ${X.ledgerLabel}). Weighted by open amount: ${fmtN(Math.round(w))} days.`; },
     mtd: () => { const L = liveMonth(); return `**${fmtFull(L.rev)}** sold in ${mLong(L.iso)} so far (1–${L.day}).\nNovember 2025 only has a monthly total (former portal), so a same-days comparison is not possible.`; },
     last3: () => { const M = legacy(ALL).monthly; const r = [X.lastFull - 2, X.lastFull - 1, X.lastFull].map(m => `${X.mLabel[m]}: **${fmtFull(M[m].rev)}** vs ${fmtFull(M[m - 12].rev)} (${pc(growth(M[m].rev, M[m - 12].rev))})`); return `Last 3 complete months vs the same months last year:\n${list(r)}`; },
     mpYear: () => { const K = sales(F('ytd', { grps: ['Milk powder'] })), N = sales(F('ytdNow', { grps: ['Milk powder'] })); return `Milk powder in ${yr}: **${t1(N.kg)}** for **${fmtFull(N.rev)}** (to ${X.ledgerLabel}).\nOn complete months (${K.P.label}): ${t1(K.kg)}, ${pc(growth(K.kg, K.kgC))} vs ${t1(K.kgC)} a year earlier.`; },
@@ -47,8 +53,6 @@ function engine(M) {
     arOpen: () => { const a = arKPI(ALL); return `On ${X.ledgerLabel} customers owe **${fmtFull(a.net)}** after credits: ${fmtFull(a.open)} in ${fmtN(a.nOpen)} open invoices, minus ${fmtFull(-a.credit)} open credits (excl. VAT).`; },
     ar30: () => { const a = arKPI(ALL); return `**${fmtFull(a.over30)}** is more than 30 days past due (${fmtShare(a.over30 / a.open * 100)} of open invoices). 91+ days: ${fmtFull(a.byAge.get('91+'))}.`; },
     arTop: () => { const a = arKPI(ALL), m = new Map(); for (const r of a.R) if (r[6] > 0) m.set(r[0], (m.get(r[0]) || 0) + r[6] / 100); const t = [...m].sort((x, y) => y[1] - x[1]).slice(0, 5); return `Largest open balances:\n${list(t.map(([c, v]) => `${X.customers[c][0]}: **${fmtFull(v)}**`))}`; },
-    late: () => { const R = reorder(ALL, false).rows; return `**${R.length} customer-product pairs** are late to reorder. Biggest:\n${list(R.slice(0, 5).map(r => `${X.customers[r.c][0]} – ${X.products[r.p][0]}: ${r.since} days since last order (usually ${Math.round(r.gap)})`))}`; },
-    risk: () => { const R = reorder(ALL, false).rows; return `About **${fmtFull(R.reduce((s, r) => s + r.mrev, 0))} per month** of revenue sits with buyers who are late to reorder (${R.length} pairs).`; },
     mpPrice: () => { const K = sales(F('ytd', { grps: ['Milk powder'] }), i => X.kgProd.has(X.facts.p[i])); return `Milk powder averages **${e2(K.rev / K.kg)}/kg** in ${K.P.label} (${t1(K.kg)}), vs ${e2(K.revC / K.kgC)}/kg a year earlier.`; },
     feedPrice: () => { const K = sales(F('ytd', { grps: ['Feed'] }), i => X.kgProd.has(X.facts.p[i])); return `Feed averages **${e2(K.rev / K.kg)}/kg** in ${K.P.label} (${t1(K.kg)})${K.kgC ? `, vs ${e2(K.revC / K.kgC)}/kg a year earlier` : ''}.`; },
     topMkt: () => { const K = ytdNow(), r = rankBy(K, i => X.facts.M[i]); return `Biggest markets in ${yr}:\n${list(r.map(x => `${X.mkts[x.k]}: **${fmtFull(x.rev)}** · ${fmtShare(x.rev / K.rev * 100)}`))}`; },
@@ -59,7 +63,7 @@ function engine(M) {
     purch: () => { const R = X.pnl.filter(r => r[0] >= X.meta.booksOpening.slice(0, 7)); const s = c => R.filter(r => r[2] === c).reduce((a, r) => a + r[4], 0) / 100; return `Purchases are **${fmtShare(-s('Purchases') / s('Revenue') * 100)}** of booked revenue (${fmtFull(-s('Purchases'))} of ${fmtFull(s('Revenue'))}).`; },
     accts: () => `The books hold **${fmtN(new Set(X.pnl.filter(r => r[0] >= X.meta.booksOpening.slice(0, 7)).map(r => r[1])).size)} accounts** with postings since ${mLong(X.meta.booksOpening.slice(0, 7))}.`,
     openVal: () => { if (!hasOrderValues) return 'This dash.json has no € values on order lines.'; const v = orderValue(X.orders.filter(o => o[5])); return `Open order value: **${fmtFull(v.tot)}** — ${fmtFull(v.del)} delivered but not yet invoiced, ${fmtFull(v.left)} still to deliver (excl. VAT, order-line prices).`; },
-    summary: () => { const K = ytdNow(), a = arKPI(ALL); return `Key numbers (${yr} to ${X.ledgerLabel}):\n• Revenue **${fmtFull(K.rev)}**\n• Milk powder ${t1(sales(F('ytdNow', { grps: ['Milk powder'] })).kg)}\n• Owed after credits ${fmtFull(a.net)} (${fmtFull(a.over30)} > 30 days late)\n• ${reorder(ALL, false).rows.length} buyers late to reorder`; },
+    summary: () => { const K = ytdNow(), a = arKPI(ALL); return `Key numbers (${yr} to ${X.ledgerLabel}):\n• Revenue **${fmtFull(K.rev)}**\n• Milk powder ${t1(sales(F('ytdNow', { grps: ['Milk powder'] })).kg)}\n• Owed after credits ${fmtFull(a.net)} (${fmtFull(a.over30)} > 30 days late)`; },
   };
   
   /* entity lookups: customers, verkopers, products, categories, markets, groups */
@@ -108,7 +112,7 @@ function engine(M) {
     if (y) { const ms = X.months.map((v, i) => [v, i]).filter(([v]) => v.startsWith(y[1])); if (!ms.length) return null; const tot = ms.reduce((s, [, i]) => s + legacy(ALL).monthly[i].rev, 0); return `${y[1]}: **${fmtFull(tot)}** over ${ms.length} month${ms.length > 1 ? 's' : ''}${ms.length < 12 ? ` (${mLong(ms[0][0])} – ${mLong(ms[ms.length - 1][0])})` : ''}.` + src; }
     return null;
   };
-  _cache = { A, findEntity, entityAnswer, periodAnswer, X, GROUPS, sales, F, aggregate, arKPI, reorder, legacy, orderValue, hasOrderValues, fmtFull, fmtN, fmtShare, growth, mLong, t1, yr, ALL };
+  _cache = { A, findEntity, entityAnswer, periodAnswer, X, GROUPS, sales, F, aggregate, arKPI, legacy, orderValue, hasOrderValues, fmtFull, fmtN, fmtShare, growth, mLong, t1, yr, ALL };
   _cacheFor = M;
   return _cache;
 }
@@ -122,15 +126,15 @@ const Q = {
   'Which category has the biggest share of revenue?': 'topCat', 'How does each product group compare?': 'groups',
   'How is revenue split between webshop and direct?': 'channel', 'What is the webshop average order value?': 'webAov',
   'How many tonnes of milk powder did we sell?': 'mpTonnes', 'Who sells the most tonnes?': 'topTonRep',
+  'What is the projected turnover this month?': 'projTurn', 'What are the open orders for Kalverhuisvesting?': 'kvhOpen', 'What is the average days open?': 'arDays',
   'How much is still open?': 'arOpen', 'How much is overdue more than 30 days?': 'ar30', 'Which customers owe us the most?': 'arTop',
-  'Which customers are late to reorder?': 'late', 'How much monthly revenue is at risk?': 'risk',
   'What is the milk powder price per kg?': 'mpPrice', 'What is the feed price per kg?': 'feedPrice',
   'Which market is the biggest?': 'topMkt', 'What share of revenue is export?': 'export',
   'What is the result in the books?': 'books', 'What is the gross margin?': 'gm', 'What are our biggest cost accounts?': 'costs', 'What are the biggest cost accounts?': 'costs',
   'How big are purchases compared with revenue?': 'purch', 'How many accounts are in the books?': 'accts',
   'What can you tell me about this page?': 'summary', 'What is our open order value?': 'openVal', 'Summarize the key numbers': 'summary',
 };
-const TOPIC = { mtd: 'revenue', last3: 'revenue', best: 'revenue', yoy: 'revenue', avg: 'revenue', mpYear: 'tonnage', mpTonnes: 'tonnage', topTonRep: 'tonnage', mpRep: 'tonnage', topRep: 'salesreps', top3: 'salesreps', topCust: 'customers', custCount: 'customers', top15: 'customers', topProd: 'products', grpGrowth: 'products', prodCount: 'products', topCat: 'categories', groups: 'categories', channel: 'channels', webAov: 'channels', arOpen: 'debtor', ar30: 'debtor', arTop: 'debtor', late: 'orders', risk: 'orders', mpPrice: 'products', feedPrice: 'products', topMkt: 'general', export: 'general', books: 'finance', gm: 'finance', costs: 'finance', purch: 'finance', accts: 'finance', summary: 'general', openVal: 'orders' };
+const TOPIC = { projTurn: 'orders', kvhOpen: 'orders', arDays: 'debtor', mtd: 'revenue', last3: 'revenue', best: 'revenue', yoy: 'revenue', avg: 'revenue', mpYear: 'tonnage', mpTonnes: 'tonnage', topTonRep: 'tonnage', mpRep: 'tonnage', topRep: 'salesreps', top3: 'salesreps', topCust: 'customers', custCount: 'customers', top15: 'customers', topProd: 'products', grpGrowth: 'products', prodCount: 'products', topCat: 'categories', groups: 'categories', channel: 'channels', webAov: 'channels', arOpen: 'debtor', ar30: 'debtor', arTop: 'debtor', mpPrice: 'products', feedPrice: 'products', topMkt: 'general', export: 'general', books: 'finance', gm: 'finance', costs: 'finance', purch: 'finance', accts: 'finance', summary: 'general', openVal: 'orders' };
 
 const normQ = s => s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 const NQ = new Map(Object.entries(Q).map(([k, v]) => [normQ(k), v]));
@@ -159,7 +163,7 @@ export function buildFallbackAnswer(_question, opts = {}) {
 
 /** Compact dash.json summary for the AI. */
 export function buildDataContext(_queryText, data) {
-  const E = engine(data), { X, GROUPS, sales, F, aggregate, arKPI, reorder, legacy, orderValue, hasOrderValues, fmtFull, t1 } = E;
+  const E = engine(data), { X, GROUPS, sales, F, aggregate, arKPI, legacy, orderValue, hasOrderValues, fmtFull, t1 } = E;
   const out = [];
   out.push(`Source: dash.json snapshot ${X.snapshotLabel}; last invoice ${X.ledgerLabel}; amounts EUR excl. VAT. ${X.mLabel[X.nM - 1]} is incomplete (to day ${X.partial.day}). Jan 2025 – Mar 2026 are monthly totals only (no weeks/days/invoices).`);
   out.push('MONTHLY REVENUE|' + legacy({ reps: [], grps: [], mkts: [] }).monthly.map(r => `${r.m} ${Math.round(r.rev)}`).join('|'));
@@ -173,8 +177,6 @@ export function buildDataContext(_queryText, data) {
   tbl('MARKETS YTD', i => X.facts.M[i], k => X.mkts[k], 12);
   const a = arKPI({ reps: [], mkts: [] });
   out.push(`RECEIVABLES on ${X.ledgerLabel}: open invoices ${Math.round(a.open)} (${a.nOpen}), overdue ${Math.round(a.over)}, >30 days late ${Math.round(a.over30)}, open credits ${Math.round(-a.credit)}, owed after credits ${Math.round(a.net)}`);
-  const R = reorder({ reps: [], mkts: [] }, false).rows;
-  out.push(`REORDER RADAR: ${R.length} late customer-product pairs, ${Math.round(R.reduce((s, r) => s + r.mrev, 0))} EUR/month at risk|` + R.slice(0, 10).map(r => `${X.customers[r.c][0]} – ${X.products[r.p][0]} ${r.since}d since (usual ${Math.round(r.gap)}d)`).join('|'));
   if (hasOrderValues) { const v = orderValue(X.orders.filter(o => o[5])); out.push(`OPEN ORDERS: ${Math.round(v.tot)} (delivered not invoiced ${Math.round(v.del)}, still to deliver ${Math.round(v.left)})`); }
   const B = X.pnl.filter(r => r[0] >= X.meta.booksOpening.slice(0, 7)), cat = new Map(); for (const r of B) cat.set(r[2], (cat.get(r[2]) || 0) + r[4] / 100);
   out.push(`BOOKS since ${X.meta.booksOpening} by category|` + [...cat].map(([k, v]) => `${k} ${Math.round(v)}`).join('|'));

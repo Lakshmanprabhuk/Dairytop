@@ -2546,7 +2546,8 @@ const PANEL_CSS = `
 /* Filled navy header band on every chart / table panel */
 .chart-panel{--cp-py:12px;--cp-px:14px;}
 @media(max-width:1200px){.chart-panel{--cp-py:10px;--cp-px:12px;}}
-.chart-panel>.cp-head{margin:calc(-1 * var(--cp-py)) calc(-1 * var(--cp-px)) 10px;padding:11px var(--cp-px) 11px;
+.chart-panel{padding-top:0 !important;}
+.chart-panel>.cp-head{margin:-1px calc(-1 * var(--cp-px) - 1px) 10px;padding:12px calc(var(--cp-px) + 1px) 11px;
   background:linear-gradient(180deg,#0E2A4D,#0A2140);border-bottom:none;color:#fff;}
 .chart-panel>.cp-head .cp-title{color:#fff;}
 .chart-panel>.cp-head .cp-sub,.chart-panel>.cp-head .cp-title-desc{color:#C4D5E6;}

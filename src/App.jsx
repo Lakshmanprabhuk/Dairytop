@@ -2542,6 +2542,45 @@ const MOBILE_CSS = `
 /* Styles for the v2 additions (filter bar, zoom, proof drawer, tie-out strip). */
 
 /* ── header controls: search, EN/NL, Export, Last Update (scoped to the dashboard top bar) ── */
+const PANEL_CSS = `
+/* Filled navy header band on every chart / table panel */
+.chart-panel{--cp-py:12px;--cp-px:14px;}
+@media(max-width:1200px){.chart-panel{--cp-py:10px;--cp-px:12px;}}
+.chart-panel>.cp-head{margin:calc(-1 * var(--cp-py)) calc(-1 * var(--cp-px)) 10px;padding:11px var(--cp-px) 11px;
+  background:linear-gradient(180deg,#0E2A4D,#0A2140);border-bottom:none;color:#fff;}
+.chart-panel>.cp-head .cp-title{color:#fff;}
+.chart-panel>.cp-head .cp-sub,.chart-panel>.cp-head .cp-title-desc{color:#C4D5E6;}
+.chart-panel>.cp-head .cp-tag{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.3);}
+.chart-panel>.cp-head .view-tog,.cfs-hdr .view-tog{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.35);border-radius:8px;}
+.chart-panel>.cp-head .vt-btn,.cfs-hdr .vt-btn{color:#E6EEF6;}
+.chart-panel>.cp-head .vt-btn:hover,.cfs-hdr .vt-btn:hover{background:rgba(255,255,255,.12);color:#fff;}
+.chart-panel>.cp-head .vt-btn.active,.cfs-hdr .vt-btn.active{background:#fff;color:#0A73C2;box-shadow:0 1px 3px rgba(0,0,0,.25);}
+.chart-panel>.cp-head .cp-expand-btn,.cfs-hdr .cp-expand-btn{border-color:rgba(255,255,255,.4);color:#fff;}
+.chart-panel>.cp-head .cp-expand-btn:hover,.cfs-hdr .cp-expand-btn:hover{background:rgba(255,255,255,.14);color:#fff;}
+.chart-panel>.cp-head .cp-zoom-val,.cfs-hdr .cp-zoom-val{color:#fff;border-color:rgba(255,255,255,.5);background:rgba(255,255,255,.1);}
+.cfs-hdr{background:linear-gradient(180deg,#0E2A4D,#0A2140);border-bottom:none;}
+.cfs-hdr .cfs-title{color:#fff;}.cfs-hdr .cfs-sub{color:#C4D5E6;}.cfs-hdr .cfs-close{color:#fff;}
+@media print{.chart-panel>.cp-head,.cfs-hdr{background:none !important;color:#000 !important;}.chart-panel>.cp-head .cp-title{color:#000 !important;}.chart-panel>.cp-head .cp-sub{color:#444 !important;}}
+
+/* Tables opened from cards, bars and lists: filled header, larger text */
+.pf-drawer .itbl{font-size:14px;}
+.pf-drawer .itbl th{background:#0E2A4D;color:#fff;font-size:12.5px;padding:10px 12px;border-bottom:none;box-shadow:none;}
+.pf-drawer .itbl th:hover{color:#9FDDFB;}
+.pf-drawer .itbl th *{color:inherit;}
+.pf-drawer .itbl td{padding:9px 12px;}
+
+/* Filter bar labels: bold and black */
+.filter-label{font-weight:800 !important;color:#000 !important;}
+
+/* Sidebar stays above the filter bar (z 100) while it slides closed after a hover peek */
+@media(min-width:901px){.sidebar,.sidebar.collapsed,.sidebar.collapsed.peek{z-index:160;}}
+
+/* Login language switch: same look as the header switch, smaller */
+.login-lang .lang-sw{border:1.5px solid #079FDA;background:#E8F7FD;border-radius:18px;padding:2px;gap:2px;box-shadow:0 2px 6px rgba(0,127,197,.12);overflow:visible;}
+.login-lang .lang-sw button{min-width:30px;height:22px;padding:0 7px;border-radius:14px;font:700 10px Inter,system-ui,sans-serif;color:#17354B;letter-spacing:.04em;transition:background .15s,color .15s;}
+.login-lang .lang-sw button.on{background:linear-gradient(180deg,#00B0E9,#007BC5);color:#fff;box-shadow:0 1px 4px rgba(0,123,197,.30);}
+.login-lang .lang-sw button:not(.on):hover{background:#CFEFFF;color:#17354B;}
+`;
 const HEADER_CSS = `
 .topbar .tb-search-icon{display:flex;align-items:center;opacity:1;color:#007FC5;font-size:0;}
 .topbar .tb-print-btn{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 14px;border:2px solid #86D8FA;border-radius:24px;background:#F0FAFF;color:#007FC5;
@@ -4084,7 +4123,7 @@ function Receivables({ f }) {
         </Panel>
       </div>
       <div className="charts-row">
-        <Panel title="Still Unpaid, by Invoice Month" subtitle={`Share of each month's billed value still open on ${RD} · ${cmpNote}`} height={320} className="fin-fixed" style={{ flex: 1.3 }}
+        <Panel title="Still Unpaid, by Invoice Month" subtitle={`Share of each month's billed value still open on ${RD} · ${cmpNote}`} height={320} className="fin-fixed" style={{ flex: 1 }}
           tableHeaders={['Invoice month', 'Billed', 'Still open', 'Share', ...(cmpOK ? ['Comparison month', 'Comparison share'] : [])]}
           tableRows={pairs.map(([ym, c]) => { const x = S.byMonth.get(ym); return [mLong(ym), fmtFull(x.billed), fmtFull(x.open), fmtShare(shareOf(S, ym)), ...(cmpOK ? [c ? mLong(c) : '—', c && SC.byMonth.get(c) ? fmtShare(shareOf(SC, c)) : '—'] : [])]; })}>
           {pairs.length ? <EC option={payOpt} onEvents={{ click: p => { const m = pairs[p.dataIndex]?.[p.seriesName?.includes('comparison') ? 1 : 0]; if (m) list('Still open · invoices of ' + mLong(m), 'Invoices of one month still open.', (p.seriesName?.includes('comparison') ? AC : AP).R.filter(a => a[2].startsWith(m) && a[6] > 0)); } }} /> : <div className="watch-empty">No invoices in this period — receivables start with invoices of {S0}.</div>}
@@ -4712,7 +4751,7 @@ export default function App() {
   }, [authed]);
   const handleLogin = u => { setShowWelcome(true); setAuthed(true); localStorage.setItem(AUTH_KEY, 'true'); localStorage.setItem(AUTH_ACTIVITY_KEY, String(Date.now())); setUserName(u || ''); try { localStorage.setItem(AUTH_USER_KEY, u || ''); } catch { /* ignore */ } };
   const handleLogout = () => { setAuthed(false); localStorage.removeItem(AUTH_KEY); localStorage.removeItem(AUTH_ACTIVITY_KEY); localStorage.removeItem(AUTH_USER_KEY); setUserName(''); };
-  const style = <style>{css + TYPO_CSS + EXTRA_CSS + MOBILE_CSS + HEADER_CSS}</style>;
+  const style = <style>{css + TYPO_CSS + EXTRA_CSS + MOBILE_CSS + HEADER_CSS + PANEL_CSS}</style>;
   if (!authed) return <LangProvider>{style}<Login onLogin={handleLogin} /></LangProvider>;
   if (showWelcome) return <LangProvider>{style}<DashboardWelcome userName={userName} onComplete={finishWelcome} /></LangProvider>;
   return (

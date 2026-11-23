@@ -782,6 +782,9 @@ function LangProvider({ children }) {
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
   return <LangCtx.Provider value={{ lang, setLang }}>{children}</LangCtx.Provider>;
 }
+// header icons (Lucide "Search" and "Download" outlines, inlined)
+const IcoSearch = ({ size = 20 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>;
+const IcoDownload = ({ size = 17 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5" /><path d="M12 15V3" /></svg>;
 function LangSwitch({ dark }) {
   const { lang, setLang } = useLang();
   return (
@@ -2537,6 +2540,52 @@ const MOBILE_CSS = `
    extra.css.js
    ══════════════════════════════════════════════════════════════════════ */
 /* Styles for the v2 additions (filter bar, zoom, proof drawer, tie-out strip). */
+
+/* ── header controls: search, EN/NL, Export, Last Update (scoped to the dashboard top bar) ── */
+const HEADER_CSS = `
+.topbar .tb-search-icon{display:flex;align-items:center;opacity:1;color:#007FC5;font-size:0;}
+.topbar .tb-print-btn{display:inline-flex;align-items:center;gap:7px;height:44px;padding:0 17px;border:2px solid #86D8FA;border-radius:24px;background:#F0FAFF;color:#007FC5;
+  font:700 13px Inter,system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,127,197,.10);transition:background .18s,border-color .18s,transform .18s;}
+.topbar .tb-print-btn:hover{background:#DDF4FF;border-color:#008ED0;transform:translateY(-1px);}
+.topbar .tb-print-btn:focus-visible{outline:none;box-shadow:0 0 0 4px rgba(0,155,220,.22);}
+.topbar .lang-sw{border:2px solid #079FDA;background:#E8F7FD;border-radius:24px;padding:3px;gap:2px;box-shadow:0 2px 8px rgba(0,127,197,.12);overflow:visible;}
+.topbar .lang-sw button{min-width:43px;height:32px;padding:0 10px;border-radius:20px;font:700 12px Inter,system-ui,sans-serif;color:#17354B;letter-spacing:.04em;
+  transition:background .18s,color .18s;}
+.topbar .lang-sw button.on{background:linear-gradient(180deg,#00B0E9,#007BC5);color:#fff;box-shadow:0 2px 6px rgba(0,123,197,.30);}
+.topbar .lang-sw button:not(.on):hover{background:#CFEFFF;color:#17354B;}
+.topbar .lang-sw button:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(0,155,220,.35);}
+.topbar .live-badge{padding:9px 14px;font-size:11.5px;gap:7px;}
+@media (min-width:901px){
+  .topbar{padding-top:10px;padding-bottom:10px;}
+  .topbar .tb-search{flex:0 1 365px;min-width:180px;margin-left:auto;}
+  .topbar .tb-right{gap:11px;margin-left:11px;}
+  .topbar .tb-search input,.topbar .tb-search input:focus{width:100%;height:46px;padding:0 18px 0 47px;border:2px solid #007FC5;border-radius:24px;
+    background:linear-gradient(180deg,#F5FCFF,#E8F7FD);color:#17354B;font:500 14px Inter,system-ui,sans-serif;box-sizing:border-box;
+    transition:background .18s,border-color .18s,box-shadow .18s;}
+  .topbar .tb-search input::placeholder{color:#435F70;font-weight:500;opacity:1;}
+  .topbar .tb-search input:hover{background:#fff;border-color:#005D99;}
+  .topbar .tb-search input:focus{background:#fff;border-color:#008BDA;box-shadow:0 0 0 4px rgba(0,155,220,.13),0 4px 12px rgba(0,93,153,.10);}
+  .topbar .tb-search-icon{left:16px;}
+}
+@media (min-width:1251px) and (max-width:1500px){.topbar .tb-search{flex-basis:320px;}}
+@media (min-width:901px) and (max-width:1250px){
+  .topbar .tb-search{flex-basis:230px;}
+  .topbar .tb-search input,.topbar .tb-search input:focus{font-size:13px;padding-left:42px;}
+  .topbar .tb-search-icon{left:14px;}
+  .topbar .tb-print-btn{padding:0 13px;}
+}
+@media (max-width:900px){
+  .topbar .tb-search-btn{width:40px !important;height:40px !important;border:2px solid #079FDA !important;background:#E8F7FD !important;color:#007FC5 !important;}
+  .topbar.m-search .tb-search input{height:44px;border:2px solid #007FC5 !important;background:#E8F7FD !important;border-radius:22px !important;padding-left:42px !important;font-size:16px !important;color:#17354B;}
+  .topbar .tb-search-icon{left:14px;}
+  .topbar .tb-print-btn{width:40px !important;height:40px !important;padding:0 !important;border:2px solid #86D8FA !important;font-size:0 !important;}
+  .topbar .tb-print-btn::before{content:none !important;}
+  .topbar .tb-print-lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}
+  .topbar .lang-sw button{min-width:34px;height:30px;padding:0 7px;font-size:11px;}
+  .topbar .live-badge{padding:6px 9px !important;}
+}
+@media (prefers-reduced-motion:reduce){.topbar .tb-print-btn,.topbar .lang-sw button,.topbar .tb-search input{transition:none;}.topbar .tb-print-btn:hover{transform:none;}}
+`;
 const EXTRA_CSS = `
 .zoom-root{transform-origin:0 0;width:100%;height:100%;}
 /* sidebar: closed by default, opens while hovered (overlays the page, no reflow) */
@@ -4609,15 +4658,15 @@ function Shell({ userName, handleLogout }) {
                 </div>
                 <div className="tb-right">
                   {isOv && <PageZoom z={z} setZ={setZ} />}
-                  {isMob && !isOv && <button type="button" className="tb-search-btn" aria-label="Search" aria-expanded={mSearch} onClick={() => { setMSearch(v => !v); setTimeout(() => sRef.current?.querySelector('input')?.focus(), 30); }}>{mSearch ? '✕' : '🔍'}</button>}
+                  {isMob && !isOv && <button type="button" className="tb-search-btn" aria-label="Search" aria-expanded={mSearch} onClick={() => { setMSearch(v => !v); setTimeout(() => sRef.current?.querySelector('input')?.focus(), 30); }}>{mSearch ? '✕' : <IcoSearch size={18} />}</button>}
                   <LangSwitch />
-                  <button className="tb-print-btn" onClick={() => window.print()} title="Export this page as a PDF via your browser's print dialog">⬇ Export</button>
+                  <button className="tb-print-btn" onClick={() => window.print()} title="Export this page as a PDF via your browser's print dialog" aria-label="Export this page"><IcoDownload /><span className="tb-print-lbl">Export</span></button>
                   <div className="live-badge" title={`Data snapshot ${X.snapshotLabel} · last invoice ${X.ledgerLabel}`}><span className="blink-dot" /><span className="tb-time-in">{time.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span><span className="tb-snap">Last Update · {X.snapshotLabel}</span></div>
                 </div>
               </div>
               {!isOv && (
                 <div className="tb-search" ref={sRef}>
-                  <span className="tb-search-icon">🔍</span>
+                  <span className="tb-search-icon"><IcoSearch /></span>
                   <input type="text" placeholder="Find a customer, product, verkoper…" value={q} onChange={e => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
                     onKeyDown={e => { if (e.key === 'Enter' && groups[0]?.items[0]) goResult(groups[0].items[0]); if (e.key === 'Escape') setOpen(false); }} aria-label="Global search" />
                   {open && q.trim() && pos && createPortal(
@@ -4663,7 +4712,7 @@ export default function App() {
   }, [authed]);
   const handleLogin = u => { setShowWelcome(true); setAuthed(true); localStorage.setItem(AUTH_KEY, 'true'); localStorage.setItem(AUTH_ACTIVITY_KEY, String(Date.now())); setUserName(u || ''); try { localStorage.setItem(AUTH_USER_KEY, u || ''); } catch { /* ignore */ } };
   const handleLogout = () => { setAuthed(false); localStorage.removeItem(AUTH_KEY); localStorage.removeItem(AUTH_ACTIVITY_KEY); localStorage.removeItem(AUTH_USER_KEY); setUserName(''); };
-  const style = <style>{css + TYPO_CSS + EXTRA_CSS + MOBILE_CSS}</style>;
+  const style = <style>{css + TYPO_CSS + EXTRA_CSS + MOBILE_CSS + HEADER_CSS}</style>;
   if (!authed) return <LangProvider>{style}<Login onLogin={handleLogin} /></LangProvider>;
   if (showWelcome) return <LangProvider>{style}<DashboardWelcome userName={userName} onComplete={finishWelcome} /></LangProvider>;
   return (

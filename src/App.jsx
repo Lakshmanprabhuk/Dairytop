@@ -2569,6 +2569,11 @@ const PANEL_CSS = `
 .pf-drawer .itbl th *{color:inherit;}
 .pf-drawer .itbl td{padding:9px 12px;}
 
+/* Tables shown by the Chart/Table toggle: same filled header */
+.chart-panel .itbl th,.cfs-body .itbl th{background:#0E2A4D;color:#fff;border-bottom:none;box-shadow:none;}
+.chart-panel .itbl th:hover,.cfs-body .itbl th:hover{color:#9FDDFB;}
+.chart-panel .itbl th *,.cfs-body .itbl th *{color:inherit;}
+
 /* Filter bar labels: bold and black */
 .filter-label{font-weight:800 !important;color:#000 !important;}
 

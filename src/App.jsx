@@ -2175,7 +2175,7 @@ function Login({ onLogin }) {
                   (u === 'Jan.spiker' && p === 'Janspiker@123') ||
                   (u === 'Johan.dairytop' && p === 'Johan@123') ||
                   (u === 'Leon.dairytop' && p === 'LeonJonge@123') ||
-                  (u === 'Greetje.dairytop' && p === 'Dairytop@123');
+                  (u === 'Greetje.dairytop' && p === 'Dairytop@2026');
     if (valid) {
       sessionStorage.removeItem('login_attempts');
       sessionStorage.removeItem('login_locked');

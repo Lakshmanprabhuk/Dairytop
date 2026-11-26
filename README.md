@@ -20,19 +20,18 @@ Sign in with the same accounts as before.
 |---|---|
 | `src/App.jsx` | The whole dashboard: data model on dash.json, filters, all 14 pages, charts, login, sidebar, styles |
 | `src/dash.json` | The data. Replace this file with a newer extract to update every page |
-| `src/ChatBot.jsx` | Chat window (UI) |
-| `src/utils/chatContext.js` | Chat answers from dash.json; builds the data context sent to Gemini |
-| `src/utils/chatSuggestions.js` | Suggested questions, follow-ups, Dutch labels |
-| `src/utils/chatData.js`, `chatRequest.js` | Chat helpers (data hand-over, AI timeout) |
-| `api/chat.js` | Vercel serverless proxy to Gemini (keeps the API key off the browser) |
+| `src/ChatBot.jsx` | Chat window (UI): 9 topic tiles, question lists, answers, follow-ups |
+| `src/utils/chatQA.js` | Question bank and answer engine (English + Dutch), calculated from dash.json in the browser |
 | `src/assets/` | Logo, chatbot images, sidebar icons |
 | `tests/chat.test.mjs`, `scripts/run-tests.mjs` | Tests, run through Vite so they use the real app code |
 
 ## Chatbot
 
-- Suggested questions, customer / verkoper / product / market / group names, and "revenue in March 2026"-style questions are answered **in the browser** straight from dash.json.
-- Anything else goes to Gemini through `api/chat.js` with a compact dash.json summary. Set `VITE_CHAT_PROXY_URL` (see `.env.example`) for the front end, and `GEMINI_API_KEY` on Vercel for the proxy.
-- The chatbot always answers on the full data unless the question names a period or a name.
+- No typing and no AI: users pick one of 9 topic tiles, then one of 30+ questions; every answer has 5 follow-up questions.
+- Every answer is calculated **in the browser** from dash.json. Nothing is sent to any server or AI service.
+- The questions adapt to the data: periods (this month, last month, this year, last year), and the largest verkopers, customers, products, product groups and markets are picked from the current data, so new names appear automatically.
+- English and Dutch: questions and answers follow the EN/NL switch.
+- To add or change a question, edit `src/utils/chatQA.js` (each question has an English and a Dutch text and one answer function).
 
 ## Data notes
 

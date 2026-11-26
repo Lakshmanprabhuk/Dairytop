@@ -207,6 +207,11 @@ def build(archive, portals):
     # Microfas open-item status on the debtors account: 0 = open, 10 = matched (settled).
     open_items=defaultdict(int); open_last={}; pre_start_invoices=set()
     cutoff=max(r["datum"] for r in tables["fin_boeking"] if r["datum"] not in EMPTY)
+    # Postings can be dated ahead (e.g. a correction dated month-end). The data can only run
+    # through the day before the export was taken, so later dates must not move the cut-off.
+    extract_day=re.search(r"\d{4}-\d\d-\d\d",Path(archive).name)
+    if extract_day:
+        cutoff=min(cutoff,str(date.fromisoformat(extract_day.group())-timedelta(days=1)))
     for r in tables["fin_boeking"]:
         dt,customer,inv=r["datum"],r["id_rel"],r["factuur_nr"]
         journal=journals[r["id_fin_dagboek"]]["naam"]

@@ -1,15 +1,13 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { resolve as resolveLocal, buildSystemPrompt, buildFallbackAnswer, compactHistory } from "./utils/chatContext.js";
-import { QUESTION_NL, CONTEXT_SUGGESTIONS, followupsFor, topicFromText } from "./utils/chatSuggestions.js";
-import { getChatData } from "./utils/chatData.js";
-import { requestWithDeadline } from "./utils/chatRequest.js";
+import { TILES, questionBank, questionText, answer as localAnswer } from "./utils/chatQA.js";
 import heroChatbotImg from "./assets/hero-chatbot.png";
 import dairytopLogoImg from "./assets/dairytop-logo.png";
 import dairytopFabImg from "./assets/dairytop-fab.png";
 import dairytopCloseImg from "./assets/dairytop-close.png";
 
-const CHAT_PROXY_URL = import.meta.env.VITE_CHAT_PROXY_URL;
+/* Every answer is calculated in the browser from the dashboard data (utils/chatQA.js).
+   There is no free-text input and no AI or network call. */
 
 // ── Localised strings ────────────────────────────────────────────────────────
 const STRINGS = {
@@ -17,7 +15,11 @@ const STRINGS = {
     title: 'DairyTop Assistant',
     subtitle: 'BI · Sales & Finance',
     emptyTitle: 'What would you like to explore?',
-    emptySubtitle: "Ask about your DairyTop sales and finance data.",
+    emptySubtitle: 'Pick a topic, then a question.',
+    topics: 'Topics',
+    moreAbout: 'More questions',
+    chooseQ: t => `How can I help you with ${t}?`,
+    pickTopic: 'Pick a topic',
     placeholder: 'Ask a question…',
     notConfigured: 'Chatbot is not configured (missing proxy URL at build time).',
     genericError: 'Something went wrong reaching the assistant.',
@@ -29,9 +31,9 @@ const STRINGS = {
     you: 'You',
     assistant: 'DairyTop Assistant',
     copied: 'Copied!',
-    trust: 'Uses dashboard data only',
+    trust: 'Calculated in your browser from dashboard data · nothing is sent anywhere',
     timeGreetings: { night: 'Good night', morning: 'Good morning', afternoon: 'Good afternoon', evening: 'Good evening' },
-    greetingBody: "I'm your dashboard assistant 🐮 Ask me anything about your sales & finance data.",
+    greetingBody: "I'm your dashboard assistant 🐮 Pick a topic and I'll answer from your sales & finance data.",
     contexts: { overview: 'Overview', sales: 'Sales', finance: 'Finance', orders: 'Orders', reps: 'Reps' },
     contextItems: [
       { key: 'overview', label: 'Overview Dashboard' },
@@ -45,7 +47,11 @@ const STRINGS = {
     title: 'DairyTop Assistent',
     subtitle: 'BI · Verkoop & Financiën',
     emptyTitle: 'Wat wil je ontdekken?',
-    emptySubtitle: 'Stel vragen over je DairyTop verkoop- en financiële gegevens.',
+    emptySubtitle: 'Kies een onderwerp en daarna een vraag.',
+    topics: 'Onderwerpen',
+    moreAbout: 'Meer vragen',
+    chooseQ: t => `Waarmee kan ik je helpen bij ${t}?`,
+    pickTopic: 'Kies een onderwerp',
     placeholder: 'Stel een vraag…',
     notConfigured: 'De chatbot is niet geconfigureerd (proxy-URL ontbreekt bij het bouwen).',
     genericError: 'Er ging iets mis bij het bereiken van de assistent.',
@@ -57,9 +63,9 @@ const STRINGS = {
     you: 'Jij',
     assistant: 'DairyTop Assistent',
     copied: 'Gekopieerd!',
-    trust: 'Gebruikt alleen dashboardgegevens',
+    trust: 'Berekend in je browser uit dashboardgegevens · er wordt niets verstuurd',
     timeGreetings: { night: 'Goedenacht', morning: 'Goedemorgen', afternoon: 'Goedemiddag', evening: 'Goedenavond' },
-    greetingBody: 'Ik ben je dashboard-assistent 🐮 Vraag me gerust iets over je verkoop- en financiële gegevens.',
+    greetingBody: 'Ik ben je dashboard-assistent 🐮 Kies een onderwerp en ik antwoord met je verkoop- en financiële gegevens.',
     contexts: { overview: 'Overzicht', sales: 'Verkoop', finance: 'Financiën', orders: 'Orders', reps: 'Vertegenwoordigers' },
     contextItems: [
       { key: 'overview', label: 'Overzicht Dashboard' },
@@ -96,29 +102,12 @@ function renderFormatted(text) {
   });
 }
 
-async function callChatProxy(systemPrompt, history, userMessage, signal) {
-  const response = await fetch(CHAT_PROXY_URL, {
-    method: 'POST',
-    signal,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemPrompt,
-      history: history.map(h => ({ role: h.role, text: h.text })),
-      message: userMessage,
-    }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error || `API error ${response.status}`);
-  if (typeof data?.text !== 'string' || !data.text.trim()) throw new Error('No response from the AI service.');
-  return { text: data.text, model: data.model || 'unknown', tried: data.tried || [data.model].filter(Boolean) };
-}
 
 // ── Layout constants ─────────────────────────────────────────────────────────
 const BTN_SIZE = 68;
 const EDGE_PAD = 10;
 const PANEL_GAP = 10;
 const BUBBLE_GAP = 10;
-const CHAR_LIMIT = 4000;
 const POS_STORAGE_KEY = 'dairytop-chatbot-pos';
 
 function isMobile() {
@@ -172,6 +161,14 @@ const ICON_PATHS = {
   plus:    "M12 5v14M5 12h14",
   close:   "m5 5 14 14M19 5 5 19",
   stop:    "",  // rect below
+  users:   "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM1 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2M16 3.1a4 4 0 0 1 0 7.8M23 21v-2a6 6 0 0 0-4-5.6",
+  user:    "M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10ZM3 22a9 9 0 0 1 18 0",
+  layers:  "m12 2 10 5-10 5L2 7Zm-10 10 10 5 10-5M2 17l10 5 10-5",
+  globe:   "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20",
+  wallet:  "M3 6h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Zm0 0 2-3h12M16 13h2",
+  chart:   "M3 3v18h18M7 15l4-4 3 3 5-6",
+  truck:   "M1 4h14v12H1zM15 9h4l3 3v4h-7M5.5 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM18.5 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z",
+  list:    "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
 };
 
 function Svg({ name, size = 15, strokeWidth = 1.7, fill = 'none', style }) {
@@ -500,6 +497,37 @@ const chatCss = `
 .cb-fu-chip:hover { border-color: #40BCF3; background: #fff; transform: translateY(-1px); }
 .cb-fu-chip svg { color: #35A9DE; }
 
+/* Topic tiles + question list (no typing) */
+.cb-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; width: 100%; position: relative; z-index: 1; margin-top: 4px; }
+.cb-msg-wrap .cb-tiles { margin-top: 7px; }
+.cb-tile {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-height: 76px;
+  padding: 9px 9px 8px; border-radius: 12px; text-align: left; cursor: pointer; font-family: inherit;
+  background: rgba(255,255,255,.82); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(100,185,235,.4); color: #0D3D5C;
+  box-shadow: 0 2px 10px rgba(0,100,180,.09), inset 0 1px 0 rgba(255,255,255,.95);
+  transition: background .18s, border-color .18s, transform .12s, box-shadow .18s;
+}
+.cb-tile:hover, .cb-tile.active { background: #fff; border-color: #40BCF3; box-shadow: 0 3px 14px rgba(0,100,180,.14), 0 0 0 1.5px rgba(64,188,243,.4); transform: translateY(-1px); }
+.cb-tile-ico { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; background: #E8F5FD; color: #35A9DE; }
+.cb-tile-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cb-tile-txt strong { font-size: 11.5px; font-weight: 700; line-height: 1.25; color: #0D1C29; }
+.cb-tile-txt small { font-size: 10px; line-height: 1.3; color: #5B7482; }
+.cb-menu-title { font-weight: 600; }
+.cb-qlist { display: flex; flex-direction: column; gap: 5px; margin-top: 7px; max-width: 100%; }
+.cb-q {
+  display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 7px 10px; border-radius: 10px;
+  border: 1px solid #C8D8DE; background: #fff; color: #1A2F38; font-size: 12px; line-height: 1.4;
+  font-family: inherit; text-align: left; cursor: pointer; transition: border-color .15s, background .15s, transform .1s;
+}
+.cb-q:hover { border-color: #40BCF3; background: #E8F5FD; transform: translateX(2px); }
+.cb-q-n { flex-shrink: 0; min-width: 20px; height: 18px; border-radius: 9px; background: #E8F5FD; color: #0A73C2; font-size: 10.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.cb-fu-chip { height: auto; min-height: 27px; padding: 5px 10px; text-align: left; line-height: 1.3; }
+.cb-topicbar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.cb-topicbar .cb-ctx-pill { padding: 7px 12px; font-size: 12px; }
+.cb-pill-main { color: #0A73C2; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 420px) { .cb-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* Composer area */
 .cb-composer-wrap { flex-shrink: 0; padding: 10px 11px 11px; background: #F3F7FA; }
 .cb-composer {
@@ -684,20 +712,16 @@ const chatCss = `
 
 // ── Component ────────────────────────────────────────────────────────────────
 // liveData: the dash.json data model passed in by App.jsx (DASH).
-export default function ChatBot({ context, suggestedQuestions, userName, liveData, uiLang } = {}) {
+export default function ChatBot({ userName, liveData, uiLang } = {}) {
   const [open,         setOpen]         = useState(false);
   const [lang,         setLang]         = useState(uiLang === 'nl' ? 'nl' : 'en');
   /* follow the dashboard language switch; the chat's own EN/NL toggle still works */
   const [prevUi, setPrevUi] = useState(uiLang);
   if (uiLang !== prevUi) { setPrevUi(uiLang); if (uiLang === 'en' || uiLang === 'nl') setLang(uiLang); }
-  const [messages,     setMessages]     = useState([]);
-  const [input,        setInput]        = useState('');
-  const [loading,      setLoading]      = useState(false);
+  const [messages,     setMessages]     = useState([]);   // { role: 'user'|'bot'|'menu'|'tiles', qid?, tile? }
+  const [tile,         setTile]         = useState(null);
   const [showGreeting, setShowGreeting] = useState(false);
   const [showMoo,      setShowMoo]      = useState(false);
-  const [currentCtx,   setCurrentCtx]   = useState('overview');
-  const [ctxMenuOpen,  setCtxMenuOpen]  = useState(false);
-  const [ctxMenuPos,   setCtxMenuPos]   = useState({ left: 0, bottom: 0 });
   const [pos, setPos] = useState(() => {
     try {
       const saved = localStorage.getItem(POS_STORAGE_KEY);
@@ -714,24 +738,14 @@ export default function ChatBot({ context, suggestedQuestions, userName, liveDat
   const [, forceRecalc] = useState(0);
 
   const bodyRef    = useRef(null);
-  const requestRef = useRef(null);
-  const ctxPillRef = useRef(null);
-  const ctxMenuRef = useRef(null);
   const dragRef    = useRef({ dragging: false, moved: false, startX: 0, startY: 0, origX: 0, origY: 0 });
-  const lastSubjectRef = useRef([]);   // what the previous question was about → lets "top 5" / "compare to last month" follow on
-  const data = useMemo(() => getChatData(liveData), [liveData]);
-
-  useEffect(() => () => requestRef.current?.abort(), []);
+  const bank = useMemo(() => (open ? questionBank(liveData) : null), [open, liveData, liveData?.X]);
 
   const t = STRINGS[lang] || STRINGS.en;
   const timeGreeting    = getTimeGreeting(lang);
   const personalGreeting = userName ? `${timeGreeting}, ${userName}` : timeGreeting;
 
-  const charRemaining    = CHAR_LIMIT - input.length;
-  const charCounterClass = 'cb-char-counter' + (charRemaining < 100 ? ' danger' : charRemaining < 300 ? ' warn' : '');
-  const showCharCounter  = charRemaining <= 3800;
-
-  const ctxLabel = t.contexts[currentCtx] || t.contexts.overview;
+  const tileName = id => { const x = TILES.find(k => k.id === id); return x ? (x[lang] || x.en) : ''; };
 
   // ── Effects ──────────────────────────────────────────────────────────────
   // Clock tick (not needed for messages but kept for compatibility)
@@ -767,24 +781,18 @@ export default function ChatBot({ context, suggestedQuestions, userName, liveDat
   useEffect(() => { try { localStorage.setItem(POS_STORAGE_KEY, JSON.stringify(pos)); } catch { /* ignore */ } }, [pos]);
 
   // Auto-scroll
-  useEffect(() => { if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight; }, [messages, loading, open]);
+  useEffect(() => {
+    const el = bodyRef.current; if (!el) return;
+    const last = el.querySelector('.cb-msgs > :last-child');
+    if (last && messages.length && (messages.at(-1).role === 'menu' || messages.at(-1).role === 'tiles' || messages.at(-1).role === 'bot')) last.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    else el.scrollTop = el.scrollHeight;
+  }, [messages, open]);
 
   // Lock body scroll on mobile when panel open
   useEffect(() => {
     if (isMobile()) document.documentElement.classList.toggle('no-scroll', open);
     return () => { if (isMobile()) document.documentElement.classList.remove('no-scroll'); };
   }, [open]);
-
-  // Close context menu on outside click
-  useEffect(() => {
-    const handler = (e) => {
-      const inPill = ctxPillRef.current && ctxPillRef.current.contains(e.target);
-      const inMenu = ctxMenuRef.current && ctxMenuRef.current.contains(e.target);
-      if (!inPill && !inMenu) setCtxMenuOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
   // ── Drag ─────────────────────────────────────────────────────────────────
   const handlePointerDown = (e) => {
@@ -805,99 +813,34 @@ export default function ChatBot({ context, suggestedQuestions, userName, liveDat
   const handleToggleClick  = () => { if (dragRef.current.moved) { dragRef.current.moved = false; return; } setOpen(v => !v); setShowGreeting(false); };
 
   // ── Actions ───────────────────────────────────────────────────────────────
-  const stopRequest = useCallback(() => {
-    if (requestRef.current) {
-      requestRef.current.abort();
-      requestRef.current = null;
-      setLoading(false);
-    }
-  }, []);
-
-  const resetChat = useCallback(() => {
-    stopRequest();
-    setMessages([]);
-    setInput('');
-    lastSubjectRef.current = [];
-  }, [stopRequest]);
+  const resetChat = useCallback(() => { setMessages([]); setTile(null); }, []);
 
   const setFeedback = useCallback((idx, type) => {
     setMessages(prev => prev.map((m, i) => i === idx ? { ...m, feedback: m.feedback === type ? null : type } : m));
   }, []);
 
   const copyMessage = useCallback((idx, text) => {
-    navigator.clipboard.writeText(text).catch(() => {
-      // Fallback: select the text so user can manually copy
-    });
+    navigator.clipboard.writeText(text).catch(() => { /* ignore */ });
     setMessages(prev => prev.map((m, i) => i === idx ? { ...m, showCopyToast: true } : m));
     setTimeout(() => {
       setMessages(prev => prev.map((m, i) => i === idx ? { ...m, showCopyToast: false } : m));
     }, 1800);
   }, []);
 
-  // ── Send ─────────────────────────────────────────────────────────────────
-  // 1. Local engine first: instant, no network, no tokens.
-  // 2. AI only for "why / predict / recommend" questions or wording the engine
-  //    does not understand — and then only with the slice of data that question needs.
-  const send = useCallback(async (text) => {
-    const trimmed = (text ?? input).trim();
-    if (!trimmed || loading || requestRef.current) return;
+  // A tile shows its question list; a question adds the question and its answer.
+  const openTile  = useCallback(id => { setTile(id); setMessages(prev => [...prev, { role: 'menu', tile: id, time: nowTime() }]); }, []);
+  const showTiles = useCallback(() => setMessages(prev => (prev.length ? [...prev, { role: 'tiles', time: nowTime() }] : prev)), []);
+  const ask = useCallback(qid => {
+    const tl = qid.split('.')[0]; setTile(tl);
+    setMessages(prev => [...prev, { role: 'user', qid, time: nowTime() }, { role: 'bot', qid, time: nowTime() }]);
+  }, []);
 
-    const nextHistory = [...messages, { role: 'user', text: trimmed, time: nowTime() }];
-    setMessages(nextHistory);
-    setInput('');
-
-    let local = null;
-    try {
-      local = resolveLocal(trimmed, { lang, context, prev: lastSubjectRef.current }, data);
-    } catch (err) {
-      if (import.meta.env.DEV) console.warn('[DairyTop] local engine error', err);
-    }
-    if (local?.subject?.length) lastSubjectRef.current = local.subject;
-    if (import.meta.env.DEV) console.log(`[DairyTop] "${trimmed}" → ${local?.answer ? 'LOCAL' : 'AI'}`, local?.parsed);
-    if (local?.answer) {
-      setMessages(prev => [...prev, { role: 'bot', text: local.answer, time: nowTime(), source: 'local', followups: followupsFor(local.topic, lang, trimmed) }]);
-      return;
-    }
-
-    setLoading(true);
-    const request = new AbortController();
-    requestRef.current = request;
-    try {
-      if (!CHAT_PROXY_URL) throw new Error('Missing proxy URL');
-      const aiResult = await requestWithDeadline(async signal => {
-        const recentTurns  = nextHistory.filter(m => m.role === 'user').slice(-2).map(m => m.text).join(' ');
-        const systemPrompt = buildSystemPrompt(lang, recentTurns, data, { context, ctxKey: currentCtx, prev: lastSubjectRef.current });
-        return callChatProxy(systemPrompt, compactHistory(nextHistory.slice(0, -1)), trimmed, signal);
-      }, { signal: request.signal });
-      if (request.signal.aborted) return;
-      setMessages(prev => [...prev, { role: 'bot', text: aiResult.text, time: nowTime(), source: 'ai', followups: followupsFor(topicFromText(`${trimmed} ${aiResult.text}`), lang, trimmed) }]);
-    } catch {
-      if (request.signal.aborted) return;
-      // AI unreachable → still give the user real numbers instead of an error.
-      const reply = buildFallbackAnswer(trimmed, { lang, context }, data);
-      setMessages(prev => [...prev, { role: 'bot', text: reply, time: nowTime(), source: 'local', followups: followupsFor('general', lang, trimmed) }]);
-    } finally {
-      if (requestRef.current === request) requestRef.current = null;
-      if (!request.signal.aborted) setLoading(false);
-    }
-  }, [input, loading, messages, lang, context, data, currentCtx]);
-
-  // ── Suggested questions ──────────────────────────────────────────────────
-  // Default context → the questions App.jsx defines for the page the user is on.
-  // Another context picked in the chat → that context's chips.
-  // Every chip is checked against the local engine, so a chip can never lead to AI or a dead end.
-  const chips = useMemo(() => {
-    const list = currentCtx === 'overview' && suggestedQuestions?.length
-      ? suggestedQuestions.map(en => { const text = lang === 'nl' ? (QUESTION_NL[en] || en) : en; return { icon: 'grid', label: text, prompt: text }; })
-      : (CONTEXT_SUGGESTIONS[currentCtx] || CONTEXT_SUGGESTIONS.overview).map(c => ({ icon: c.icon, label: c.label[lang] || c.label.en, prompt: c.prompt[lang] || c.prompt.en }));
-    return list.filter(c => { try { return !!resolveLocal(c.prompt, { lang, context }, data).answer; } catch { return false; } });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentCtx, suggestedQuestions, lang, context?.page, context?.dateRange, data]);
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
-    if (e.key === 'Escape') setOpen(false);
-  };
+  // Answers and question texts are worked out at render time, so switching EN/NL re-translates the whole conversation.
+  const rendered = useMemo(() => messages.map(m => {
+    if (m.role === 'user') return { ...m, text: questionText(liveData, m.qid, lang) };
+    if (m.role === 'bot') { const a = localAnswer(liveData, m.qid, lang); return { ...m, text: a.text, followups: a.followups }; }
+    return m;
+  }), [messages, lang, liveData, bank]);
 
   // ── Layout ────────────────────────────────────────────────────────────────
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -907,6 +850,17 @@ export default function ChatBot({ context, suggestedQuestions, userName, liveDat
     return anchorNear(pos, panelDims.w, panelDims.h, PANEL_GAP);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pos, open]);
+
+  const tileGrid = (
+    <div className="cb-tiles">
+      {TILES.map(k => (
+        <button key={k.id} type="button" className={`cb-tile${tile === k.id ? ' active' : ''}`} onClick={() => openTile(k.id)}>
+          <span className="cb-tile-ico"><Svg name={k.icon} size={17} /></span>
+          <span className="cb-tile-txt"><strong>{k[lang] || k.en}</strong><small>{k.sub[lang] || k.sub.en}</small></span>
+        </button>
+      ))}
+    </div>
+  );
 
   const bubbleAnchor = useMemo(() => {
     const w = Math.min(225, window.innerWidth - 40);
@@ -1014,14 +968,7 @@ export default function ChatBot({ context, suggestedQuestions, userName, liveDat
                 <div className="cb-hero-illus"><HeroIllustration /></div>
                 <div className="cb-empty-title">{t.emptyTitle}</div>
                 <div className="cb-empty-sub">{t.emptySubtitle}</div>
-                <div className="cb-suggestions">
-                  {chips.map(s => (
-                    <button key={s.prompt} className="cb-sugg-btn" onClick={() => send(s.prompt)}>
-                      <Svg name={s.icon} size={13} />
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
+                {tileGrid}
                 <div className="cb-trust">
                   <span className="cb-trust-dot" />
                   {t.trust}
@@ -1030,12 +977,35 @@ export default function ChatBot({ context, suggestedQuestions, userName, liveDat
             ) : (
               /* Messages */
               <div className="cb-msgs">
-                {messages.map((m, i) => {
+                {rendered.map((m, i) => {
+                  if (m.role === 'tiles') return (
+                    <div key={i} className="cb-msg-wrap bot">
+                      <div className="cb-msg-hdr"><span className="cb-msg-label">{t.assistant}</span>{m.time && <span className="cb-msg-time">{m.time}</span>}</div>
+                      <div className="cb-msg-text cb-menu-title">{t.pickTopic}</div>
+                      {tileGrid}
+                    </div>
+                  );
+                  if (m.role === 'menu') {
+                    const qs = bank ? bank.questions.filter(q => q.tile === m.tile) : [];
+                    return (
+                      <div key={i} className="cb-msg-wrap bot">
+                        <div className="cb-msg-hdr"><span className="cb-msg-label">{t.assistant}</span>{m.time && <span className="cb-msg-time">{m.time}</span>}</div>
+                        <div className="cb-msg-text cb-menu-title">{t.chooseQ(tileName(m.tile))}</div>
+                        <div className="cb-qlist">
+                          {qs.map((q, n) => (
+                            <button key={q.id} type="button" className="cb-q" onClick={() => ask(q.id)}>
+                              <span className="cb-q-n">{n + 1}</span><span>{q.q(lang)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
                   const isBot  = m.role === 'bot';
                   const isUser = m.role === 'user';
                   const wrapClass = `cb-msg-wrap ${isBot ? 'bot' : isUser ? 'user' : 'error'}`;
-                  const isLastBot = isBot && messages.slice(i + 1).every(mm => mm.role !== 'bot');
-                  const fuChips = isLastBot && !loading ? (m.followups || []) : [];
+                  const isLastBot = isBot && rendered.slice(i + 1).every(mm => mm.role !== 'bot' && mm.role !== 'menu' && mm.role !== 'tiles');
+                  const fuChips = isLastBot ? (m.followups || []) : [];
 
                   return (
                     <div key={i} className={wrapClass}>
@@ -1076,10 +1046,10 @@ export default function ChatBot({ context, suggestedQuestions, userName, liveDat
                       {/* Follow-up chips (last bot message only) */}
                       {fuChips.length > 0 && (
                         <div className="cb-followups">
-                          {fuChips.map(chip => (
-                            <button key={chip} className="cb-fu-chip" onClick={() => send(chip)}>
+                          {fuChips.map(qid => (
+                            <button key={qid} className="cb-fu-chip" onClick={() => ask(qid)}>
                               <Svg name="send" size={11} />
-                              {chip}
+                              {questionText(liveData, qid, lang)}
                             </button>
                           ))}
                         </div>
@@ -1088,95 +1058,27 @@ export default function ChatBot({ context, suggestedQuestions, userName, liveDat
                   );
                 })}
 
-                {/* Typing indicator */}
-                {loading && (
-                  <div className="cb-typing" aria-label="Assistant is typing">
-                    <span /><span /><span />
-                  </div>
-                )}
               </div>
             )}
           </div>
 
-          {/* ── Composer ── */}
-          <div className="cb-composer-wrap">
-            <form className="cb-composer" onSubmit={e => { e.preventDefault(); send(); }}>
-              <div className="cb-textarea-row">
-                <textarea
-                  className="cb-input"
-                  rows={1}
-                  maxLength={CHAR_LIMIT}
-                  placeholder={t.placeholder}
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={loading}
-                  onTouchMove={e => e.stopPropagation()}
-                  aria-label={t.placeholder}
-                />
-                {showCharCounter && (
-                  <span className={charCounterClass} aria-hidden="true">{charRemaining}</span>
+          {/* ── Topic bar (replaces typing) ── */}
+          {messages.length > 0 && (
+            <div className="cb-composer-wrap">
+              <div className="cb-topicbar">
+                <button type="button" className="cb-ctx-pill" onClick={showTiles}>
+                  <Svg name="grid" size={12} />
+                  {t.topics}
+                </button>
+                {tile && (
+                  <button type="button" className="cb-ctx-pill cb-pill-main" onClick={() => openTile(tile)}>
+                    <Svg name="list" size={12} />
+                    {t.moreAbout}: {tileName(tile)}
+                  </button>
                 )}
               </div>
-
-              <div className="cb-toolbar">
-                {/* Context switcher pill */}
-                <button
-                  type="button"
-                  className="cb-ctx-pill"
-                  ref={ctxPillRef}
-                  onClick={e => {
-                    e.stopPropagation();
-                    if (ctxPillRef.current) {
-                      const r = ctxPillRef.current.getBoundingClientRect();
-                      setCtxMenuPos({ left: r.left, bottom: window.innerHeight - r.top + 7 });
-                    }
-                    setCtxMenuOpen(v => !v);
-                  }}
-                  aria-haspopup="listbox"
-                  aria-expanded={ctxMenuOpen}
-                  aria-label="Switch dashboard context"
-                >
-                  <Svg name="eye" size={12} />
-                  {ctxLabel}
-                  <Svg name="chevron" size={10} strokeWidth={2.2} />
-                </button>
-
-                <div className="cb-toolbar-right">
-                  {loading ? (
-                    <button type="button" className="cb-stop-btn" onClick={stopRequest} aria-label={t.stopLabel} title={t.stopLabel}>
-                      <Svg name="stop" size={13} fill="currentColor" />
-                    </button>
-                  ) : (
-                    <button type="submit" className="cb-send" disabled={!input.trim()} aria-label={t.sendLabel}>
-                      <Svg name="send" size={15} strokeWidth={2.2} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      {/* Context menu — fixed-position portal, escapes panel overflow */}
-      {open && ctxMenuOpen && (
-        <div
-          className="cb-ctx-menu"
-          role="listbox"
-          ref={ctxMenuRef}
-          style={{ left: ctxMenuPos.left, bottom: ctxMenuPos.bottom }}
-        >
-          {t.contextItems.map(item => (
-            <button
-              key={item.key} type="button" role="option"
-              aria-selected={currentCtx === item.key}
-              className={currentCtx === item.key ? 'active' : ''}
-              onClick={e => { e.stopPropagation(); setCurrentCtx(item.key); setCtxMenuOpen(false); }}
-            >
-              <Svg name="eye" size={13} />
-              {item.label}
-            </button>
-          ))}
+            </div>
+          )}
         </div>
       )}
     </>,

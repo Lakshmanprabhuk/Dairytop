@@ -36,7 +36,6 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_CHAT_PROXY_URL: ${{ vars.VITE_CHAT_PROXY_URL }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

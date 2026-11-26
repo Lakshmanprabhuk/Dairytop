@@ -7,8 +7,7 @@ const server = await createServer({ server: { middlewareMode: true }, appType: '
 try {
   globalThis.__DT = {
     app: await server.ssrLoadModule('/src/App.jsx'),
-    chat: await server.ssrLoadModule('/src/utils/chatContext.js'),
-    sug: await server.ssrLoadModule('/src/utils/chatSuggestions.js'),
+    qa: await server.ssrLoadModule('/src/utils/chatQA.js'),
   };
   for (const f of readdirSync('tests').filter(n => n.endsWith('.test.mjs')).sort()) await import(pathToFileURL('tests/' + f).href);
 } finally {

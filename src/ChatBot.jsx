@@ -347,12 +347,12 @@ const chatCss = `
 .cb-body::-webkit-scrollbar-thumb { background: #C8D8DE; border-radius: 4px; }
 
 /* Body — zero padding when welcome fills edge-to-edge */
-.cb-body:has(.cb-empty) { padding: 0; background: transparent; }
+.cb-body:has(.cb-empty) { padding: 0; background: transparent; overflow: hidden; }
 
 /* Welcome / empty — light blue hero */
 .cb-empty {
   display: flex; flex-direction: column; align-items: center; text-align: center;
-  flex: 1; padding: 20px 18px 20px; position: relative; overflow: hidden;
+  flex: 1; min-height: 0; padding: 20px 18px 0; position: relative; overflow: hidden;
   background: radial-gradient(ellipse at 50% 0%, #C4E7F8 0%, #DCF0FD 42%, #EEF7FC 70%, #F5F9FD 100%);
 }
 .cb-empty::before {
@@ -360,6 +360,23 @@ const chatCss = `
   background: radial-gradient(circle at 15% 85%, rgba(64,188,243,.14) 0%, transparent 50%),
               radial-gradient(circle at 85% 20%, rgba(64,188,243,.10) 0%, transparent 45%);
 }
+
+/* Welcome: hero, title and subtitle stay put; only the tiles scroll, fading in and out at the edges */
+.cb-hero-illus, .cb-empty-title, .cb-empty-sub { flex-shrink: 0; }
+.cb-empty { justify-content: center; }
+.cb-empty-scroll {
+  flex: 0 1 auto; min-height: 0; width: calc(100% + 36px); margin: 0 -18px;
+  padding: 14px 18px 22px; overflow-y: auto; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch; position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center;
+  scrollbar-width: thin; scrollbar-color: #C8D8DE transparent;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 30px), transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 22px, #000 calc(100% - 30px), transparent 100%);
+}
+.cb-empty-scroll::-webkit-scrollbar { width: 4px; }
+.cb-empty-scroll::-webkit-scrollbar-thumb { background: #C8D8DE; border-radius: 4px; }
+.cb-empty-scroll .cb-tiles { margin-top: 0; }
+.cb-empty-sub { margin-bottom: 2px !important; }
 
 /* Illustration wrapper */
 .cb-hero-illus { margin-bottom: 10px; position: relative; z-index: 1; }
@@ -526,7 +543,20 @@ const chatCss = `
 .cb-topicbar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .cb-topicbar .cb-ctx-pill { padding: 7px 12px; font-size: 12px; }
 .cb-pill-main { color: #0A73C2; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-@media (max-width: 420px) { .cb-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px) { .cb-msg-wrap .cb-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Phones: smaller hero and a compact 3 x 3 tile grid so all topics fit without hunting */
+@media (max-width: 480px) {
+  .cb-empty { padding-top: 12px; }
+  .cb-hero-illus { margin-bottom: 4px; }
+  .cb-hero-illus img { width: 132px !important; }
+  .cb-empty-title { font-size: 16px; margin-bottom: 2px; }
+  .cb-empty-sub { font-size: 12px; }
+  .cb-empty-scroll .cb-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .cb-empty-scroll .cb-tile { align-items: center; text-align: center; min-height: 74px; padding: 10px 6px 9px; gap: 6px; }
+  .cb-empty-scroll .cb-tile-txt { align-items: center; }
+  .cb-empty-scroll .cb-tile-txt strong { font-size: 11.5px; }
+  .cb-empty-scroll .cb-tile-txt small { display: none; }
+}
 
 /* Composer area */
 .cb-composer-wrap { flex-shrink: 0; padding: 10px 11px 11px; background: #F3F7FA; }
@@ -968,10 +998,12 @@ export default function ChatBot({ userName, liveData, uiLang } = {}) {
                 <div className="cb-hero-illus"><HeroIllustration /></div>
                 <div className="cb-empty-title">{t.emptyTitle}</div>
                 <div className="cb-empty-sub">{t.emptySubtitle}</div>
-                {tileGrid}
-                <div className="cb-trust">
-                  <span className="cb-trust-dot" />
-                  {t.trust}
+                <div className="cb-empty-scroll">
+                  {tileGrid}
+                  <div className="cb-trust">
+                    <span className="cb-trust-dot" />
+                    {t.trust}
+                  </div>
                 </div>
               </div>
             ) : (

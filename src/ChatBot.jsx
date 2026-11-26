@@ -26,6 +26,7 @@ const STRINGS = {
     toggleOpenLabel: 'Open dashboard assistant',
     closeLabel: 'Close',
     newChat: 'New conversation',
+    newChatShort: 'New chat',
     sendLabel: 'Send message',
     stopLabel: 'Stop response',
     you: 'You',
@@ -58,6 +59,7 @@ const STRINGS = {
     toggleOpenLabel: 'Open dashboard-assistent',
     closeLabel: 'Sluiten',
     newChat: 'Nieuw gesprek',
+    newChatShort: 'Nieuw gesprek',
     sendLabel: 'Bericht verzenden',
     stopLabel: 'Stoppen',
     you: 'Jij',
@@ -159,6 +161,7 @@ const ICON_PATHS = {
   chevron: "m6 9 6 6 6-6",
   eye:     "M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
   plus:    "M12 5v14M5 12h14",
+  restart: "M3 12a9 9 0 1 0 2.64-6.36L3 8M3 3v5h5",
   close:   "m5 5 14 14M19 5 5 19",
   stop:    "",  // rect below
   users:   "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM1 21v-2a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v2M16 3.1a4 4 0 0 1 0 7.8M23 21v-2a6 6 0 0 0-4-5.6",
@@ -540,8 +543,19 @@ const chatCss = `
 .cb-q:hover { border-color: #40BCF3; background: #E8F5FD; transform: translateX(2px); }
 .cb-q-n { flex-shrink: 0; min-width: 20px; height: 18px; border-radius: 9px; background: #E8F5FD; color: #0A73C2; font-size: 10.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 .cb-fu-chip { height: auto; min-height: 27px; padding: 5px 10px; text-align: left; line-height: 1.3; }
-.cb-topicbar { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-.cb-topicbar .cb-ctx-pill { padding: 7px 12px; font-size: 12px; }
+.cb-topicbar { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+.cb-topicbar .cb-ctx-pill {
+  padding: 7px 12px; font-size: 12px; font-weight: 600; color: #0D1C29;
+  background: #fff; border: 1px solid #8FA5AF; min-width: 0;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.cb-topicbar .cb-ctx-pill:hover { border-color: #1F3741; background: #fff; box-shadow: 0 0 0 3px rgba(64,188,243,.18); }
+.cb-topicbar .cb-ctx-pill { flex: 0 0 auto; }
+.cb-topicbar .cb-pill-main { flex: 1 1 auto; justify-content: flex-start; overflow: hidden; }
+.cb-topicbar .cb-pill-main svg { flex-shrink: 0; }
+.cb-topicbar .cb-pill-main .cb-pill-txt { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.cb-topicbar .cb-pill-new { margin-left: auto; }
+@media (max-width: 420px) { .cb-topicbar .cb-ctx-pill { padding: 7px 10px; font-size: 11.5px; gap: 4px; } }
 .cb-pill-main { color: #0A73C2; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 420px) { .cb-msg-wrap .cb-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* Phones: smaller hero and a compact 3 x 3 tile grid so all topics fit without hunting */
@@ -1103,11 +1117,15 @@ export default function ChatBot({ userName, liveData, uiLang } = {}) {
                   {t.topics}
                 </button>
                 {tile && (
-                  <button type="button" className="cb-ctx-pill cb-pill-main" onClick={() => openTile(tile)}>
+                  <button type="button" className="cb-ctx-pill cb-pill-main" title={`${t.moreAbout}: ${tileName(tile)}`} onClick={() => openTile(tile)}>
                     <Svg name="list" size={12} />
-                    {t.moreAbout}: {tileName(tile)}
+                    <span className="cb-pill-txt">{t.moreAbout}: {tileName(tile)}</span>
                   </button>
                 )}
+                <button type="button" className="cb-ctx-pill cb-pill-new" onClick={resetChat} title={t.newChat} data-track="New chat">
+                  <Svg name="restart" size={12} />
+                  {t.newChatShort}
+                </button>
               </div>
             </div>
           )}

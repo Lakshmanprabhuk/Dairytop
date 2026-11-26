@@ -3546,11 +3546,11 @@ function SalesReps({ f, highlightQuery }) {
   const vmOpt = withDataZoom({
     tooltip: { ...TOOLTIP_STYLE, trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: p => `<strong>${p[0].name}</strong><br/>` + p.map(s => `${s.marker} ${s.seriesName}: ${s.seriesName.includes('Tonnage') ? fmtNum(s.value) + ' t' : fmtFull(s.value)}`).join('<br/>') },
     legend: { bottom: 0, textStyle: { color: '#5F7078', fontSize: 9 }, type: 'scroll', itemWidth: 10, itemHeight: 10 },
-    grid: { left: '2%', right: '6%', bottom: '22%', top: '10%', containLabel: true },
+    grid: { left: '2%', right: '6%', bottom: '22%', top: 24, containLabel: true },
     xAxis: { type: 'category', data: vm.map(r => r.month), axisLabel: { color: '#5F7078', fontSize: 8, rotate: 30, hideOverlap: true } },
     yAxis: [
-      { type: 'value', name: 'Revenue', nameTextStyle: { color: '#5F7078', fontSize: 9 }, axisLabel: { ...AX, formatter: v => fmt(v) }, splitLine: SPLIT },
-      { type: 'value', name: 'Tonnage (t)', nameTextStyle: { color: '#5F7078', fontSize: 9 }, axisLabel: { ...AX, formatter: v => fmtNum(v) }, splitLine: { show: false } },
+      { type: 'value', name: 'Revenue', nameGap: 7, nameTextStyle: { color: '#5F7078', fontSize: 9 }, axisLabel: { ...AX, formatter: v => fmt(v) }, splitLine: SPLIT },
+      { type: 'value', name: 'Tonnage (t)', nameGap: 7, nameTextStyle: { color: '#5F7078', fontSize: 9 }, axisLabel: { ...AX, formatter: v => fmtNum(v) }, splitLine: { show: false } },
     ],
     series: [
       { name: 'Milk powder Revenue', type: 'bar', barGap: '10%', data: vm.map(r => Math.round(r.mp.rev)), itemStyle: { color: '#40BCF3', borderRadius: [2, 2, 0, 0] }, barMaxWidth: 18 },

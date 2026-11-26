@@ -566,6 +566,7 @@ const useLang = () => useContext(LangCtx);
 let CUR_LANG = (() => { try { return localStorage.getItem(LANG_KEY) === 'nl' ? 'nl' : 'en'; } catch { return 'en'; } })();
 
 const NL = {
+  'Invalid credentials.': 'Ongeldige inloggegevens.',
   /* shell, login, navigation */
   'Overview': 'Overzicht', 'Dashboard': 'Dashboard', 'Overview Dashboard': 'Overzicht dashboard', 'Performance': 'Prestaties', 'Catalogue': 'Assortiment', 'Channels': 'Kanalen', 'Debtors': 'Debiteuren', 'Finance': 'Financieel',
   'Revenue Trends': 'Omzettrends', 'Verkoper': 'Verkoper', 'Sales per Verkoper': 'Verkoop per verkoper', 'Customers': 'Klanten', 'Products': 'Producten', 'Products & Prices': 'Producten & prijzen', 'Categories': 'Categorieën', 'Markets': 'Markten',
@@ -2547,7 +2548,7 @@ const PANEL_CSS = `
 /* Filled navy header band on every chart / table panel */
 .chart-panel{--cp-py:12px;--cp-px:14px;}
 @media(max-width:1200px){.chart-panel{--cp-py:10px;--cp-px:12px;}}
-.chart-panel{padding-top:0 !important;}
+.chart-panel,.page-area.fin-scroll .chart-panel.fin-fixed,.page-area.fin-scroll .charts-row > .chart-panel.hug{padding-top:0 !important;}
 .chart-panel>.cp-head{margin:-1px calc(-1 * var(--cp-px) - 1px) 10px;padding:12px calc(var(--cp-px) + 1px) 11px;
   background:linear-gradient(180deg,#0E2A4D,#0A2140);border-bottom:none;color:#fff;}
 .chart-panel>.cp-head .cp-title{color:#fff;}
@@ -2581,6 +2582,10 @@ const PANEL_CSS = `
 
 /* Sidebar stays above the filter bar (z 100) while it slides closed after a hover peek */
 @media(min-width:901px){.sidebar,.sidebar.collapsed,.sidebar.collapsed.peek{z-index:160;}}
+
+/* Hide the browser's own password eye (Edge / old IE): the cow button already shows/hides the password */
+.login-input input::-ms-reveal,.login-input input::-ms-clear{display:none;width:0;height:0;}
+input[type="password"]::-ms-reveal,input[type="password"]::-ms-clear{display:none;}
 
 /* Login language switch: same look as the header switch, smaller */
 .login-lang .lang-sw{border:1.5px solid #079FDA;background:#E8F7FD;border-radius:18px;padding:2px;gap:2px;box-shadow:0 2px 6px rgba(0,127,197,.12);overflow:visible;}
